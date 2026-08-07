@@ -75,7 +75,7 @@ function loginView() {
 const TABS = {
   admin: [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
-  sales: [['fresh', 'Fresh', '🆕'], ['today', "Today's follow-up", '📅'], ['leads', 'All', '📋']],
+  sales: [['fresh', 'Fresh', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
 };
 
 async function boot() {
