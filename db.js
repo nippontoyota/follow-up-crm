@@ -83,6 +83,15 @@ const DDL = [
   // Added after initial schema — safe to run repeatedly
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS model_id    INTEGER REFERENCES models(id)`,
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS activity_id INTEGER REFERENCES activities(id)`,
+  `ALTER TABLE followups ADD COLUMN IF NOT EXISTS other_so_called TEXT`,
+  `CREATE TABLE IF NOT EXISTS salesforce_calls (
+    id SERIAL PRIMARY KEY,
+    mobile TEXT NOT NULL,
+    so_name TEXT NOT NULL,
+    status TEXT,
+    created_at TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+    UNIQUE(mobile, so_name, status)
+  )`,
 ];
 
 export async function initDb() {

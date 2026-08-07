@@ -135,6 +135,25 @@ app.delete('/api/masters/:type/:id', auth('admin'), async (req, res, next) => {
   }
 });
 
+app.post('/api/salesforce-upload', auth('admin'), async (req, res, next) => {
+  try {
+    const records = req.body || [];
+    let added = 0;
+    for (const r of records) {
+      if (!r.mobile || !r.so_name) continue;
+      const m = String(r.mobile).replace(/\D/g, '').slice(-10);
+      if (m.length < 10) continue;
+      try {
+        await run(`INSERT INTO salesforce_calls (mobile, so_name, status) VALUES (?, ?, ?)`, m, String(r.so_name).trim(), r.status ? String(r.status).trim() : null);
+        added++;
+      } catch (e) {
+        if (e.code !== '23505') throw e;
+      }
+    }
+    res.json({ added });
+  } catch (e) { next(e); }
+});
+
 /* ------------------------------------------------------------------ users */
 
 app.get('/api/users', auth('admin'), async (req, res, next) => {
@@ -180,9 +199,9 @@ app.post('/api/users/:id/toggle', auth('admin'), async (req, res, next) => {
 async function pickOfficer(branchId) {
   const row = await get(
     `SELECT u.id FROM users u
-     LEFT JOIN leads l ON l.assigned_to = u.id AND l.status = 'open'
+     LEFT JOIN leads l ON l.assigned_to = u.id
      WHERE u.role = 'sales' AND u.active = 1 AND u.branch_id = ?
-     GROUP BY u.id ORDER BY COUNT(l.id), u.id LIMIT 1`,
+     GROUP BY u.id ORDER BY MAX(l.id) NULLS FIRST, u.id LIMIT 1`,
     branchId,
   );
   return row?.id ?? null;
@@ -259,6 +278,10 @@ app.get('/api/leads/:id', auth(), async (req, res, next) => {
        WHERE f.lead_id = ? ORDER BY f.seq`,
       lead.id,
     );
+    lead.salesforce_history = await all(
+      `SELECT so_name, status, created_at FROM salesforce_calls WHERE mobile = ? ORDER BY id DESC`,
+      lead.mobile
+    );
     res.json(lead);
   } catch (e) { next(e); }
 });
@@ -271,7 +294,7 @@ app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, nex
       return res.status(403).json({ error: 'Not your lead' });
     if (lead.status !== 'open') return bad(res, 'This lead is already closed');
 
-    const { call_status, outcome, next_date, remarks, model_id, activity_id } = req.body || {};
+    const { call_status, outcome, next_date, remarks, model_id, activity_id, other_so_called } = req.body || {};
     if (!OUTCOMES[call_status]) return bad(res, 'Select Connected or Not Connected');
     if (!OUTCOMES[call_status].includes(outcome)) return bad(res, 'Select a valid outcome');
 
@@ -287,11 +310,11 @@ app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, nex
 
     const seq = lead.fcount + 1;
     await run(
-      `INSERT INTO followups (lead_id, user_id, seq, call_status, outcome, model_id, activity_id, next_date, remarks)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO followups (lead_id, user_id, seq, call_status, outcome, model_id, activity_id, next_date, remarks, other_so_called)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
       lead.id, req.user.id, seq, call_status, outcome,
       model_id ? Number(model_id) : null, activity_id ? Number(activity_id) : null,
-      nd, remarks?.trim() || null,
+      nd, remarks?.trim() || null, other_so_called?.trim() || null,
     );
     await run(
       `UPDATE leads SET fcount = ?, stage = ?, next_date = ?, status = ? WHERE id = ?`,
@@ -313,6 +336,33 @@ app.get('/api/counts', auth(), async (req, res, next) => {
       get(`SELECT COUNT(*)::int AS c FROM leads WHERE status='open' AND fcount>0 AND next_date<=?${extra}`, today(), ...args),
     ]);
     res.json({ fresh: fr.c, due: du.c });
+  } catch (e) { next(e); }
+});
+
+app.get('/api/analytics', auth('admin'), async (req, res, next) => {
+  try {
+    const { branch_id } = req.query;
+    if (branch_id) {
+      res.json(await all(
+        `SELECT u.id, u.name, COUNT(l.id)::int AS total,
+                SUM(CASE WHEN l.status = 'open' THEN 1 ELSE 0 END)::int AS open,
+                SUM(CASE WHEN l.stage IN ('Booking Done', 'Retail Done') THEN 1 ELSE 0 END)::int AS won
+         FROM users u
+         LEFT JOIN leads l ON l.assigned_to = u.id
+         WHERE u.role = 'sales' AND u.branch_id = ?
+         GROUP BY u.id, u.name ORDER BY total DESC`,
+         Number(branch_id)
+      ));
+    } else {
+      res.json(await all(
+        `SELECT b.id, b.name, COUNT(l.id)::int AS total,
+                SUM(CASE WHEN l.status = 'open' THEN 1 ELSE 0 END)::int AS open,
+                SUM(CASE WHEN l.stage IN ('Booking Done', 'Retail Done') THEN 1 ELSE 0 END)::int AS won
+         FROM branches b
+         LEFT JOIN leads l ON l.branch_id = b.id
+         GROUP BY b.id, b.name ORDER BY total DESC`
+      ));
+    }
   } catch (e) { next(e); }
 });
 

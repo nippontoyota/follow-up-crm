@@ -73,7 +73,7 @@ function loginView() {
 /* -------------------------------------------------------------------- shell */
 
 const TABS = {
-  admin: [['users', 'Users', '👤'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
+  admin: [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
   sales: [['fresh', 'Fresh', '🆕'], ['today', "Today's follow-up", '📅'], ['leads', 'All', '📋']],
 };
@@ -88,8 +88,16 @@ async function boot() {
     `${me.name} · ${{ admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer' }[me.role]}`;
 
   nav.innerHTML = TABS[me.role]
-    .map(([k, label, icon]) => `<button data-t="${k}"><b>${icon}</b>${label}</button>`).join('');
-  nav.querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.t));
+    .map(([k, label, icon]) => `<button data-t="${k}"><b>${icon}</b><span class="lbl">${label}</span></button>`).join('') +
+    `<button id="logout" style="margin-top:auto" title="Sign out"><b><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></b><span class="lbl">Sign out</span></button>`;
+    
+  nav.querySelectorAll('button:not(#logout)').forEach(b => b.onclick = () => go(b.dataset.t));
+  
+  document.getElementById('logout').onclick = async () => {
+    await api('/logout', 'POST');
+    me = null;
+    loginView();
+  };
 
   go(TABS[me.role][0][0]);
 }
@@ -99,14 +107,8 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ users: usersView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView })[t]();
+  ({ analytics: analyticsView, users: usersView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView })[t]();
 }
-
-document.getElementById('logout').onclick = async () => {
-  await api('/logout', 'POST');
-  me = null;
-  loginView();
-};
 
 /* ------------------------------------------------------------- admin: users */
 
@@ -166,7 +168,17 @@ const LIST_LABELS = { branches: 'Branches', sources: 'Sources', activities: 'Act
 
 async function listsView() {
   masters = await api('/masters');
-  view.innerHTML = Object.entries(LIST_LABELS).map(([key, label]) => `
+  view.innerHTML = `
+    <div class="card" style="background:var(--brand-light); border: 1px solid var(--brand); box-shadow:none;">
+      <h2 style="color:var(--brand); margin-bottom: 4px;">Salesforce Analytics Sync</h2>
+      <label style="margin-top:0; margin-bottom:12px; color:var(--muted)">Upload .xlsx sheet (needs Mobile & SO Name columns).</label>
+      <div class="grid2">
+        <input type="file" id="sfFile" accept=".xlsx, .xls">
+        <button class="btn row" id="sfUpload">Upload</button>
+      </div>
+      <div id="sfMsg" class="msg" style="display:none; margin-top:12px"></div>
+    </div>
+  ` + Object.entries(LIST_LABELS).map(([key, label]) => `
     <div class="card">
       <h2>${label} (${masters[key].length})</h2>
       <div class="grid2">
@@ -177,6 +189,37 @@ async function listsView() {
         <div class="row"><span>${esc(m.name)}</span>
           <button data-del="${key}" data-id="${m.id}">Remove</button></div>`).join('')}</div>
     </div>`).join('') + '<div id="msg"></div>';
+
+  document.getElementById('sfUpload').onclick = async (e) => {
+    const file = document.getElementById('sfFile').files[0];
+    const msg = document.getElementById('sfMsg');
+    const show = (txt, isErr = false) => { msg.style.display = 'block'; msg.className = 'msg ' + (isErr ? 'err' : 'ok'); msg.textContent = txt; };
+    if (!file) return show('Select a file first', true);
+    
+    e.target.disabled = true;
+    show('Parsing file locally...', false);
+    
+    try {
+      const buf = await file.arrayBuffer();
+      if (typeof XLSX === 'undefined') throw new Error('SheetJS library failed to load');
+      const wb = XLSX.read(buf);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws);
+      const records = data.map(r => ({
+        mobile: r.Mobile || r['Mobile Number'] || r.Phone || r.UID || r.uid || r.Contact,
+        so_name: r['SO Name'] || r.SO || r.Name || r['Sales Officer'] || r.Caller,
+        status: r.Status || r.Outcome || r.stage || ''
+      })).filter(r => r.mobile && r.so_name);
+      
+      show(`Uploading ${records.length} valid records...`, false);
+      const res = await api('/salesforce-upload', 'POST', records);
+      show(`Done! Appended ${res.added} new status entries.`, false);
+      document.getElementById('sfFile').value = '';
+    } catch (err) {
+      show(err.message, true);
+    }
+    e.target.disabled = false;
+  };
 
   view.querySelectorAll('[data-add]').forEach(b => b.onclick = async () => {
     const name = val('in-' + b.dataset.add);
@@ -272,10 +315,20 @@ async function openLead(id) {
       <div class="kv"><b>Status</b><span>${l.status === 'closed' ? 'Closed — ' + esc(l.stage) : dueLabel(l)}</span></div>
     </div>
 
+    ${l.salesforce_history && l.salesforce_history.length ? `
+      <div class="card" style="background:#fff3e0; border-color:#ffb74d">
+        <h2 style="color:#e65100; margin-bottom:8px">⚠️ Salesforce History</h2>
+        <div class="tl">${l.salesforce_history.map(sh => `
+          <div><b>${esc(sh.so_name)}</b> ${sh.status ? `· ${esc(sh.status)}` : ''} <em>(Uploaded ${sh.created_at.split(' ')[0]})</em></div>
+        `).join('')}</div>
+      </div>
+    ` : ''}
+
     ${l.followups.length ? `<div class="card"><h2>History</h2><div class="tl">${l.followups.map(f => `
       <div><b>F${f.seq} · ${esc(f.call_status)} → ${esc(f.outcome)}</b>
         <em>${esc(f.created_at)} · ${esc(f.by_name)}${f.next_date ? ' · next ' + f.next_date : ''}
         ${f.model ? ' · ' + esc(f.model) : ''}${f.activity ? ' · ' + esc(f.activity) : ''}</em>
+        ${f.other_so_called ? `<div><b>Other SO called:</b> ${esc(f.other_so_called)}</div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
     ${canAct ? `<div class="card">
@@ -293,6 +346,14 @@ async function openLead(id) {
         <label>Next follow-up date <span class="req">*</span>
           <em>(today to ${me.maxDate})</em></label>
         <input id="nd" type="date" min="${me.today}" max="${me.maxDate}" value="${me.today}">
+      </div>
+      <div id="oscWrap" class="hide">
+        <label>Did any other SO call the customer?</label>
+        <select id="osc">
+          <option value="">Select…</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
       </div>
       <label>Remarks</label><textarea id="rm"></textarea>
       <button class="btn" id="submit">Save follow-up</button>
@@ -323,7 +384,8 @@ async function openLead(id) {
     const out = sheet.querySelector('#out');
     out.innerHTML = me.outcomes[v].map(o => `<button data-v="${o}">${o}</button>`).join('');
     sheet.querySelector('#outWrap').classList.remove('hide');
-    sheet.querySelector('#extra').classList.add('hide');
+    sheet.querySelector('#oscWrap')?.classList.toggle('hide', v !== 'Connected');
+    sheet.querySelector('#extra')?.classList.add('hide');
     sheet.querySelector('#dateWrap').classList.remove('hide');
     pick(out, null, (o) => {
       outcome = o;
@@ -343,11 +405,39 @@ async function openLead(id) {
       await api(`/leads/${l.id}/followup`, 'POST', {
         call_status: call, outcome, next_date: closing ? null : nd,
         remarks: sheet.querySelector('#rm').value.trim(),
+        other_so_called: call === 'Connected' ? sheet.querySelector('#osc').value : '',
       });
       close();
       leadsView();
     } catch (err) { say(err.message); e.target.disabled = false; }
   };
+}
+
+/* -------------------------------------------------------- admin: analytics */
+
+async function analyticsView(branchId = null, branchName = null) {
+  const stats = await api(branchId ? `/analytics?branch_id=${branchId}` : '/analytics');
+  
+  view.innerHTML = `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+        <h2 style="margin:0">${branchId ? `Sales Officers: ${esc(branchName)}` : 'Branch Analytics'}</h2>
+        ${branchId ? `<button class="btn ghost" style="margin:0; padding:4px 8px" onclick="analyticsView()">← Back</button>` : ''}
+      </div>
+      ${stats.length ? `<div class="charts">${stats.map(s => `
+        <div class="ch-row" ${!branchId ? `style="cursor:pointer" onclick="analyticsView(${s.id}, '${esc(s.name)}')" title="Click for details"` : ''}>
+          <div class="ch-lbl"><b>${esc(s.name)}</b><span>${s.total} leads</span></div>
+          <div class="ch-bar-wrap">
+            <div class="ch-bar won" style="width:${s.total ? (s.won / s.total * 100) : 0}%"></div>
+            <div class="ch-bar open" style="width:${s.total ? (s.open / s.total * 100) : 0}%"></div>
+          </div>
+          <div class="ch-stats">
+            <span class="c-won">${s.won} won</span>
+            <span class="c-open">${s.open} open</span>
+          </div>
+        </div>`).join('')}</div>` : '<div class="empty">No data</div>'}
+    </div>
+  `;
 }
 
 boot();
