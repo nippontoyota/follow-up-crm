@@ -142,7 +142,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .btn {
   background: var(--brand); color: #fff; border: 0; font-weight: 500;
   padding: 12px 20px; border-radius: 8px; margin-top: 20px; cursor: pointer;
-  transition: opacity 0.2s; font-size: 15px; width: 100%;
+  transition: opacity 0.2s; font-size: 15px; width: 100%; text-align: center;
 }
 .btn:hover { opacity: 0.9; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
