@@ -1,0 +1,165 @@
+:root {
+  --bg: #f4f5f7;
+  --card: #fff;
+  --line: #e3e5ea;
+  --text: #16181d;
+  --muted: #6b7280;
+  --brand: #1f6feb;
+  --ok: #067647;
+  --warn: #b45309;
+  --bad: #b42318;
+  --r: 12px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  margin: 0;
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding-bottom: 84px;
+}
+
+.hide { display: none !important; }
+
+/* ------------------------------------------------------------------ chrome */
+
+header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  background: var(--brand); color: #fff;
+}
+header h1 { font-size: 16px; margin: 0; flex: 1; min-width: 0; font-weight: 600; }
+header h1 > span, header small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+header small { opacity: .85; font-size: 12px; font-weight: 400; }
+header button {
+  width: auto; flex: none;
+  background: rgba(255,255,255,.18); color: #fff; border: 0;
+  padding: 7px 12px; border-radius: 8px; font-size: 13px;
+}
+
+main { padding: 14px; max-width: 720px; margin: 0 auto; }
+
+nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; background: var(--card); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav button {
+  flex: 1; border: 0; background: none; color: var(--muted);
+  padding: 11px 4px 13px; font-size: 12px; font-weight: 500; line-height: 1.3;
+}
+nav button b { display: block; font-size: 17px; font-weight: 600; }
+nav button.on { color: var(--brand); box-shadow: inset 0 2px 0 var(--brand); }
+
+/* ------------------------------------------------------------------- cards */
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 14px; margin-bottom: 12px;
+}
+.card h2 { font-size: 15px; margin: 0 0 12px; }
+
+.lead { display: block; width: 100%; text-align: left; cursor: pointer; }
+.lead .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.lead b { font-size: 15px; }
+.lead .meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
+
+.pill {
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+  background: #eef2f7; color: var(--muted); white-space: nowrap;
+}
+.pill.due { background: #fff2e5; color: var(--warn); }
+.pill.late { background: #fdecea; color: var(--bad); }
+.pill.new { background: #e7f0fe; color: var(--brand); }
+
+.empty { text-align: center; color: var(--muted); padding: 40px 16px; font-size: 14px; }
+
+/* ------------------------------------------------------------------ forms */
+
+label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 5px; }
+label:first-child { margin-top: 0; }
+label .req { color: var(--bad); }
+
+input, select, textarea, button {
+  font: inherit; font-size: 16px; /* 16px stops iOS zoom-on-focus */
+  width: 100%; padding: 11px 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: #fff; color: var(--text);
+}
+textarea { min-height: 68px; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); outline-offset: -1px; }
+
+.btn {
+  background: var(--brand); color: #fff; border: 0; font-weight: 600;
+  padding: 13px; border-radius: 10px; margin-top: 16px;
+}
+.btn:disabled { opacity: .55; }
+.btn.ghost { background: #eef2f7; color: var(--text); }
+.btn.row { margin-top: 0; }
+
+.grid2 { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.grid2 .btn { margin-top: 0; width: auto; padding: 11px 16px; }
+
+.msg { padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-top: 12px; }
+.msg.err { background: #fdecea; color: var(--bad); }
+.msg.ok  { background: #e7f6ee; color: var(--ok); }
+
+/* ------------------------------------------------------------------ lists */
+
+.rows { border-top: 1px solid var(--line); }
+.row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.row span { flex: 1; }
+.row em { font-style: normal; color: var(--muted); font-size: 12px; }
+.row button { width: auto; padding: 6px 10px; font-size: 12px; border-radius: 8px; background: #eef2f7; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips button {
+  width: auto; padding: 7px 12px; font-size: 13px; border-radius: 999px;
+  background: #eef2f7; border: 1px solid transparent;
+}
+.chips button.on { background: var(--brand); color: #fff; }
+
+/* ------------------------------------------------------------------ modal */
+
+.sheet {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(16,18,22,.45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet > div {
+  background: var(--bg); width: 100%; max-width: 720px;
+  max-height: 94vh; overflow-y: auto;
+  border-radius: 16px 16px 0 0; padding: 14px 14px 28px;
+}
+.sheet h2 { margin: 0 0 2px; font-size: 17px; }
+.sheet .close { position: sticky; top: 0; }
+
+.kv { display: flex; gap: 10px; font-size: 14px; padding: 5px 0; }
+.kv b { min-width: 96px; color: var(--muted); font-weight: 600; font-size: 12px; padding-top: 2px; }
+
+.tl { border-left: 2px solid var(--line); margin-left: 6px; padding-left: 14px; }
+.tl > div { position: relative; padding: 8px 0; font-size: 13px; }
+.tl > div::before {
+  content: ''; position: absolute; left: -20px; top: 14px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--brand);
+}
+.tl b { display: block; font-size: 13px; }
+.tl em { font-style: normal; color: var(--muted); font-size: 12px; }
+
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121317; --card: #1b1d22; --line: #2c2f36; --text: #e9eaee; --muted: #9aa1ad; }
+  input, select, textarea {
+    background: #23262c;
+    color: #e9eaee;
+    -webkit-text-fill-color: #e9eaee;
+    color-scheme: dark;
+  }
+  .pill { background: #262a31; }
+  .row button, .chips button, .btn.ghost { background: #262a31; color: var(--text); }
+}
