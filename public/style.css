@@ -1,11 +1,11 @@
 :root {
-  --bg: #f8f9fc;
-  --card: #ffffff;
-  --line: #e2e8f0;
-  --text: #1a1b1f;
-  --muted: #717579;
-  --brand: #6236ff;
-  --brand-light: #f0ecff;
+  --bg: #faecd8;
+  --card: #fff8f0;
+  --line: #e8ddd0;
+  --text: #0f1c40;
+  --muted: #7a6a5a;
+  --brand: #1a47d4;
+  --brand-light: #e6ecff;
   --ok: #22c55e;
   --warn: #f59e0b;
   --bad: #ef4444;
@@ -23,7 +23,84 @@ body {
   padding-bottom: 84px;
 }
 
+h1, h2, h3, .login-card h2, .btn-login, nav button, .card h2, .sheet h2 {
+  font-family: 'Righteous', system-ui, sans-serif;
+  letter-spacing: .02em;
+}
+
 .hide { display: none !important; }
+
+/* ------------------------------------------------------------------ login */
+
+.login-wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 24px;
+  position: relative; overflow: hidden;
+}
+.login-wrap::before {
+  content: ''; position: absolute; border-radius: 50%;
+  background: rgba(26,71,212,.08);
+  width: 400px; height: 400px; top: -120px; right: -100px;
+}
+.login-wrap::after {
+  content: ''; position: absolute; border-radius: 50%;
+  background: rgba(26,71,212,.06);
+  width: 260px; height: 260px; bottom: -60px; left: -80px;
+}
+
+.login-card {
+  background: #fff; border-radius: 28px; padding: 36px 32px 40px;
+  width: 100%; max-width: 380px; position: relative; z-index: 1;
+  box-shadow: 0 20px 60px rgba(26,71,212,.12);
+}
+
+.login-logo-img {
+  display: block; margin: 0 auto 12px; max-height: 80px; max-width: 200px; object-fit: contain;
+}
+
+.login-card h2 {
+  font-size: 28px; color: var(--text);
+  margin: 0 0 20px; text-align: center;
+  display: inline-block; width: 100%;
+  padding-right: 2px;
+}
+
+/* illustration */
+.login-illo { margin: 0 auto 28px; display: block; }
+
+/* underline-style inputs */
+.input-line {
+  position: relative; margin-top: 20px;
+}
+.input-line input {
+  border: none; border-bottom: 1.5px solid #ddd; border-radius: 0;
+  padding: 10px 36px 10px 32px; background: transparent;
+  font-size: 15px; color: var(--text); width: 100%;
+  font-family: 'Inter', system-ui, sans-serif;
+  transition: border-color .2s;
+}
+.input-line input::placeholder { font-family: 'Inter', system-ui, sans-serif; color: var(--muted); }
+.input-line input:focus { outline: none; border-bottom-color: var(--brand); box-shadow: none; }
+.input-line .ico {
+  position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-size: 15px; pointer-events: none;
+}
+.input-line .eye {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-size: 14px; cursor: pointer; background: none;
+  border: none; padding: 4px; width: auto; margin: 0;
+}
+
+.btn-login {
+  width: 100%; padding: 14px; border-radius: 999px; border: none;
+  background: linear-gradient(135deg, #2952e3 0%, #1234b0 100%);
+  color: #fff; font-size: 16px; font-weight: 700;
+  margin-top: 32px; cursor: pointer; transition: opacity .2s;
+  letter-spacing: .04em; box-shadow: 0 6px 20px rgba(26,71,212,.35);
+  text-align: center;
+}
+.btn-login:hover { opacity: .9; }
+.btn-login:disabled { opacity: .55; cursor: not-allowed; }
 
 /* ------------------------------------------------------------------ chrome */
 
@@ -180,6 +257,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 }
 .chips button:hover { background: #e2e8f0; }
 .chips button.on { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 500; }
+.chips button[data-color="red"]      { color: #ef4444; background: #fff5f5; border-color: #fecaca; }
+.chips button[data-color="green"]    { color: #16a34a; background: #f0fdf4; border-color: #bbf7d0; }
+.chips button[data-color="red"].on   { background: #ef4444; color: #fff; border-color: #ef4444; }
+.chips button[data-color="green"].on { background: #16a34a; color: #fff; border-color: #16a34a; }
 
 /* ------------------------------------------------------------------ modal */
 
@@ -211,6 +292,22 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .tl b { display: block; font-size: 14px; color: var(--text); font-weight: 600; }
 .tl em { font-style: normal; color: var(--muted); font-size: 13px; }
 
+/* ------------------------------------------------------------------- kpi */
+
+.kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+@media (min-width: 520px) { .kpi-row { grid-template-columns: repeat(4, 1fr); } }
+
+.kpi-card {
+  color: #fff; border-radius: var(--r); padding: 16px 12px;
+  text-align: center;
+}
+.kpi-brand { background: var(--brand); }
+.kpi-ok    { background: var(--ok); }
+.kpi-bad   { background: var(--bad); }
+.kpi-warn  { background: var(--warn); }
+.kpi-num { font-family: 'Righteous', system-ui, sans-serif; font-size: 36px; line-height: 1; }
+.kpi-lbl { font-size: 11px; font-weight: 600; opacity: .9; margin-top: 4px; letter-spacing: .05em; text-transform: uppercase; }
+
 /* ------------------------------------------------------------------ charts */
 
 .charts { margin-top: 12px; }
@@ -226,42 +323,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .c-won { color: var(--ok); }
 .c-open { color: var(--brand); }
 
-/* ------------------------------------------------------------------ dark mode */
-
-@media (prefers-color-scheme: dark) {
-  :root { 
-    --bg: #0f1115; 
-    --card: #16181d; 
-    --line: #272a30; 
-    --text: #e9eaee; 
-    --muted: #9aa1ad;
-    --brand: #815afc;
-    --brand-light: #24223d;
-  }
-  
-  .card, .lead { border-color: var(--line); box-shadow: none; background: var(--card); }
-  .card h2 { color: var(--text); }
-  
-  input, select, textarea {
-    background: #1c1e24;
-    color: var(--text);
-    -webkit-text-fill-color: var(--text);
-    border-color: var(--line);
-    color-scheme: dark;
-  }
-  
-  .pill { background: #22252a; }
-  .row button, .chips button, .btn.ghost { background: #22252a; color: var(--text); }
-  .row button:hover, .chips button:hover { background: #2d3038; }
-  
-  .ch-bar-wrap { background: #22252a; }
-  .tl > div::before { border-color: var(--card); }
-  
-  header button { background: var(--card); border-color: var(--line); }
-  header button:hover { background: #22252a; }
-  
-  nav { border-top-color: var(--line); }
-  @media (min-width: 768px) {
-    nav { border-right-color: var(--line); border-top: none; }
-  }
+/* Always light — cream theme, no dark mode override */
+input, select, textarea {
+  color-scheme: light;
+  -webkit-text-fill-color: var(--text);
 }
+.input-line input { color-scheme: light; -webkit-text-fill-color: var(--text); }

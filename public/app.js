@@ -51,22 +51,63 @@ function dueLabel(lead) {
 function loginView() {
   hdr.classList.add('hide');
   nav.classList.add('hide');
+  document.body.style.paddingBottom = '0';
+  view.style.padding = '0';
   view.innerHTML = `
-    <form id="lf" style="margin-top:40px">
-      <div class="card">
-        <h2>Follow-up CRM</h2>
-        <label>Username</label>
-        <input id="u" autocapitalize="none" autocomplete="username">
-        <label>Password</label>
-        <input id="p" type="password" autocomplete="current-password">
-        <button class="btn" type="submit">Sign in</button>
-        <div id="msg"></div>
+    <div class="login-wrap">
+      <div class="login-card">
+        <img src="logo.png" class="login-logo-img" alt="Logo" onerror="this.style.display='none'">
+        <h2 id="loginTitle" style="min-height:1.4em">&nbsp;</h2>
+
+        <form id="lf">
+          <div class="input-line">
+            <span class="ico">✉</span>
+            <input id="u" placeholder="Username" autocapitalize="none" autocomplete="username">
+          </div>
+          <div class="input-line">
+            <span class="ico">🔒</span>
+            <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+            <button type="button" class="eye" id="togglePw">👁</button>
+          </div>
+          <button class="btn-login" type="submit">Sign in</button>
+          <div id="msg" style="margin-top:16px;font-size:14px;color:#ef4444;text-align:center;min-height:20px"></div>
+        </form>
       </div>
-    </form>`;
+    </div>`;
+
+  // Typewriter animation for heading
+  (() => {
+    const el = document.getElementById('loginTitle');
+    if (!el) return;
+    const text = 'Welcome back';
+    let i = 0;
+    el.textContent = '';
+    el.style.borderRight = '2px solid var(--brand)';
+    const tick = setInterval(() => {
+      if (i < text.length) { el.textContent += text[i++]; return; }
+      clearInterval(tick);
+      let on = true;
+      setInterval(() => { el.style.borderRightColor = (on = !on) ? 'var(--brand)' : 'transparent'; }, 530);
+    }, 80);
+  })();
+
+  document.getElementById('togglePw').onclick = () => {
+    const p = document.getElementById('p');
+    p.type = p.type === 'password' ? 'text' : 'password';
+  };
   document.getElementById('lf').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api('/login', 'POST', { username: val('u'), password: document.getElementById('p').value }); boot(); }
-    catch (err) { say(err.message); }
+    const btn = e.target.querySelector('.btn-login');
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      await api('/login', 'POST', { username: val('u'), password: document.getElementById('p').value });
+      document.body.style.paddingBottom = '';
+      view.style.padding = '';
+      boot();
+    } catch (err) {
+      document.getElementById('msg').textContent = err.message;
+      btn.disabled = false; btn.textContent = 'Sign in';
+    }
   };
 }
 
@@ -75,7 +116,7 @@ function loginView() {
 const TABS = {
   admin: [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
-  sales: [['fresh', 'Fresh', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
+  sales: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
 };
 
 async function boot() {
@@ -84,8 +125,12 @@ async function boot() {
 
   hdr.classList.remove('hide');
   nav.classList.remove('hide');
-  document.getElementById('hdrUser').textContent =
-    `${me.name} · ${{ admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer' }[me.role]}`;
+  if (me.role !== 'sales') {
+    document.getElementById('hdrUser').textContent =
+      `${me.name} · ${{ admin: 'Admin', marketing: 'Marketing' }[me.role]}`;
+  } else {
+    document.getElementById('hdrUser').textContent = '';
+  }
 
   nav.innerHTML = TABS[me.role]
     .map(([k, label, icon]) => `<button data-t="${k}"><b>${icon}</b><span class="lbl">${label}</span></button>`).join('') +
@@ -271,18 +316,45 @@ function newLeadView() {
 
 /* ------------------------------------------------------------------- leads */
 
+function kpiRow(cards) {
+  return `<div class="kpi-row">${cards.map(c =>
+    `<div class="kpi-card kpi-${c.col}"><div class="kpi-num">${c.num}</div><div class="kpi-lbl">${c.lbl}</div></div>`
+  ).join('')}</div>`;
+}
+
 async function leadsView() {
   const t = tab === 'leads' ? 'all' : tab;
   view.innerHTML = '<div class="empty">Loading…</div>';
-  const leads = await api('/leads?tab=' + t);
+  const [leads, stats] = await Promise.all([api('/leads?tab=' + t), api('/leads/stats')]);
+
+  const kpi = {
+    fresh: kpiRow([
+      { num: leads.length,  lbl: 'Fresh Leads', col: 'brand' },
+      { num: stats.booked,  lbl: 'Booked',      col: 'ok'    },
+      { num: stats.retailed,lbl: 'Retailed',     col: 'ok'    },
+      { num: stats.lost,    lbl: 'Lost',         col: 'bad'   },
+    ]),
+    today: kpiRow([
+      { num: leads.length,      lbl: "Today's Follow-ups", col: 'brand' },
+      { num: stats.booked,      lbl: 'Booked',             col: 'ok'    },
+      { num: stats.retailed,    lbl: 'Retailed',           col: 'ok'    },
+      { num: stats.lost,        lbl: 'Lost',               col: 'bad'   },
+    ]),
+    all: kpiRow([
+      { num: stats.total,   lbl: 'All Leads', col: 'brand' },
+      { num: stats.booked,  lbl: 'Booked',    col: 'ok'    },
+      { num: stats.retailed,lbl: 'Retailed',  col: 'ok'    },
+      { num: stats.lost,    lbl: 'Lost',      col: 'bad'   },
+    ]),
+  }[t] || '';
 
   if (!leads.length) {
     const blank = { fresh: 'No fresh leads right now.', today: 'Nothing due today. Nice work.', all: 'No leads yet.' };
-    view.innerHTML = `<div class="empty">${blank[t]}</div>`;
+    view.innerHTML = kpi + `<div class="empty">${blank[t]}</div>`;
     return;
   }
 
-  view.innerHTML = leads.map(l => `
+  view.innerHTML = kpi + leads.map(l => `
     <button class="card lead" data-id="${l.id}">
       <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
       <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
@@ -311,8 +383,6 @@ async function openLead(id) {
       <div class="kv"><b>Model</b><span>${esc(l.model || '—')}</span></div>
       <div class="kv"><b>Activity</b><span>${esc(l.activity || '—')}</span></div>
       <div class="kv"><b>Officer</b><span>${esc(l.officer || 'Unassigned')}</span></div>
-      <div class="kv"><b>Added by</b><span>${esc(l.created_by_name)} · ${esc(l.created_at)}</span></div>
-      <div class="kv"><b>Status</b><span>${l.status === 'closed' ? 'Closed — ' + esc(l.stage) : dueLabel(l)}</span></div>
     </div>
 
     ${l.salesforce_history && l.salesforce_history.length ? `
@@ -342,9 +412,16 @@ async function openLead(id) {
         <label>Outcome <span class="req">*</span></label>
         <div class="chips" id="out"></div>
       </div>
-      <div id="dateWrap">
-        <label>Next follow-up date <span class="req">*</span>
-          <em>(today to ${me.maxDate})</em></label>
+      <div id="orderWrap" class="hide">
+        <label>Order ID <span class="req">*</span></label>
+        <input id="orderId" placeholder="Enter order ID">
+      </div>
+      <div id="tallyWrap" class="hide">
+        <label>Tally Receipt No. <span class="req">*</span></label>
+        <input id="tallyNo" placeholder="Enter tally receipt number">
+      </div>
+      <div id="dateWrap" class="hide">
+        <label>Next follow-up date <span class="req">*</span></label>
         <input id="nd" type="date" min="${me.today}" max="${me.maxDate}" value="${me.today}">
       </div>
       <div id="oscWrap" class="hide">
@@ -367,10 +444,11 @@ async function openLead(id) {
   sheet.querySelector('#x').onclick = close;
   if (!canAct) return;
 
-  const CLOSING = ['Booking Done', 'Retail Done', 'Not Interested'];
+  const NO_DATE   = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
+  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Need time': 'green', 'Not Interested': 'green' };
   let call = '', outcome = '';
 
-  const pick = (wrap, value, onPick) => {
+  const pick = (wrap, onPick) => {
     wrap.querySelectorAll('button').forEach(b =>
       b.onclick = () => {
         wrap.querySelectorAll('button').forEach(x => x.classList.remove('on'));
@@ -379,32 +457,44 @@ async function openLead(id) {
       });
   };
 
-  pick(sheet.querySelector('#cs'), null, (v) => {
+  pick(sheet.querySelector('#cs'), (v) => {
     call = v; outcome = '';
     const out = sheet.querySelector('#out');
-    out.innerHTML = me.outcomes[v].map(o => `<button data-v="${o}">${o}</button>`).join('');
+    out.innerHTML = me.outcomes[v].map(o => {
+      const c = OUT_COLOR[o] || '';
+      return `<button data-v="${esc(o)}"${c ? ` data-color="${c}"` : ''}>${esc(o)}</button>`;
+    }).join('');
     sheet.querySelector('#outWrap').classList.remove('hide');
-    sheet.querySelector('#oscWrap')?.classList.toggle('hide', v !== 'Connected');
-    sheet.querySelector('#extra')?.classList.add('hide');
-    sheet.querySelector('#dateWrap').classList.remove('hide');
-    pick(out, null, (o) => {
+    sheet.querySelector('#oscWrap').classList.toggle('hide', v !== 'Connected');
+    sheet.querySelector('#dateWrap').classList.add('hide');
+    sheet.querySelector('#orderWrap').classList.add('hide');
+    sheet.querySelector('#tallyWrap').classList.add('hide');
+    pick(out, (o) => {
       outcome = o;
-      sheet.querySelector('#dateWrap').classList.toggle('hide', CLOSING.includes(o));
+      const skipDate = NO_DATE.has(o);
+      sheet.querySelector('#dateWrap').classList.toggle('hide', skipDate);
+      sheet.querySelector('#orderWrap').classList.toggle('hide', o !== 'Booking Done');
+      sheet.querySelector('#tallyWrap').classList.toggle('hide', o !== 'Retail Done');
     });
   });
 
   sheet.querySelector('#submit').onclick = async (e) => {
-    if (!call) return say('Select Connected or Not Connected');
+    if (!call)    return say('Select Connected or Not Connected');
     if (!outcome) return say('Select an outcome');
-    const closing = CLOSING.includes(outcome);
+    const skipDate = NO_DATE.has(outcome);
     const nd = sheet.querySelector('#nd').value;
-    if (!closing && !nd) return say('Next follow-up date is required');
+    if (!skipDate && !nd) return say('Next follow-up date is required');
+    if (outcome === 'Booking Done' && !sheet.querySelector('#orderId').value.trim()) return say('Order ID is required');
+    if (outcome === 'Retail Done'  && !sheet.querySelector('#tallyNo').value.trim())  return say('Tally Receipt No. is required');
 
     e.target.disabled = true;
     try {
       await api(`/leads/${l.id}/followup`, 'POST', {
-        call_status: call, outcome, next_date: closing ? null : nd,
-        remarks: sheet.querySelector('#rm').value.trim(),
+        call_status: call, outcome,
+        next_date:     skipDate ? null : nd,
+        order_id:      outcome === 'Booking Done' ? sheet.querySelector('#orderId').value.trim() : undefined,
+        tally_receipt: outcome === 'Retail Done'  ? sheet.querySelector('#tallyNo').value.trim()  : undefined,
+        remarks:       sheet.querySelector('#rm').value.trim(),
         other_so_called: call === 'Connected' ? sheet.querySelector('#osc').value : '',
       });
       close();

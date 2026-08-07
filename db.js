@@ -84,6 +84,8 @@ const DDL = [
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS model_id    INTEGER REFERENCES models(id)`,
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS activity_id INTEGER REFERENCES activities(id)`,
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS other_so_called TEXT`,
+  `ALTER TABLE followups ADD COLUMN IF NOT EXISTS order_id TEXT`,
+  `ALTER TABLE followups ADD COLUMN IF NOT EXISTS tally_receipt TEXT`,
   `CREATE TABLE IF NOT EXISTS salesforce_calls (
     id SERIAL PRIMARY KEY,
     mobile TEXT NOT NULL,

@@ -9,10 +9,11 @@ if (!existsSync('.secret')) writeFileSync('.secret', randomBytes(32).toString('h
 const SECRET = readFileSync('.secret', 'utf8').trim();
 
 export const OUTCOMES = {
-  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Not Interested'],
+  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Need time', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
   'Not Connected': ['RNR', 'Switch Off', 'Call Me Back'],
 };
-const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested']);
+const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
+const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
 const MAX_DAYS_AHEAD = 3;
 
 const app = express();
@@ -266,6 +267,25 @@ app.get('/api/leads', auth(), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.get('/api/leads/stats', auth(), async (req, res, next) => {
+  try {
+    const isSales = req.user.role === 'sales';
+    const isMkt   = req.user.role === 'marketing';
+    const filt    = isSales ? 'AND l.assigned_to = ?' : isMkt ? 'AND l.created_by = ?' : '';
+    const args    = (isSales || isMkt) ? [today(), req.user.id] : [today()];
+    const row = await get(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS fresh,
+        COUNT(*) FILTER (WHERE l.status = 'open' AND l.fcount > 0 AND l.next_date <= ?)::int AS today_count,
+        COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+        COUNT(*) FILTER (WHERE l.stage = 'Retail Done'  AND l.status = 'closed')::int AS retailed,
+        COUNT(*) FILTER (WHERE l.stage = 'Lost Lead'    AND l.status = 'closed')::int AS lost
+      FROM leads l WHERE 1=1 ${filt}`, ...args);
+    res.json(row || { total:0, fresh:0, today_count:0, booked:0, retailed:0, lost:0 });
+  } catch (e) { next(e); }
+});
+
 app.get('/api/leads/:id', auth(), async (req, res, next) => {
   try {
     const lead = await get(`${LEAD_SELECT} WHERE l.id = ?`, Number(req.params.id));
@@ -300,11 +320,15 @@ app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, nex
       return res.status(403).json({ error: 'Not your lead' });
     if (lead.status !== 'open') return bad(res, 'This lead is already closed');
 
-    const { call_status, outcome, next_date, remarks, model_id, activity_id, other_so_called } = req.body || {};
+    const { call_status, outcome, next_date, remarks, model_id, activity_id, other_so_called, order_id, tally_receipt } = req.body || {};
     if (!OUTCOMES[call_status]) return bad(res, 'Select Connected or Not Connected');
     if (!OUTCOMES[call_status].includes(outcome)) return bad(res, 'Select a valid outcome');
 
+    if (outcome === 'Booking Done' && !String(order_id || '').trim()) return bad(res, 'Order ID is required');
+    if (outcome === 'Retail Done' && !String(tally_receipt || '').trim()) return bad(res, 'Tally Receipt No. is required');
+
     const closing = CLOSING.has(outcome);
+    const isLost  = LOST.has(outcome);
     let nd = null;
     if (!closing) {
       nd = String(next_date || '').trim();
@@ -314,17 +338,19 @@ app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, nex
         return bad(res, `Next follow-up date cannot be later than ${addDays(today(), MAX_DAYS_AHEAD)}`);
     }
 
-    const seq = lead.fcount + 1;
+    const seq   = lead.fcount + 1;
+    const stage = isLost ? 'Lost Lead' : outcome;
     await run(
-      `INSERT INTO followups (lead_id, user_id, seq, call_status, outcome, model_id, activity_id, next_date, remarks, other_so_called)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO followups (lead_id, user_id, seq, call_status, outcome, model_id, activity_id, next_date, remarks, other_so_called, order_id, tally_receipt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       lead.id, req.user.id, seq, call_status, outcome,
       model_id ? Number(model_id) : null, activity_id ? Number(activity_id) : null,
       nd, remarks?.trim() || null, other_so_called?.trim() || null,
+      order_id?.trim() || null, tally_receipt?.trim() || null,
     );
     await run(
       `UPDATE leads SET fcount = ?, stage = ?, next_date = ?, status = ? WHERE id = ?`,
-      seq, outcome, nd, closing ? 'closed' : 'open', lead.id,
+      seq, stage, nd, closing ? 'closed' : 'open', lead.id,
     );
     res.json({ ok: true, seq, closed: closing });
   } catch (e) { next(e); }
