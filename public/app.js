@@ -264,7 +264,7 @@ function newLeadView() {
         model_id: val('ml') || null, activity_id: val('ac') || null,
       });
       newLeadView();
-      say(r.warning || 'Lead saved and assigned to the branch sales officer.', r.warning ? 'err' : 'ok');
+      say(r.warning || (r.officerName ? `Lead saved and assigned to ${r.officerName}.` : 'Lead saved and assigned.'), r.warning ? 'err' : 'ok');
     } catch (err) { say(err.message); e.target.disabled = false; }
   };
 }

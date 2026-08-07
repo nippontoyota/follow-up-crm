@@ -223,9 +223,15 @@ app.post('/api/leads', auth('marketing', 'admin'), async (req, res, next) => {
       location?.trim() || null, remarks?.trim() || null, req.user.id, assigned,
       model_id ? Number(model_id) : null, activity_id ? Number(activity_id) : null,
     );
+    let officerName = null;
+    if (assigned) {
+      const u = await get('SELECT name FROM users WHERE id=?', assigned);
+      officerName = u?.name;
+    }
     res.json({
       id,
       assigned: assigned !== null,
+      officerName,
       warning: assigned === null ? 'Saved, but no active sales officer in that branch yet.' : null,
     });
   } catch (e) { next(e); }
