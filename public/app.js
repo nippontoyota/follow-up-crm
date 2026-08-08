@@ -675,7 +675,7 @@ async function openLead(id) {
   if (!canAct) return;
 
   const NO_DATE   = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
-  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Need time': 'green', 'Not Interested': 'green' };
+  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue' };
   let call = '', outcome = '';
 
   const pick = (wrap, onPick) => {
