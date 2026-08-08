@@ -431,23 +431,36 @@ async function leadsView() {
   }[t] || '';
 
   const isBulkAdmin = (me.role === 'admin' && t === 'all');
-  const bulkBtn = isBulkAdmin ? `
-    <div style="display:flex; justify-content: flex-end; margin-bottom: 16px;">
-      <input type="file" id="bulkFile" accept=".xlsx, .xls" style="display:none">
-      <button class="btn ghost" style="width:auto; margin:0; padding:8px 16px; font-size:13px;" onclick="document.getElementById('bulkFile').click()">Bulk Upload Leads</button>
+  const searchHtml = `
+    <div style="display:flex; justify-content: flex-end; align-items: center; margin-bottom: 16px; gap: 8px; flex-wrap: wrap;">
+      <input type="text" id="leadSearch" placeholder="Search leads..." style="margin:0; max-width: 300px; padding: 8px 12px; font-size: 14px; flex: 1; min-width: 200px;">
+      ${isBulkAdmin ? `
+        <input type="file" id="bulkFile" accept=".xlsx, .xls" style="display:none">
+        <button class="btn ghost" style="width:auto; margin:0; padding:8px 16px; font-size:13px;" onclick="document.getElementById('bulkFile').click()">Bulk Upload Leads</button>
+      ` : ''}
     </div>
-  ` : '';
+  `;
 
   if (!leads.length) {
     const blank = { fresh: 'No fresh leads right now.', today: 'Nothing due today. Nice work.', all: 'No leads yet.' };
-    view.innerHTML = kpi + bulkBtn + `<div class="empty">${blank[t]}</div>`;
+    view.innerHTML = kpi + searchHtml + `<div class="empty">${blank[t]}</div>`;
   } else {
-    view.innerHTML = kpi + bulkBtn + leads.map(l => `
+    view.innerHTML = kpi + searchHtml + leads.map(l => `
       <button class="card lead" data-id="${l.id}">
         <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
         <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
         <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
       </button>`).join('');
+  }
+
+  const sInput = document.getElementById('leadSearch');
+  if (sInput) {
+    sInput.oninput = (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      view.querySelectorAll('.lead').forEach(b => {
+        b.style.display = b.textContent.toLowerCase().includes(q) ? 'block' : 'none';
+      });
+    };
   }
 
   view.querySelectorAll('.lead').forEach(b => b.onclick = () => openLead(b.dataset.id));
