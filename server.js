@@ -6,7 +6,7 @@ import { pool, get, all, run, ins, hash, verify, initDb } from './db.js';
 const PORT = process.env.PORT || 3000;
 
 if (!existsSync('.secret')) writeFileSync('.secret', randomBytes(32).toString('hex'));
-const SECRET = readFileSync('.secret', 'utf8').trim();
+const SECRET = process.env.SESSION_SECRET || readFileSync('.secret', 'utf8').trim();
 
 export const OUTCOMES = {
   'Connected':     ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Need time', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
