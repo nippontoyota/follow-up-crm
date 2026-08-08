@@ -9,8 +9,8 @@ if (!existsSync('.secret')) writeFileSync('.secret', randomBytes(32).toString('h
 const SECRET = process.env.SESSION_SECRET || readFileSync('.secret', 'utf8').trim();
 
 export const OUTCOMES = {
-  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Need time', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
-  'Not Connected': ['RNR', 'Switch Off', 'Call Me Back'],
+  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
+  'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number'],
 };
 const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
 const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
