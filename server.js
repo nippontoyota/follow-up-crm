@@ -153,7 +153,7 @@ app.post('/api/salesforce-validate', auth('admin'), async (req, res, next) => {
       const m = String(r.mobile).replace(/\D/g, '').slice(-10);
       if (m.length < 10) continue;
       
-      const mapped = { mobile: m, so_name: String(r.so_name).trim(), so_mobile: r.so_mobile ? String(r.so_mobile).trim() : null, status: r.status ? String(r.status).trim() : null };
+      const mapped = { mobile: m, so_name: String(r.so_name).trim(), so_mobile: r.so_mobile ? String(r.so_mobile).trim() : null };
       
       if (seen.has(m) || existingMobiles.has(m)) {
         duplicates.push(mapped);
@@ -174,14 +174,13 @@ app.post('/api/salesforce-upload', auth('admin'), async (req, res, next) => {
       if (!r.mobile || !r.so_name) continue;
       try {
         await run(`
-          INSERT INTO salesforce_calls (mobile, so_name, so_mobile, status, created_at) 
-          VALUES (?, ?, ?, ?, TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
+          INSERT INTO salesforce_calls (mobile, so_name, so_mobile, created_at) 
+          VALUES (?, ?, ?, TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
           ON CONFLICT (mobile) DO UPDATE SET 
             so_name = EXCLUDED.so_name,
             so_mobile = EXCLUDED.so_mobile,
-            status = EXCLUDED.status,
             created_at = EXCLUDED.created_at
-        `, r.mobile, r.so_name, r.so_mobile, r.status);
+        `, r.mobile, r.so_name, r.so_mobile);
         processed++;
       } catch (e) {
         if (e.code !== '23505') throw e;
@@ -441,7 +440,7 @@ app.get('/api/leads/:id', auth(), async (req, res, next) => {
       lead.id,
     );
     lead.salesforce_history = await all(
-      `SELECT so_name, so_mobile, status, created_at FROM salesforce_calls WHERE mobile = ? ORDER BY id DESC`,
+      `SELECT so_name, so_mobile, created_at FROM salesforce_calls WHERE mobile = ? ORDER BY id DESC`,
       lead.mobile
     );
     res.json(lead);

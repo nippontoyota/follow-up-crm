@@ -216,7 +216,7 @@ async function listsView() {
   view.innerHTML = `
     <div class="card" style="background:var(--brand-light); border: 1px solid var(--brand); box-shadow:none;">
       <h2 style="color:var(--brand); margin-bottom: 4px;">Salesforce Analytics Sync</h2>
-      <label style="margin-top:0; margin-bottom:12px; color:var(--muted)">Upload .xlsx sheet (needs Mobile & SO Name columns).</label>
+      <label style="margin-top:0; margin-bottom:12px; color:var(--muted)">Upload .xlsx sheet (needs Mobile, SO Name & SO Mobile columns).</label>
       <div class="grid2">
         <input type="file" id="sfFile" accept=".xlsx, .xls">
         <button class="btn" id="sfUpload">Upload</button>
@@ -253,8 +253,7 @@ async function listsView() {
       const records = data.map(r => ({
         mobile: r.Mobile || r['Mobile Number'] || r.Phone || r.UID || r.uid || r.Contact,
         so_name: r['SO Name'] || r.SO || r.Name || r['Sales Officer'] || r.Caller,
-        so_mobile: r['SO Mobile'] || r['SO Mobile Number'] || r.so_mobile || '',
-        status: r.Status || r.Outcome || r.stage || ''
+        so_mobile: r['SO Mobile'] || r['SO Mobile Number'] || r.so_mobile || ''
       })).filter(r => r.mobile && r.so_name);
       
       show(`Validating ${records.length} records...`, false);
@@ -309,7 +308,7 @@ function showSfReviewSheet(valid, duplicates) {
         <div class="card" data-idx="${i}" style="border-left: 3px solid var(--bad); display: flex; justify-content: space-between; align-items: center;">
           <div>
             <div style="font-size:14px; font-weight:600; margin-bottom:4px;">${esc(l.mobile)}</div>
-            <div style="font-size:13px; color:var(--muted);">New SO: ${esc(l.so_name)} · Status: ${esc(l.status || 'None')}</div>
+            <div style="font-size:13px; color:var(--muted);">New SO: ${esc(l.so_name)}</div>
           </div>
           <div>
             <input type="checkbox" class="accept-cb" style="width:24px; height:24px; cursor:pointer;" checked>
