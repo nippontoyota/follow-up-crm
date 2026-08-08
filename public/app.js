@@ -219,7 +219,7 @@ async function listsView() {
       <label style="margin-top:0; margin-bottom:12px; color:var(--muted)">Upload .xlsx sheet (needs Mobile & SO Name columns).</label>
       <div class="grid2">
         <input type="file" id="sfFile" accept=".xlsx, .xls">
-        <button class="btn row" id="sfUpload">Upload</button>
+        <button class="btn" id="sfUpload">Upload</button>
       </div>
       <div id="sfMsg" class="msg" style="display:none; margin-top:12px"></div>
     </div>
