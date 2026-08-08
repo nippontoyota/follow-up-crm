@@ -613,9 +613,12 @@ async function openLead(id) {
 
     ${l.salesforce_history && l.salesforce_history.length ? `
       <div class="card" style="background:#fff3e0; border-color:#ffb74d">
-        <h2 style="color:#e65100; margin-bottom:8px">⚠️ Salesforce History</h2>
+        <h2 style="color:#e65100; margin-bottom:8px">⚠️ Sales consultant info</h2>
         <div class="tl">${l.salesforce_history.map(sh => `
-          <div><b>${esc(sh.so_name)}</b> ${sh.so_mobile ? `· <a href="tel:${esc(sh.so_mobile)}">${esc(sh.so_mobile)}</a> ` : ''}${sh.status ? `· ${esc(sh.status)}` : ''} <em>(Uploaded ${sh.created_at.split(' ')[0]})</em></div>
+          <div style="margin-bottom:8px">
+            <div><b>Consultant:</b> ${esc(sh.so_name)}</div>
+            ${sh.so_mobile ? `<div><b>Phone no:</b> <a href="tel:${esc(sh.so_mobile)}">${esc(sh.so_mobile)}</a></div>` : ''}
+          </div>
         `).join('')}</div>
       </div>
     ` : ''}
