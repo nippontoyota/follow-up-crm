@@ -88,12 +88,15 @@ const DDL = [
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS tally_receipt TEXT`,
   `CREATE TABLE IF NOT EXISTS salesforce_calls (
     id SERIAL PRIMARY KEY,
-    mobile TEXT NOT NULL,
+    mobile TEXT NOT NULL UNIQUE,
     so_name TEXT NOT NULL,
+    so_mobile TEXT,
     status TEXT,
-    created_at TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
-    UNIQUE(mobile, so_name, status)
+    created_at TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS')
   )`,
+  `ALTER TABLE salesforce_calls ADD COLUMN IF NOT EXISTS so_mobile TEXT`,
+  `ALTER TABLE salesforce_calls DROP CONSTRAINT IF EXISTS salesforce_calls_mobile_so_name_status_key`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_salesforce_calls_mobile ON salesforce_calls(mobile)`,
 ];
 
 export async function initDb() {
