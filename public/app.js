@@ -574,6 +574,7 @@ async function openLead(id) {
           <option value="Yes">Yes</option>
           <option value="No">No</option>
         </select>
+        <input id="oscName" class="hide" style="margin-top:8px" placeholder="Enter the SO's name">
       </div>
       <label>Remarks</label><textarea id="rm"></textarea>
       <button class="btn" id="submit">Save follow-up</button>
@@ -599,6 +600,18 @@ async function openLead(id) {
         onPick(b.dataset.v);
       });
   };
+
+  const oscSelect = sheet.querySelector('#osc');
+  const oscName = sheet.querySelector('#oscName');
+  if (oscSelect && oscName) {
+    oscSelect.onchange = () => {
+      const isYes = oscSelect.value === 'Yes';
+      oscName.classList.toggle('hide', !isYes);
+      if (isYes && !oscName.value && l.salesforce_history && l.salesforce_history.length > 0) {
+        oscName.value = l.salesforce_history[0].so_name;
+      }
+    };
+  }
 
   pick(sheet.querySelector('#cs'), (v) => {
     call = v; outcome = '';
@@ -630,6 +643,17 @@ async function openLead(id) {
     if (outcome === 'Booking Done' && !sheet.querySelector('#orderId').value.trim()) return say('Order ID is required');
     if (outcome === 'Retail Done'  && !sheet.querySelector('#tallyNo').value.trim())  return say('Tally Receipt No. is required');
 
+    let oscValue = '';
+    if (call === 'Connected') {
+      const oscSel = sheet.querySelector('#osc').value;
+      if (oscSel === 'Yes') {
+        oscValue = sheet.querySelector('#oscName').value.trim();
+        if (!oscValue) return say("Please enter the name of the SO who called.");
+      } else {
+        oscValue = oscSel;
+      }
+    }
+
     e.target.disabled = true;
     try {
       await api(`/leads/${l.id}/followup`, 'POST', {
@@ -638,7 +662,7 @@ async function openLead(id) {
         order_id:      outcome === 'Booking Done' ? sheet.querySelector('#orderId').value.trim() : undefined,
         tally_receipt: outcome === 'Retail Done'  ? sheet.querySelector('#tallyNo').value.trim()  : undefined,
         remarks:       sheet.querySelector('#rm').value.trim(),
-        other_so_called: call === 'Connected' ? sheet.querySelector('#osc').value : '',
+        other_so_called: oscValue,
       });
       close();
       leadsView();
