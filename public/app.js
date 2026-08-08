@@ -348,20 +348,163 @@ async function leadsView() {
     ]),
   }[t] || '';
 
+  const isBulkAdmin = (me.role === 'admin' && t === 'all');
+  const bulkBtn = isBulkAdmin ? `
+    <div style="display:flex; justify-content: flex-end; margin-bottom: 16px;">
+      <input type="file" id="bulkFile" accept=".xlsx, .xls" style="display:none">
+      <button class="btn ghost" style="width:auto; margin:0; padding:8px 16px; font-size:13px;" onclick="document.getElementById('bulkFile').click()">Bulk Upload Leads</button>
+    </div>
+  ` : '';
+
   if (!leads.length) {
     const blank = { fresh: 'No fresh leads right now.', today: 'Nothing due today. Nice work.', all: 'No leads yet.' };
-    view.innerHTML = kpi + `<div class="empty">${blank[t]}</div>`;
-    return;
+    view.innerHTML = kpi + bulkBtn + `<div class="empty">${blank[t]}</div>`;
+  } else {
+    view.innerHTML = kpi + bulkBtn + leads.map(l => `
+      <button class="card lead" data-id="${l.id}">
+        <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
+        <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
+        <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
+      </button>`).join('');
   }
 
-  view.innerHTML = kpi + leads.map(l => `
-    <button class="card lead" data-id="${l.id}">
-      <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
-      <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
-      <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
-    </button>`).join('');
-
   view.querySelectorAll('.lead').forEach(b => b.onclick = () => openLead(b.dataset.id));
+  
+  if (isBulkAdmin) {
+    const fb = document.getElementById('bulkFile');
+    if (fb) fb.onchange = handleBulkUpload;
+  }
+}
+
+let bulkValid = [];
+let bulkInvalid = [];
+
+async function handleBulkUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+
+  say('Parsing file...', 'ok');
+  try {
+    const buf = await file.arrayBuffer();
+    if (typeof XLSX === 'undefined') throw new Error('SheetJS library failed to load');
+    const wb = XLSX.read(buf);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws);
+
+    const records = data.map(r => {
+      let branch = null, source = null, mobile = null, customer_name = null;
+      let model = null, activity = null, location = null, remarks = null;
+      for (const key of Object.keys(r)) {
+        const k = key.toLowerCase().trim();
+        const v = r[key];
+        if (k.includes('branch')) branch = v;
+        else if (k.includes('source')) source = v;
+        else if (k.includes('mobile') || k.includes('phone') || k === 'uid' || k === 'contact') mobile = String(v).replace(/\D/g, '').slice(-10);
+        else if (k.includes('customer') || k.includes('name')) customer_name = v;
+        else if (k.includes('model')) model = v;
+        else if (k.includes('activity')) activity = v;
+        else if (k.includes('location')) location = v;
+        else if (k.includes('remark')) remarks = v;
+      }
+      return { branch, source, mobile, customer_name, model, activity, location, remarks };
+    }).filter(r => r.mobile || r.customer_name);
+
+    if (!records.length) throw new Error('No valid rows found in sheet');
+
+    say('Validating leads...', 'ok');
+    const res = await api('/leads/bulk-validate', 'POST', records);
+    bulkValid = res.valid || [];
+    bulkInvalid = res.invalid || [];
+    
+    showBulkReviewSheet();
+  } catch(err) {
+    say(err.message, 'err');
+  }
+}
+
+function showBulkReviewSheet() {
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="x">Cancel</button></div>
+    <div class="card">
+      <h2>Bulk Upload Review</h2>
+      <p><b>${bulkValid.length}</b> leads are ready to import.</p>
+      ${bulkInvalid.length ? `<p style="color:var(--bad)"><b>${bulkInvalid.length}</b> leads have errors (typos or missing data). Please fix them below or they will be skipped.</p>` : ''}
+    </div>
+    
+    ${bulkInvalid.length ? `<div id="invalidList">
+      ${bulkInvalid.map((l, i) => `
+        <div class="card" data-idx="${i}" style="border-left: 3px solid var(--bad)">
+          <div style="font-size:14px; font-weight:600; margin-bottom:4px;">${esc(l.customer_name || '(No name)')} <span style="font-weight:400; color:var(--muted); font-size:13px">· ${esc(l.mobile || '(No mobile)')}</span></div>
+          ${l.err_missing ? `<div class="msg err" style="margin-top:0; margin-bottom:12px; padding:6px 10px; font-size:12px;">Missing required fields (Name, Mobile, Branch, or Source)</div>` : ''}
+          <div class="kpi-row" style="grid-template-columns: 1fr 1fr; margin-bottom:0; text-align:left;">
+            <div><label style="margin-top:0">Branch ${l.err_branch ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.branch)+')</span>' : ''}</label>
+                 <select class="fix-br" ${l.err_branch ? 'style="border-color:var(--bad)"' : ''}>${options(masters.branches, l.branch_id)}</select></div>
+            <div><label style="margin-top:0">Source ${l.err_source ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.source)+')</span>' : ''}</label>
+                 <select class="fix-so" ${l.err_source ? 'style="border-color:var(--bad)"' : ''}>${options(masters.sources, l.source_id)}</select></div>
+            <div><label>Model ${l.err_model ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.model)+')</span>' : ''}</label>
+                 <select class="fix-mo" ${l.err_model ? 'style="border-color:var(--bad)"' : ''}>${options(masters.models, l.model_id)}</select></div>
+            <div><label>Activity ${l.err_activity ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.activity)+')</span>' : ''}</label>
+                 <select class="fix-ac" ${l.err_activity ? 'style="border-color:var(--bad)"' : ''}>${options(masters.activities, l.activity_id)}</select></div>
+          </div>
+        </div>
+      `).join('')}
+    </div>` : ''}
+
+    <div class="card">
+      <button class="btn" id="confirmBulk">Confirm & Auto-Assign</button>
+      <div id="msg"></div>
+    </div>
+  </div></div>`);
+
+  document.body.appendChild(sheet);
+  const close = () => { sheet.remove(); bulkValid = []; bulkInvalid = []; };
+  sheet.querySelector('#x').onclick = close;
+
+  sheet.querySelector('#confirmBulk').onclick = async (e) => {
+    const fixed = [];
+    
+    sheet.querySelectorAll('#invalidList .card').forEach(card => {
+      const idx = card.dataset.idx;
+      const original = bulkInvalid[idx];
+      const br = card.querySelector('.fix-br').value;
+      const so = card.querySelector('.fix-so').value;
+      const mo = card.querySelector('.fix-mo').value;
+      const ac = card.querySelector('.fix-ac').value;
+      
+      if (br && so && original.customer_name && original.mobile && original.mobile.length === 10) {
+        fixed.push({
+          ...original,
+          branch_id: Number(br),
+          source_id: Number(so),
+          model_id: mo ? Number(mo) : null,
+          activity_id: ac ? Number(ac) : null
+        });
+      }
+    });
+
+    const totalToAssign = [...bulkValid, ...fixed];
+    if (!totalToAssign.length) {
+      const msgEl = sheet.querySelector('#msg');
+      if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'No valid leads to assign.'; }
+      return;
+    }
+
+    e.target.disabled = true;
+    e.target.textContent = 'Assigning...';
+    try {
+      const res = await api('/leads/bulk-assign', 'POST', totalToAssign);
+      close();
+      say(`Successfully imported & assigned ${res.added} leads!`, 'ok');
+      leadsView();
+    } catch (err) {
+      const m = sheet.querySelector('#msg');
+      if (m) { m.className = 'msg err'; m.textContent = err.message; }
+      else alert(err.message);
+      e.target.disabled = false;
+      e.target.textContent = 'Confirm & Auto-Assign';
+    }
+  };
 }
 
 /* ---------------------------------------------------------- lead detail sheet */

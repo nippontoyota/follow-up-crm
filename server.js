@@ -238,6 +238,91 @@ app.post('/api/leads', auth('marketing', 'admin'), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
+  try {
+    const rows = req.body || [];
+    const [branches, sources, models, activities] = await Promise.all([
+      all(`SELECT id, name FROM branches`),
+      all(`SELECT id, name FROM sources`),
+      all(`SELECT id, name FROM models`),
+      all(`SELECT id, name FROM activities`)
+    ]);
+
+    const bMap = new Map(branches.map(b => [b.name.toLowerCase().trim(), b.id]));
+    const sMap = new Map(sources.map(s => [s.name.toLowerCase().trim(), s.id]));
+    const mMap = new Map(models.map(m => [m.name.toLowerCase().trim(), m.id]));
+    const aMap = new Map(activities.map(a => [a.name.toLowerCase().trim(), a.id]));
+
+    const valid = [];
+    const invalid = [];
+
+    for (const r of rows) {
+      const bName = String(r.branch || '').trim();
+      const sName = String(r.source || '').trim();
+      const mName = String(r.model || '').trim();
+      const aName = String(r.activity || '').trim();
+      
+      const bId = bMap.get(bName.toLowerCase());
+      const sId = sMap.get(sName.toLowerCase());
+      const mId = mName ? mMap.get(mName.toLowerCase()) : null;
+      const aId = aName ? aMap.get(aName.toLowerCase()) : null;
+
+      const mapped = {
+        ...r,
+        branch_id: bId || null,
+        source_id: sId || null,
+        model_id: mId || null,
+        activity_id: aId || null,
+        err_branch: !!bName && !bId,
+        err_source: !!sName && !sId,
+        err_model: !!mName && !mId,
+        err_activity: !!aName && !aId,
+        err_missing: !bName || !sName || !r.customer_name || !r.mobile
+      };
+
+      if (mapped.err_branch || mapped.err_source || mapped.err_model || mapped.err_activity || mapped.err_missing) {
+        invalid.push(mapped);
+      } else {
+        valid.push(mapped);
+      }
+    }
+    res.json({ valid, invalid });
+  } catch(e) { next(e); }
+});
+
+app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
+  try {
+    const leads = req.body || [];
+    if (!leads.length) return res.json({ ok: true, added: 0 });
+
+    const byBranch = {};
+    for (const l of leads) {
+      if (!byBranch[l.branch_id]) byBranch[l.branch_id] = [];
+      byBranch[l.branch_id].push(l);
+    }
+
+    let added = 0;
+    for (const branchId of Object.keys(byBranch)) {
+      const sos = await all(`SELECT id FROM users WHERE role = 'sales' AND active = 1 AND branch_id = ? ORDER BY id`, Number(branchId));
+      let soIdx = 0;
+      
+      for (const l of byBranch[branchId]) {
+        const assigned_to = sos.length ? sos[soIdx % sos.length].id : null;
+        await run(
+          `INSERT INTO leads (customer_name, mobile, source_id, branch_id, location, remarks, created_by, assigned_to, model_id, activity_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          String(l.customer_name).trim(), String(l.mobile).trim(), Number(l.source_id), Number(branchId),
+          l.location?.trim() || null, l.remarks?.trim() || null, req.user.id, assigned_to,
+          l.model_id ? Number(l.model_id) : null, l.activity_id ? Number(l.activity_id) : null
+        );
+        soIdx++;
+        added++;
+      }
+    }
+    res.json({ ok: true, added });
+  } catch(e) { next(e); }
+});
+
 const LEAD_SELECT = `
   SELECT l.*, b.name AS branch, s.name AS source, u.name AS officer, c.name AS created_by_name,
          m.name AS model, a.name AS activity
