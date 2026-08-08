@@ -277,11 +277,12 @@ app.post('/api/leads', auth('marketing', 'admin'), async (req, res, next) => {
 app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
   try {
     const rows = req.body || [];
-    const [branches, sources, models, activities] = await Promise.all([
+    const [branches, sources, models, activities, existingLeads] = await Promise.all([
       all(`SELECT id, name FROM branches`),
       all(`SELECT id, name FROM sources`),
       all(`SELECT id, name FROM models`),
-      all(`SELECT id, name FROM activities`)
+      all(`SELECT id, name FROM activities`),
+      all(`SELECT mobile FROM leads`)
     ]);
 
     const bMap = new Map(branches.map(b => [b.name.toLowerCase().trim(), b.id]));
@@ -289,10 +290,24 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
     const mMap = new Map(models.map(m => [m.name.toLowerCase().trim(), m.id]));
     const aMap = new Map(activities.map(a => [a.name.toLowerCase().trim(), a.id]));
 
+    const existingMobiles = new Set(existingLeads.map(l => l.mobile));
+    const seen = new Set();
     const valid = [];
     const invalid = [];
+    let duplicates = 0;
 
     for (const r of rows) {
+      const rawMobile = String(r.mobile || '').trim();
+      const m = rawMobile.replace(/\D/g, '').slice(-10);
+      if (m.length === 10) {
+        if (seen.has(m) || existingMobiles.has(m)) {
+          duplicates++;
+          continue; // skip duplicate lead entirely
+        }
+        seen.add(m);
+        r.mobile = m;
+      }
+
       const bName = String(r.branch || '').trim();
       const sName = String(r.source || '').trim();
       const mName = String(r.model || '').trim();
@@ -322,7 +337,7 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
         valid.push(mapped);
       }
     }
-    res.json({ valid, invalid });
+    res.json({ valid, invalid, duplicates });
   } catch(e) { next(e); }
 });
 

@@ -499,19 +499,21 @@ async function handleBulkUpload(e) {
     const res = await api('/leads/bulk-validate', 'POST', records);
     bulkValid = res.valid || [];
     bulkInvalid = res.invalid || [];
+    const bulkDuplicates = res.duplicates || 0;
     
-    showBulkReviewSheet();
+    showBulkReviewSheet(bulkDuplicates);
   } catch(err) {
     say(err.message, 'err');
   }
 }
 
-function showBulkReviewSheet() {
+function showBulkReviewSheet(duplicates = 0) {
   const sheet = el(`<div class="sheet"><div>
     <div class="close"><button class="btn ghost" id="x">Cancel</button></div>
     <div class="card">
       <h2>Bulk Upload Review</h2>
       <p><b>${bulkValid.length}</b> leads are ready to import.</p>
+      ${duplicates ? `<p style="color:var(--text-light)"><b>${duplicates}</b> duplicate leads were automatically skipped.</p>` : ''}
       ${bulkInvalid.length ? `<p style="color:var(--bad)"><b>${bulkInvalid.length}</b> leads have errors (typos or missing data). Please fix them below or they will be skipped.</p>` : ''}
     </div>
     
