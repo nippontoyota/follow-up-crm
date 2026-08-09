@@ -205,10 +205,10 @@ app.get('/api/users', auth('admin'), async (req, res, next) => {
 app.post('/api/users', auth('admin'), async (req, res, next) => {
   try {
     const { name, username, password, role, branch_id } = req.body || {};
-    if (!name?.trim() || !username?.trim() || !password || !['admin', 'marketing', 'sales'].includes(role))
+    if (!name?.trim() || !username?.trim() || !password || !['admin', 'marketing', 'sales', 'manager'].includes(role))
       return bad(res, 'Name, username, password and role are required');
     if (String(password).length < 6) return bad(res, 'Password must be at least 6 characters');
-    if (role === 'sales' && !branch_id) return bad(res, 'A sales officer needs a branch');
+    if (['sales', 'manager'].includes(role) && !branch_id) return bad(res, 'A branch is required for this role');
     const id = await ins(
       `INSERT INTO users (username, password, name, role, branch_id) VALUES (?,?,?,?,?)`,
       String(username).trim().toLowerCase(), hash(String(password)), name.trim(), role,
