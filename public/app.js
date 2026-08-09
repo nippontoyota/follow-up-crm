@@ -409,7 +409,9 @@ function tblHtml(cols, rows, empty = 'No data') {
 
 async function managerView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
-  const d = await api('/manager/analytics');
+  let d;
+  try { d = await api('/manager/analytics'); }
+  catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${e.message}</div>`; return; }
 
   const { kpi, byOfficer, outcomes, byStage, uncontacted } = d;
   const connected    = outcomes.filter(o => o.call_status === 'Connected');

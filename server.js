@@ -212,7 +212,7 @@ app.post('/api/users', auth('admin'), async (req, res, next) => {
     const id = await ins(
       `INSERT INTO users (username, password, name, role, branch_id) VALUES (?,?,?,?,?)`,
       String(username).trim().toLowerCase(), hash(String(password)), name.trim(), role,
-      role === 'sales' ? Number(branch_id) : null,
+      ['sales', 'manager'].includes(role) ? Number(branch_id) : null,
     );
     res.json({ id });
   } catch (e) {
