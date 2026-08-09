@@ -413,7 +413,7 @@ async function managerView() {
   try { d = await api('/manager/analytics'); }
   catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${e.message}</div>`; return; }
 
-  const { kpi, byOfficer, outcomes, byStage, uncontacted } = d;
+  const { kpi, byOfficer, outcomes, byStage, overdue } = d;
   const connected    = outcomes.filter(o => o.call_status === 'Connected');
   const notConnected = outcomes.filter(o => o.call_status === 'Not Connected');
 
@@ -450,11 +450,14 @@ async function managerView() {
       </div>
     </div>
 
-    ${kpiRow([
-      { num: uncontacted.total, lbl: 'Total Leads',    col: 'brand' },
-      { num: uncontacted.count, lbl: 'Not Contacted',  col: 'warn'  },
-      { num: uncontacted.pct + '%', lbl: '% Uncontacted', col: 'bad' },
-    ])}
+    <div class="card">
+      <h2>Overdue Follow-ups by Officer</h2>
+      ${tblHtml(
+        ['Officer','Overdue Leads'],
+        overdue.map(r => [r.officer, r.overdue]),
+        'No overdue follow-ups'
+      )}
+    </div>
 
     <div class="card">
       <h2>Lead Stage Analysis by Officer</h2>

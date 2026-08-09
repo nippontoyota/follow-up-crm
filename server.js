@@ -407,7 +407,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
     const branchId = req.user.branch_id;
     if (!branchId) return bad(res, 'No branch assigned');
 
-    const [kpi, byOfficer, outcomes, byStage] = await Promise.all([
+    const [kpi, byOfficer, outcomes, byStage, overdue] = await Promise.all([
       get(`SELECT
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
@@ -443,10 +443,16 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
        FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
        WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
        GROUP BY u.id, u.name ORDER BY u.name`, branchId),
+
+      all(`SELECT u.name AS officer,
+        COUNT(l.id)::int AS overdue
+       FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
+         AND l.status = 'open' AND l.fcount > 0 AND l.next_date < ?
+       WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
+       GROUP BY u.id, u.name ORDER BY overdue DESC, u.name`, today(), branchId),
     ]);
 
-    const pct = kpi.total > 0 ? Math.round((kpi.untouched / kpi.total) * 100) : 0;
-    res.json({ kpi, byOfficer, outcomes, byStage, uncontacted: { total: kpi.total, count: kpi.untouched, pct } });
+    res.json({ kpi, byOfficer, outcomes, byStage, overdue });
   } catch (e) { next(e); }
 });
 
