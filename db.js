@@ -86,6 +86,8 @@ const DDL = [
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS other_so_called TEXT`,
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS order_id TEXT`,
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS tally_receipt TEXT`,
+  `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
+  `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager'))`,
   `CREATE TABLE IF NOT EXISTS salesforce_calls (
     id SERIAL PRIMARY KEY,
     mobile TEXT NOT NULL UNIQUE,

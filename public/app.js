@@ -114,9 +114,10 @@ function loginView() {
 /* -------------------------------------------------------------------- shell */
 
 const TABS = {
-  admin: [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
+  admin:   [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
-  sales: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
+  sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
+  manager: [['dashboard', 'Dashboard', '📊']],
 };
 
 async function boot() {
@@ -125,12 +126,9 @@ async function boot() {
 
   hdr.classList.remove('hide');
   nav.classList.remove('hide');
-  if (me.role !== 'sales') {
-    document.getElementById('hdrUser').textContent =
-      `${me.name} · ${{ admin: 'Admin', marketing: 'Marketing' }[me.role]}`;
-  } else {
-    document.getElementById('hdrUser').textContent = '';
-  }
+  const roleLabel = { admin: 'Admin', marketing: 'Marketing', manager: 'Sales Manager' };
+  document.getElementById('hdrUser').textContent = roleLabel[me.role]
+    ? `${me.name} · ${roleLabel[me.role]}` : '';
 
   nav.innerHTML = TABS[me.role]
     .map(([k, label, icon]) => `<button data-t="${k}"><b>${icon}</b><span class="lbl">${label}</span></button>`).join('') +
@@ -152,7 +150,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, users: usersView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView })[t]();
+  ({ analytics: analyticsView, users: usersView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -171,9 +169,10 @@ async function usersView() {
         <option value="admin">Admin</option>
         <option value="marketing">Marketing</option>
         <option value="sales">Sales Officer</option>
+        <option value="manager">Sales Manager</option>
       </select>
       <div id="branchWrap" class="hide">
-        <label>Branch <span class="req">*</span> <em>(leads from this branch route here)</em></label>
+        <label>Branch <span class="req">*</span></label>
         <select id="br">${options(masters.branches)}</select>
       </div>
       <button class="btn" id="save">Create user</button>
@@ -189,7 +188,7 @@ async function usersView() {
     </div>`;
 
   document.getElementById('role').onchange = (e) =>
-    document.getElementById('branchWrap').classList.toggle('hide', e.target.value !== 'sales');
+    document.getElementById('branchWrap').classList.toggle('hide', !['sales','manager'].includes(e.target.value));
 
   document.getElementById('save').onclick = async () => {
     try {
@@ -397,6 +396,73 @@ function newLeadView() {
 }
 
 /* ------------------------------------------------------------------- leads */
+
+/* --------------------------------------------------------------- manager */
+
+function tblHtml(cols, rows, empty = 'No data') {
+  if (!rows.length) return `<p style="padding:16px;color:var(--muted);text-align:center">${empty}</p>`;
+  return `<div class="tbl-wrap"><table class="tbl">
+    <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(v => `<td>${v ?? 0}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+async function managerView() {
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  const d = await api('/manager/analytics');
+
+  const { kpi, byOfficer, outcomes, byStage, uncontacted } = d;
+  const connected    = outcomes.filter(o => o.call_status === 'Connected');
+  const notConnected = outcomes.filter(o => o.call_status === 'Not Connected');
+
+  view.innerHTML = `
+    ${kpiRow([
+      { num: kpi.total,    lbl: 'Total Leads',     col: 'brand' },
+      { num: kpi.untouched,lbl: 'Untouched',       col: 'warn'  },
+      { num: kpi.followup, lbl: 'Under Follow-up', col: 'brand' },
+      { num: kpi.lost,     lbl: 'Lost',            col: 'bad'   },
+      { num: kpi.booked,   lbl: 'Booked',          col: 'ok'    },
+      { num: kpi.retailed, lbl: 'Retail',          col: 'ok'    },
+    ])}
+
+    <div class="card">
+      <h2>Sales Officer Performance</h2>
+      ${tblHtml(
+        ['Officer','Total','Untouched','Follow-up','Lost','Booked','Retail'],
+        byOfficer.map(r => [r.officer, r.total, r.untouched, r.followup, r.lost, r.booked, r.retailed]),
+        'No sales officers in this branch'
+      )}
+    </div>
+
+    <div class="card">
+      <h2>Call Outcome Analysis</h2>
+      <div class="outcome-grid">
+        <div>
+          <div class="outcome-head ok">✓ Connected</div>
+          ${tblHtml(['Outcome','Count'], connected.map(o => [o.outcome, o.cnt]))}
+        </div>
+        <div>
+          <div class="outcome-head bad">✗ Not Connected</div>
+          ${tblHtml(['Outcome','Count'], notConnected.map(o => [o.outcome, o.cnt]))}
+        </div>
+      </div>
+    </div>
+
+    ${kpiRow([
+      { num: uncontacted.total, lbl: 'Total Leads',    col: 'brand' },
+      { num: uncontacted.count, lbl: 'Not Contacted',  col: 'warn'  },
+      { num: uncontacted.pct + '%', lbl: '% Uncontacted', col: 'bad' },
+    ])}
+
+    <div class="card">
+      <h2>Lead Stage Analysis by Officer</h2>
+      ${tblHtml(
+        ['Officer','Pending','F1','F2','F3','F4','F5+'],
+        byStage.map(r => [r.officer, r.pending, r.f1, r.f2, r.f3, r.f4, r.f5plus]),
+        'No data'
+      )}
+    </div>`;
+}
 
 function kpiRow(cards) {
   return `<div class="kpi-row">${cards.map(c =>

@@ -294,6 +294,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .tl b { display: block; font-size: 14px; color: var(--text); font-weight: 600; }
 .tl em { font-style: normal; color: var(--muted); font-size: 13px; }
 
+/* ------------------------------------------------------------------ tables */
+
+.tbl-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); margin-top: 4px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
+.tbl th { background: var(--brand-light); color: var(--brand); font-weight: 600; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--text); white-space: nowrap; }
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody tr:hover td { background: var(--brand-light); }
+
+.outcome-grid { display: grid; gap: 16px; }
+@media (min-width: 600px) { .outcome-grid { grid-template-columns: 1fr 1fr; } }
+.outcome-head { font-weight: 600; font-size: 13px; margin-bottom: 8px; padding: 6px 0; }
+.outcome-head.ok  { color: var(--ok); }
+.outcome-head.bad { color: var(--bad); }
+
 /* ------------------------------------------------------------------- kpi */
 
 .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }

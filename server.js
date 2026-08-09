@@ -402,6 +402,54 @@ app.get('/api/leads', auth(), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, next) => {
+  try {
+    const branchId = req.user.branch_id;
+    if (!branchId) return bad(res, 'No branch assigned');
+
+    const [kpi, byOfficer, outcomes, byStage] = await Promise.all([
+      get(`SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
+        COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+        COUNT(*) FILTER (WHERE l.stage = 'Lost Lead'    AND l.status = 'closed')::int AS lost,
+        COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+        COUNT(*) FILTER (WHERE l.stage = 'Retail Done'  AND l.status = 'closed')::int AS retailed
+       FROM leads l WHERE l.branch_id = ?`, branchId),
+
+      all(`SELECT u.name AS officer,
+        COUNT(l.id)::int AS total,
+        COUNT(l.id) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
+        COUNT(l.id) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+        COUNT(l.id) FILTER (WHERE l.stage = 'Lost Lead'    AND l.status = 'closed')::int AS lost,
+        COUNT(l.id) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+        COUNT(l.id) FILTER (WHERE l.stage = 'Retail Done'  AND l.status = 'closed')::int AS retailed
+       FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
+       WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
+       GROUP BY u.id, u.name ORDER BY u.name`, branchId),
+
+      all(`SELECT f.call_status, f.outcome, COUNT(*)::int AS cnt
+       FROM followups f JOIN leads l ON l.id = f.lead_id
+       WHERE l.branch_id = ?
+       GROUP BY f.call_status, f.outcome ORDER BY f.call_status, cnt DESC`, branchId),
+
+      all(`SELECT u.name AS officer,
+        COUNT(l.id) FILTER (WHERE l.status = 'open' AND l.fcount > 0)::int AS pending,
+        COUNT(l.id) FILTER (WHERE l.fcount = 1 AND l.status = 'open')::int AS f1,
+        COUNT(l.id) FILTER (WHERE l.fcount = 2 AND l.status = 'open')::int AS f2,
+        COUNT(l.id) FILTER (WHERE l.fcount = 3 AND l.status = 'open')::int AS f3,
+        COUNT(l.id) FILTER (WHERE l.fcount = 4 AND l.status = 'open')::int AS f4,
+        COUNT(l.id) FILTER (WHERE l.fcount >= 5 AND l.status = 'open')::int AS f5plus
+       FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
+       WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
+       GROUP BY u.id, u.name ORDER BY u.name`, branchId),
+    ]);
+
+    const pct = kpi.total > 0 ? Math.round((kpi.untouched / kpi.total) * 100) : 0;
+    res.json({ kpi, byOfficer, outcomes, byStage, uncontacted: { total: kpi.total, count: kpi.untouched, pct } });
+  } catch (e) { next(e); }
+});
+
 app.get('/api/leads/stats', auth(), async (req, res, next) => {
   try {
     const isSales = req.user.role === 'sales';
