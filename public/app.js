@@ -399,6 +399,42 @@ function newLeadView() {
 
 /* --------------------------------------------------------------- manager */
 
+function stageLink(officerId, stage, count) {
+  if (!count) return `<span style="color:var(--muted)">0</span>`;
+  return `<button class="tbl-link" onclick="openStageLeads(${officerId},'${stage}')">${count}</button>`;
+}
+
+async function openStageLeads(officerId, stage) {
+  const label = { pending:'Pending', f1:'F1', f2:'F2', f3:'F3', f4:'F4', f5plus:'F5+' }[stage];
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="slx">← Back</button></div>
+    <div class="card" id="slCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#slx').onclick = () => sheet.remove();
+
+  try {
+    const leads = await api(`/manager/leads?officer_id=${officerId}&stage=${stage}`);
+    const card = sheet.querySelector('#slCard');
+    card.innerHTML = `<h2>${label} Leads · ${leads.length}</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Source</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.next_date || '—')}</td>
+          <td>F${l.fcount}</td>
+          <td>${esc(l.source || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => {
+      row.onclick = () => openLead(Number(row.dataset.id));
+    });
+  } catch (e) {
+    sheet.querySelector('#slCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
+  }
+}
+
 function tblHtml(cols, rows, empty = 'No data') {
   if (!rows.length) return `<p style="padding:16px;color:var(--muted);text-align:center">${empty}</p>`;
   return `<div class="tbl-wrap"><table class="tbl">
@@ -463,7 +499,15 @@ async function managerView() {
       <h2>Lead Stage Analysis by Officer</h2>
       ${tblHtml(
         ['Officer','Pending','F1','F2','F3','F4','F5+'],
-        byStage.map(r => [r.officer, r.pending, r.f1, r.f2, r.f3, r.f4, r.f5plus]),
+        byStage.map(r => [
+          esc(r.officer),
+          stageLink(r.officer_id, 'pending', r.pending),
+          stageLink(r.officer_id, 'f1',      r.f1),
+          stageLink(r.officer_id, 'f2',      r.f2),
+          stageLink(r.officer_id, 'f3',      r.f3),
+          stageLink(r.officer_id, 'f4',      r.f4),
+          stageLink(r.officer_id, 'f5plus',  r.f5plus),
+        ]),
         'No data'
       )}
     </div>`;

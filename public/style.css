@@ -302,6 +302,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--text); white-space: nowrap; }
 .tbl tbody tr:last-child td { border-bottom: none; }
 .tbl tbody tr:hover td { background: var(--brand-light); }
+.tbl tbody tr.lead-row { cursor: pointer; }
+.tbl-link { background: none; border: none; color: var(--brand); font-weight: 700; font-size: 14px; cursor: pointer; padding: 0; text-decoration: underline; }
+.tbl-link:hover { color: var(--text); }
 
 .outcome-grid { display: grid; gap: 16px; }
 @media (min-width: 600px) { .outcome-grid { grid-template-columns: 1fr 1fr; } }

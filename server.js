@@ -433,7 +433,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
        WHERE l.branch_id = ?
        GROUP BY f.call_status, f.outcome ORDER BY f.call_status, cnt DESC`, branchId),
 
-      all(`SELECT u.name AS officer,
+      all(`SELECT u.id AS officer_id, u.name AS officer,
         COUNT(l.id) FILTER (WHERE l.status = 'open' AND l.fcount > 0)::int AS pending,
         COUNT(l.id) FILTER (WHERE l.fcount = 1 AND l.status = 'open')::int AS f1,
         COUNT(l.id) FILTER (WHERE l.fcount = 2 AND l.status = 'open')::int AS f2,
@@ -453,6 +453,37 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
     ]);
 
     res.json({ kpi, byOfficer, outcomes, byStage, overdue });
+  } catch (e) { next(e); }
+});
+
+app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) => {
+  try {
+    const branchId = req.user.branch_id;
+    if (!branchId) return bad(res, 'No branch assigned');
+    const { officer_id, stage } = req.query;
+    if (!officer_id) return bad(res, 'officer_id required');
+    const STAGE_FILTER = {
+      pending: `l.fcount > 0 AND l.status = 'open'`,
+      f1:      `l.fcount = 1 AND l.status = 'open'`,
+      f2:      `l.fcount = 2 AND l.status = 'open'`,
+      f3:      `l.fcount = 3 AND l.status = 'open'`,
+      f4:      `l.fcount = 4 AND l.status = 'open'`,
+      f5plus:  `l.fcount >= 5 AND l.status = 'open'`,
+    };
+    const stageSql = STAGE_FILTER[stage];
+    if (!stageSql) return bad(res, 'Invalid stage');
+    const leads = await all(`
+      SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
+             l.location, l.remarks, l.created_at,
+             u.name AS officer, b.name AS branch, s.name AS source
+      FROM leads l
+      LEFT JOIN users    u ON u.id = l.assigned_to
+      LEFT JOIN branches b ON b.id = l.branch_id
+      LEFT JOIN sources  s ON s.id = l.source_id
+      WHERE l.branch_id = ? AND l.assigned_to = ? AND ${stageSql}
+      ORDER BY l.next_date NULLS FIRST, l.id DESC
+    `, branchId, Number(officer_id));
+    res.json(leads);
   } catch (e) { next(e); }
 });
 
