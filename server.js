@@ -455,18 +455,26 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
       all(`SELECT
         MIN(sc.so_name) AS so_name,
         COUNT(DISTINCT l.id)::int AS total,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int    AS fresh,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int    AS followup,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Booking Done')::int              AS booked,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Retail Done')::int               AS retailed,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Lost Lead')::int                 AS lost,
         COUNT(f.id)::int AS total_calls,
-        COUNT(f.id) FILTER (WHERE f.call_status = 'Connected')::int                    AS connected,
-        COUNT(f.id) FILTER (WHERE f.call_status = 'Not Connected')::int                AS not_connected,
-        COUNT(f.id) FILTER (WHERE f.outcome = 'Need Test Drive')::int                  AS need_test_drive,
-        COUNT(f.id) FILTER (WHERE f.outcome = 'Showroom Visit')::int                   AS showroom_visit,
-        COUNT(f.id) FILTER (WHERE f.outcome = 'Need time')::int                        AS need_time,
-        COUNT(f.id) FILTER (WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer'))::int AS calls_lost
+        COUNT(f.id) FILTER (WHERE f.call_status = 'Connected')::int                                                        AS connected,
+        COUNT(f.id) FILTER (WHERE f.call_status = 'Not Connected')::int                                                    AS not_connected,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need Test Drive')::int                                                      AS need_test_drive,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Showroom Visit')::int                                                       AS showroom_visit,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Booking Done')::int                                                         AS booking_done,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Retail Done')::int                                                          AS retail_done,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need time')::int                                                            AS need_time,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need SO Call')::int                                                         AS need_so_call,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need More Details')::int                                                    AS need_more_details,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Discount Issue')::int                                                       AS discount_issue,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Not Interested')::int                                                       AS not_interested,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Already Booked')::int                                                       AS already_booked,
+        COUNT(f.id) FILTER (WHERE f.outcome IN ('Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer'))::int AS lost_calls,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'RNR')::int                                                                  AS rnr,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Switch Off')::int                                                           AS switch_off,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Call Me Back')::int                                                         AS call_me_back,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Call Forwarding')::int                                                      AS call_forwarding,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Line Busy')::int                                                            AS line_busy,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Invalid Number')::int                                                       AS invalid_number
        FROM salesforce_calls sc
        JOIN leads l ON l.mobile = sc.mobile AND l.branch_id = ?
        LEFT JOIN followups f ON f.lead_id = l.id

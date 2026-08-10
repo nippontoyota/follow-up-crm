@@ -532,13 +532,18 @@ async function managerView() {
     </div>
 
     <div class="card">
-      <h2>Salesforce Officer — Lead Status &amp; Call Outcome Analysis</h2>
+      <h2>Salesforce Officer — Call Outcome Analysis</h2>
       ${tblHtml(
-        ['SF Sales Officer','Total Leads','Fresh','Follow-up','Booked','Retail','Lost','Total Calls','Connected','Not Connected','Test Drive','Showroom','Need Time','Lost Calls'],
+        ['SF Sales Officer','Total Leads','Total Calls','Connected','Not Connected',
+         'Test Drive','Showroom','Booking Done','Retail Done','Need Time','Need SO Call',
+         'More Details','Discount','Not Interested','Already Booked','Lost',
+         'RNR','Switch Off','Call Back','Call Fwd','Line Busy','Invalid No.'],
         officerOutcomes.map(r => [
-          esc(r.so_name), r.total, r.fresh, r.followup, r.booked, r.retailed, r.lost,
-          r.total_calls, r.connected, r.not_connected,
-          r.need_test_drive, r.showroom_visit, r.need_time, r.calls_lost,
+          esc(r.so_name), r.total, r.total_calls, r.connected, r.not_connected,
+          r.need_test_drive, r.showroom_visit, r.booking_done, r.retail_done,
+          r.need_time, r.need_so_call, r.need_more_details, r.discount_issue,
+          r.not_interested, r.already_booked, r.lost_calls,
+          r.rnr, r.switch_off, r.call_me_back, r.call_forwarding, r.line_busy, r.invalid_number,
         ]),
         'No Salesforce data uploaded for this branch'
       )}
