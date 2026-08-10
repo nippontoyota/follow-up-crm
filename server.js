@@ -461,9 +461,7 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
   try {
     const branchId = req.user.branch_id;
     if (!branchId) return bad(res, 'No branch assigned');
-    const { officer_id, stage } = req.query;
-    if (!officer_id) return bad(res, 'officer_id required');
-    const { call_status, outcome } = req.query;
+    const { officer_id, stage, call_status, outcome } = req.query;
 
     const BASE = `
       SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
