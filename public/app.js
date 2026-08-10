@@ -204,6 +204,46 @@ async function usersView() {
     try { await api(`/users/${b.dataset.id}/toggle`, 'POST'); usersView(); }
     catch (e) { say(e.message); }
   });
+
+  // Reassign leads card
+  const officers = users.filter(u => u.role === 'sales' && u.active);
+  const officerOpts = officers.map(u => `<option value="${u.id}">${esc(u.name)}${u.branch ? ' · ' + esc(u.branch) : ''}</option>`).join('');
+  const reassignCard = el(`<div class="card">
+    <h2>Reassign Leads</h2>
+    <label>From officer</label>
+    <select id="raFrom"><option value="">Select officer…</option>${officerOpts}</select>
+    <label>Mode</label>
+    <select id="raMode">
+      <option value="untouched">Untouched leads only (fcount = 0)</option>
+      <option value="open">All open leads</option>
+    </select>
+    <label>To officers <em>(tick all targets — distributed equally)</em></label>
+    <div id="raTo" style="display:flex;flex-direction:column;gap:6px;padding:4px 0">
+      ${officers.map(u => `<label style="display:flex;align-items:center;gap:8px;font-weight:400">
+        <input type="checkbox" value="${u.id}"> ${esc(u.name)}${u.branch ? ' · ' + esc(u.branch) : ''}
+      </label>`).join('')}
+    </div>
+    <button class="btn" id="raBtn" style="margin-top:8px">Reassign</button>
+    <div id="raMsg"></div>
+  </div>`);
+  view.appendChild(reassignCard);
+
+  document.getElementById('raBtn').onclick = async () => {
+    const fromId = val('raFrom');
+    const toIds = [...document.querySelectorAll('#raTo input:checked')].map(c => Number(c.value));
+    const mode  = val('raMode');
+    const msgEl = document.getElementById('raMsg');
+    if (!fromId) { msgEl.className='msg err'; msgEl.textContent='Select the source officer.'; return; }
+    if (!toIds.length) { msgEl.className='msg err'; msgEl.textContent='Tick at least one target officer.'; return; }
+    if (toIds.includes(Number(fromId))) { msgEl.className='msg err'; msgEl.textContent='Source cannot also be a target.'; return; }
+    document.getElementById('raBtn').disabled = true;
+    try {
+      const r = await api('/admin/reassign-leads', 'POST', { from_id: Number(fromId), to_ids: toIds, mode });
+      msgEl.className = 'msg ok';
+      msgEl.textContent = `Done — ${r.moved} lead${r.moved !== 1 ? 's' : ''} reassigned equally across ${toIds.length} officer${toIds.length !== 1 ? 's' : ''}.`;
+    } catch (e) { msgEl.className='msg err'; msgEl.textContent=e.message; }
+    document.getElementById('raBtn').disabled = false;
+  };
 }
 
 /* ------------------------------------------------------------- admin: lists */

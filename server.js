@@ -633,6 +633,22 @@ app.get('/api/counts', auth(), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.post('/api/admin/reassign-leads', auth('admin'), async (req, res, next) => {
+  try {
+    const { from_id, to_ids, mode } = req.body || {};
+    if (!from_id || !Array.isArray(to_ids) || !to_ids.length)
+      return bad(res, 'from_id and to_ids[] are required');
+    const filter = mode === 'untouched'
+      ? `assigned_to = ? AND fcount = 0 AND status = 'open'`
+      : `assigned_to = ? AND status = 'open'`;
+    const leads = await all(`SELECT id FROM leads WHERE ${filter} ORDER BY id`, Number(from_id));
+    if (!leads.length) return res.json({ moved: 0 });
+    for (let i = 0; i < leads.length; i++)
+      await run(`UPDATE leads SET assigned_to = ? WHERE id = ?`, Number(to_ids[i % to_ids.length]), leads[i].id);
+    res.json({ moved: leads.length });
+  } catch (e) { next(e); }
+});
+
 app.get('/api/analytics', auth('admin'), async (req, res, next) => {
   try {
     const { branch_id } = req.query;
