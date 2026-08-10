@@ -408,7 +408,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
     const branchId = req.user.branch_id;
     if (!branchId) return bad(res, 'No branch assigned');
 
-    const [kpi, byOfficer, outcomes, byStage, overdue] = await Promise.all([
+    const [kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes] = await Promise.all([
       get(`SELECT
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
@@ -451,9 +451,26 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
          AND l.status = 'open' AND l.fcount > 0 AND l.next_date < ?
        WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
        GROUP BY u.id, u.name ORDER BY overdue DESC, u.name`, today(), branchId),
+
+      all(`SELECT u.name AS officer,
+        COUNT(f.id)::int                                                                        AS total_calls,
+        COUNT(f.id) FILTER (WHERE f.call_status = 'Connected')::int                            AS connected,
+        COUNT(f.id) FILTER (WHERE f.call_status = 'Not Connected')::int                        AS not_connected,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need Test Drive')::int                          AS need_test_drive,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Showroom Visit')::int                           AS showroom_visit,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Booking Done')::int                             AS booking_done,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Retail Done')::int                              AS retail_done,
+        COUNT(f.id) FILTER (WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer'))::int AS lost,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need time')::int                                AS need_time,
+        COUNT(f.id) FILTER (WHERE f.outcome IN ('RNR','Switch Off','Call Me Back','Call Forwarding','Line Busy','Invalid Number'))::int AS rnr_etc
+       FROM users u
+       LEFT JOIN leads    l ON l.assigned_to = u.id AND l.branch_id = ?
+       LEFT JOIN followups f ON f.lead_id = l.id
+       WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
+       GROUP BY u.id, u.name ORDER BY u.name`, branchId, branchId),
     ]);
 
-    res.json({ kpi, byOfficer, outcomes, byStage, overdue });
+    res.json({ kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes });
   } catch (e) { next(e); }
 });
 
