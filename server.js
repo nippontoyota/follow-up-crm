@@ -463,27 +463,41 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
     if (!branchId) return bad(res, 'No branch assigned');
     const { officer_id, stage } = req.query;
     if (!officer_id) return bad(res, 'officer_id required');
-    const STAGE_FILTER = {
-      pending: `l.fcount > 0 AND l.status = 'open'`,
-      f1:      `l.fcount = 1 AND l.status = 'open'`,
-      f2:      `l.fcount = 2 AND l.status = 'open'`,
-      f3:      `l.fcount = 3 AND l.status = 'open'`,
-      f4:      `l.fcount = 4 AND l.status = 'open'`,
-      f5plus:  `l.fcount >= 5 AND l.status = 'open'`,
-    };
-    const stageSql = STAGE_FILTER[stage];
-    if (!stageSql) return bad(res, 'Invalid stage');
-    const leads = await all(`
+    const { call_status, outcome } = req.query;
+
+    const BASE = `
       SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
              l.location, l.remarks, l.created_at,
              u.name AS officer, b.name AS branch, s.name AS source
       FROM leads l
       LEFT JOIN users    u ON u.id = l.assigned_to
       LEFT JOIN branches b ON b.id = l.branch_id
-      LEFT JOIN sources  s ON s.id = l.source_id
-      WHERE l.branch_id = ? AND l.assigned_to = ? AND ${stageSql}
-      ORDER BY l.next_date NULLS FIRST, l.id DESC
-    `, branchId, Number(officer_id));
+      LEFT JOIN sources  s ON s.id = l.source_id`;
+
+    let leads;
+    if (call_status && outcome) {
+      leads = await all(`${BASE}
+        WHERE l.branch_id = ?
+          AND EXISTS (SELECT 1 FROM followups f WHERE f.lead_id = l.id AND f.call_status = ? AND f.outcome = ?)
+        ORDER BY l.next_date NULLS FIRST, l.id DESC
+      `, branchId, call_status, outcome);
+    } else {
+      if (!officer_id) return bad(res, 'officer_id required');
+      const STAGE_FILTER = {
+        pending: `l.fcount > 0 AND l.status = 'open'`,
+        f1:      `l.fcount = 1 AND l.status = 'open'`,
+        f2:      `l.fcount = 2 AND l.status = 'open'`,
+        f3:      `l.fcount = 3 AND l.status = 'open'`,
+        f4:      `l.fcount = 4 AND l.status = 'open'`,
+        f5plus:  `l.fcount >= 5 AND l.status = 'open'`,
+      };
+      const stageSql = STAGE_FILTER[stage];
+      if (!stageSql) return bad(res, 'Invalid stage');
+      leads = await all(`${BASE}
+        WHERE l.branch_id = ? AND l.assigned_to = ? AND ${stageSql}
+        ORDER BY l.next_date NULLS FIRST, l.id DESC
+      `, branchId, Number(officer_id));
+    }
     res.json(leads);
   } catch (e) { next(e); }
 });

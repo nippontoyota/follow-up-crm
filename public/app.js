@@ -404,6 +404,42 @@ function stageLink(officerId, stage, count) {
   return `<button class="tbl-link" onclick="openStageLeads(${officerId},'${stage}')">${count}</button>`;
 }
 
+function outcomeLink(callStatus, outcome, count) {
+  if (!count) return `<span style="color:var(--muted)">0</span>`;
+  const cs = encodeURIComponent(callStatus), oc = encodeURIComponent(outcome);
+  return `<button class="tbl-link" onclick="openOutcomeLeads('${cs}','${oc}','${esc(outcome)}')">${count}</button>`;
+}
+
+async function openOutcomeLeads(callStatus, outcome, label) {
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="olx">← Back</button></div>
+    <div class="card" id="olCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#olx').onclick = () => sheet.remove();
+
+  try {
+    const leads = await api(`/manager/leads?call_status=${callStatus}&outcome=${outcome}`);
+    const card = sheet.querySelector('#olCard');
+    card.innerHTML = `<h2>${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Officer</th><th>Next Date</th><th>Stage</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.officer || '—')}</td>
+          <td>${esc(l.next_date || '—')}</td>
+          <td>${esc(l.stage || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => {
+      row.onclick = () => openLead(Number(row.dataset.id));
+    });
+  } catch (e) {
+    sheet.querySelector('#olCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
+  }
+}
+
 async function openStageLeads(officerId, stage) {
   const label = { pending:'Pending', f1:'F1', f2:'F2', f3:'F3', f4:'F4', f5plus:'F5+' }[stage];
   const sheet = el(`<div class="sheet"><div>
@@ -477,11 +513,11 @@ async function managerView() {
       <div class="outcome-grid">
         <div>
           <div class="outcome-head ok">✓ Connected</div>
-          ${tblHtml(['Outcome','Count'], connected.map(o => [o.outcome, o.cnt]))}
+          ${tblHtml(['Outcome','Count'], connected.map(o => [esc(o.outcome), outcomeLink('Connected', o.outcome, o.cnt)]))}
         </div>
         <div>
           <div class="outcome-head bad">✗ Not Connected</div>
-          ${tblHtml(['Outcome','Count'], notConnected.map(o => [o.outcome, o.cnt]))}
+          ${tblHtml(['Outcome','Count'], notConnected.map(o => [esc(o.outcome), outcomeLink('Not Connected', o.outcome, o.cnt)]))}
         </div>
       </div>
     </div>
