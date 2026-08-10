@@ -452,16 +452,25 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
        WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
        GROUP BY u.id, u.name ORDER BY overdue DESC, u.name`, today(), branchId),
 
-      all(`SELECT sc.so_name,
+      all(`SELECT
+        MIN(sc.so_name) AS so_name,
         COUNT(DISTINCT l.id)::int AS total,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int   AS fresh,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int   AS followup,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Booking Done')::int             AS booked,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Retail Done')::int              AS retailed,
-        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Lost Lead')::int                AS lost
+        COUNT(DISTINCT l.id) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int    AS fresh,
+        COUNT(DISTINCT l.id) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int    AS followup,
+        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Booking Done')::int              AS booked,
+        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Retail Done')::int               AS retailed,
+        COUNT(DISTINCT l.id) FILTER (WHERE l.stage = 'Lost Lead')::int                 AS lost,
+        COUNT(f.id)::int AS total_calls,
+        COUNT(f.id) FILTER (WHERE f.call_status = 'Connected')::int                    AS connected,
+        COUNT(f.id) FILTER (WHERE f.call_status = 'Not Connected')::int                AS not_connected,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need Test Drive')::int                  AS need_test_drive,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Showroom Visit')::int                   AS showroom_visit,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Need time')::int                        AS need_time,
+        COUNT(f.id) FILTER (WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer'))::int AS calls_lost
        FROM salesforce_calls sc
        JOIN leads l ON l.mobile = sc.mobile AND l.branch_id = ?
-       GROUP BY sc.so_name
+       LEFT JOIN followups f ON f.lead_id = l.id
+       GROUP BY COALESCE(sc.so_mobile, sc.so_name)
        ORDER BY total DESC`, branchId),
     ]);
 
