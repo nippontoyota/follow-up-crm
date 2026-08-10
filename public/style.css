@@ -312,6 +312,16 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .outcome-head.ok  { color: var(--ok); }
 .outcome-head.bad { color: var(--bad); }
 
+/* -------------------------------------------------------------- search bar */
+
+.search-bar-wrap { margin-bottom: 14px; }
+.search-bar-inner { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 0 14px; transition: border-color .15s; }
+.search-bar-inner:focus-within { border-color: var(--brand); }
+.search-ico { color: var(--muted); flex-shrink: 0; }
+.search-bar-inner input[type="search"] { flex: 1; border: none; background: transparent; padding: 12px 0; font-size: 15px; color: var(--text); outline: none; margin: 0; }
+.search-bar-inner input[type="search"]::placeholder { color: var(--muted); }
+.search-bar-inner input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
+
 /* ------------------------------------------------------------------- kpi */
 
 .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }

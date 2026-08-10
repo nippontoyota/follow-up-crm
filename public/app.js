@@ -583,21 +583,23 @@ async function leadsView() {
 
   const isBulkAdmin = (me.role === 'admin' && t === 'all');
   const searchHtml = `
-    <div style="display:flex; justify-content: flex-end; align-items: center; margin-bottom: 16px; gap: 8px; flex-wrap: wrap;">
-      <input type="text" id="leadSearch" placeholder="Search leads..." style="margin:0; max-width: 300px; padding: 8px 12px; font-size: 14px; flex: 1; min-width: 200px;">
-      ${isBulkAdmin ? `
-        <input type="file" id="bulkFile" accept=".xlsx, .xls" style="display:none">
-        <button class="btn ghost" style="width:auto; margin:0; padding:8px 16px; font-size:13px;" onclick="document.getElementById('bulkFile').click()">Bulk Upload Leads</button>
-      ` : ''}
-    </div>
-  `;
+    <div class="search-bar-wrap">
+      <div class="search-bar-inner">
+        <svg class="search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="leadSearch" placeholder="Search by name or mobile…" autocomplete="off">
+        ${isBulkAdmin ? `
+          <input type="file" id="bulkFile" accept=".xlsx,.xls" style="display:none">
+          <button class="btn ghost" style="width:auto;margin:0;padding:6px 14px;font-size:13px;white-space:nowrap" onclick="document.getElementById('bulkFile').click()">Bulk Upload</button>
+        ` : ''}
+      </div>
+    </div>`;
 
   if (!leads.length) {
     const blank = { fresh: 'No fresh leads right now.', today: 'Nothing due today. Nice work.', all: 'No leads yet.' };
     view.innerHTML = kpi + searchHtml + `<div class="empty">${blank[t]}</div>`;
   } else {
     view.innerHTML = kpi + searchHtml + leads.map(l => `
-      <button class="card lead" data-id="${l.id}">
+      <button class="card lead" data-id="${l.id}" data-name="${esc(l.customer_name.toLowerCase())}" data-mobile="${esc(l.mobile)}">
         <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
         <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
         <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
@@ -606,12 +608,14 @@ async function leadsView() {
 
   const sInput = document.getElementById('leadSearch');
   if (sInput) {
-    sInput.oninput = (e) => {
-      const q = e.target.value.toLowerCase().trim();
+    sInput.oninput = () => {
+      const q = sInput.value.toLowerCase().trim();
       view.querySelectorAll('.lead').forEach(b => {
-        b.style.display = b.textContent.toLowerCase().includes(q) ? 'block' : 'none';
+        const hit = !q || b.dataset.name.includes(q) || b.dataset.mobile.includes(q);
+        b.style.display = hit ? '' : 'none';
       });
     };
+    sInput.focus();
   }
 
   view.querySelectorAll('.lead').forEach(b => b.onclick = () => openLead(b.dataset.id));
