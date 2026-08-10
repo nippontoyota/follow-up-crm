@@ -104,6 +104,16 @@ const DDL = [
 export async function initDb() {
   for (const sql of DDL) await pool.query(sql);
 
+  // Normalize SF officer names: strip MR./MRS./MS./DR. prefix and trailing digits
+  await pool.query(`
+    UPDATE salesforce_calls
+    SET so_name = TRIM(REGEXP_REPLACE(
+      REGEXP_REPLACE(so_name, '^(MR\\.|MRS\\.|MS\\.|DR\\.)\\s*', '', 'i'),
+      '\\s+\\d+$', ''
+    ))
+    WHERE so_name ~* '^(MR\\.|MRS\\.|MS\\.|DR\\.)' OR so_name ~ '\\s+\\d+$'
+  `);
+
   const row = await get(`SELECT COUNT(*)::int AS c FROM users`);
   if (row.c === 0) {
     await pool.query(
