@@ -532,15 +532,13 @@ async function managerView() {
     </div>
 
     <div class="card">
-      <h2>Productive Call Outcome Analysis by Officer</h2>
+      <h2>Salesforce Officer — Lead Status Analysis</h2>
       ${tblHtml(
-        ['Officer','Total Calls','Connected','Not Connected','Need Test Drive','Showroom Visit','Booked','Retail','Lost','Need Time','RNR / NC'],
+        ['SF Sales Officer','Total Leads','Fresh','Under Follow-up','Booked','Retail','Lost'],
         officerOutcomes.map(r => [
-          esc(r.officer), r.total_calls, r.connected, r.not_connected,
-          r.need_test_drive, r.showroom_visit, r.booking_done, r.retail_done,
-          r.lost, r.need_time, r.rnr_etc,
+          esc(r.so_name), r.total, r.fresh, r.followup, r.booked, r.retailed, r.lost,
         ]),
-        'No data'
+        'No Salesforce data uploaded for this branch'
       )}
     </div>
 
