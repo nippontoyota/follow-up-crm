@@ -100,7 +100,7 @@ function loginView() {
     const btn = e.target.querySelector('.btn-login');
     btn.disabled = true; btn.textContent = 'Signing in…';
     try {
-      await api('/login', 'POST', { username: val('u'), password: document.getElementById('p').value });
+      await api('/login', 'POST', { username: val('u'), password: document.getElementById('p').value.trim() });
       document.body.style.paddingBottom = '';
       view.style.padding = '';
       boot();
@@ -193,7 +193,7 @@ async function usersView() {
   document.getElementById('save').onclick = async () => {
     try {
       await api('/users', 'POST', {
-        name: val('n'), username: val('un'), password: document.getElementById('pw').value,
+        name: val('n'), username: val('un'), password: document.getElementById('pw').value.trim(),
         role: val('role'), branch_id: val('br') || null,
       });
       usersView();

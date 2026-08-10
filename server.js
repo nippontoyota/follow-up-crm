@@ -77,7 +77,7 @@ app.post('/api/login', async (req, res, next) => {
       `SELECT * FROM users WHERE username = ? AND active = 1`,
       String(username || '').trim().toLowerCase(),
     );
-    if (!u || !verify(String(password || ''), u.password))
+    if (!u || !verify(String(password || '').trim(), u.password))
       return res.status(401).json({ error: 'Invalid username or password' });
     res.setHeader('Set-Cookie',
       `sid=${encodeURIComponent(sign(String(u.id)))}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`);
@@ -204,14 +204,15 @@ app.get('/api/users', auth('admin'), async (req, res, next) => {
 
 app.post('/api/users', auth('admin'), async (req, res, next) => {
   try {
-    const { name, username, password, role, branch_id } = req.body || {};
+    const { name, username, role, branch_id } = req.body || {};
+    const password = String(req.body?.password || '').trim();
     if (!name?.trim() || !username?.trim() || !password || !['admin', 'marketing', 'sales', 'manager'].includes(role))
       return bad(res, 'Name, username, password and role are required');
-    if (String(password).length < 6) return bad(res, 'Password must be at least 6 characters');
+    if (password.length < 6) return bad(res, 'Password must be at least 6 characters');
     if (['sales', 'manager'].includes(role) && !branch_id) return bad(res, 'A branch is required for this role');
     const id = await ins(
       `INSERT INTO users (username, password, name, role, branch_id) VALUES (?,?,?,?,?)`,
-      String(username).trim().toLowerCase(), hash(String(password)), name.trim(), role,
+      String(username).trim().toLowerCase(), hash(password), name.trim(), role,
       ['sales', 'manager'].includes(role) ? Number(branch_id) : null,
     );
     res.json({ id });
