@@ -703,14 +703,10 @@ async function leadsView() {
   } else {
     view.innerHTML = kpi + searchHtml + leads.map(l => `
       <div class="card lead" data-id="${l.id}" data-name="${esc(l.customer_name.toLowerCase())}" data-mobile="${esc(l.mobile)}" tabindex="0" role="button">
-        <div style="display:flex;gap:8px;align-items:flex-start">
-          <div style="flex:1;min-width:0">
-            <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
-            <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
-            <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
-          </div>
-          ${me.role === 'sales' ? `<button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to SM/TL'}">⚑</button>` : ''}
-        </div>
+        <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
+        <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
+        <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
+        ${me.role === 'sales' ? `<div style="margin-top:10px"><button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to SM/TL'}">⚑ Flag to SM/TL</button></div>` : ''}
       </div>`).join('');
   }
 
