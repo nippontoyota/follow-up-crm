@@ -86,6 +86,11 @@ const DDL = [
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS other_so_called TEXT`,
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS order_id TEXT`,
   `ALTER TABLE followups ADD COLUMN IF NOT EXISTS tally_receipt TEXT`,
+  `ALTER TABLE followups ADD COLUMN IF NOT EXISTS test_drive_date TEXT`,
+  `ALTER TABLE followups ADD COLUMN IF NOT EXISTS exchange_expected_price TEXT`,
+  `ALTER TABLE followups ADD COLUMN IF NOT EXISTS exchange_offered_price TEXT`,
+  `ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_flagged INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE leads ADD COLUMN IF NOT EXISTS flag_remarks TEXT`,
   `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
   `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager'))`,
   `CREATE TABLE IF NOT EXISTS salesforce_calls (

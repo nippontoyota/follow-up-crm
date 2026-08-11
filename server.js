@@ -9,7 +9,7 @@ if (!existsSync('.secret')) writeFileSync('.secret', randomBytes(32).toString('h
 const SECRET = process.env.SESSION_SECRET || readFileSync('.secret', 'utf8').trim();
 
 export const OUTCOMES = {
-  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
+  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
   'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number'],
 };
 const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
@@ -408,7 +408,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
     const branchId = req.user.branch_id;
     if (!branchId) return bad(res, 'No branch assigned');
 
-    const [kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes] = await Promise.all([
+    const [kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged] = await Promise.all([
       get(`SELECT
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
@@ -465,6 +465,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
         COUNT(f.id) FILTER (WHERE f.outcome = 'Need time')::int                                                            AS need_time,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Need SO Call')::int                                                         AS need_so_call,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Need More Details')::int                                                    AS need_more_details,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Exchange Issue')::int                                                       AS exchange_issue,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Discount Issue')::int                                                       AS discount_issue,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Not Interested')::int                                                       AS not_interested,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Already Booked')::int                                                       AS already_booked,
@@ -480,9 +481,17 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
        LEFT JOIN followups f ON f.lead_id = l.id
        GROUP BY COALESCE(sc.so_mobile, sc.so_name)
        ORDER BY total DESC`, branchId),
+
+      all(`SELECT u.id AS officer_id, u.name AS officer, COUNT(l.id)::int AS flagged
+           FROM users u
+           LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_flagged = 1
+           WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
+           GROUP BY u.id, u.name
+           HAVING COUNT(l.id) > 0
+           ORDER BY flagged DESC`, branchId),
     ]);
 
-    res.json({ kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes });
+    res.json({ kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged });
   } catch (e) { next(e); }
 });
 
@@ -490,11 +499,11 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
   try {
     const branchId = req.user.branch_id;
     if (!branchId) return bad(res, 'No branch assigned');
-    const { officer_id, stage, call_status, outcome } = req.query;
+    const { officer_id, stage, call_status, outcome, flagged } = req.query;
 
     const BASE = `
       SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
-             l.location, l.remarks, l.created_at,
+             l.location, l.remarks, l.created_at, l.is_flagged, l.flag_remarks,
              u.name AS officer, b.name AS branch, s.name AS source
       FROM leads l
       LEFT JOIN users    u ON u.id = l.assigned_to
@@ -502,7 +511,12 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
       LEFT JOIN sources  s ON s.id = l.source_id`;
 
     let leads;
-    if (call_status && outcome) {
+    if (flagged === '1' && officer_id) {
+      leads = await all(`${BASE}
+        WHERE l.branch_id = ? AND l.assigned_to = ? AND l.is_flagged = 1
+        ORDER BY l.id DESC
+      `, branchId, Number(officer_id));
+    } else if (call_status && outcome) {
       leads = await all(`${BASE}
         WHERE l.branch_id = ?
           AND EXISTS (SELECT 1 FROM followups f WHERE f.lead_id = l.id AND f.call_status = ? AND f.outcome = ?)
@@ -582,12 +596,15 @@ app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, nex
       return res.status(403).json({ error: 'Not your lead' });
     if (lead.status !== 'open') return bad(res, 'This lead is already closed');
 
-    const { call_status, outcome, next_date, remarks, model_id, activity_id, other_so_called, order_id, tally_receipt } = req.body || {};
+    const { call_status, outcome, next_date, remarks, model_id, activity_id, other_so_called, order_id, tally_receipt, test_drive_date, exchange_expected_price, exchange_offered_price } = req.body || {};
     if (!OUTCOMES[call_status]) return bad(res, 'Select Connected or Not Connected');
     if (!OUTCOMES[call_status].includes(outcome)) return bad(res, 'Select a valid outcome');
 
     if (outcome === 'Booking Done' && !String(order_id || '').trim()) return bad(res, 'Order ID is required');
     if (outcome === 'Retail Done' && !String(tally_receipt || '').trim()) return bad(res, 'Tally Receipt No. is required');
+    if (outcome === 'Need Test Drive' && !String(test_drive_date || '').trim()) return bad(res, 'Test drive date is required');
+    if (outcome === 'Exchange Issue' && !String(exchange_expected_price || '').trim()) return bad(res, 'Expected price is required');
+    if (outcome === 'Exchange Issue' && !String(exchange_offered_price || '').trim()) return bad(res, 'Offered price is required');
 
     const closing = CLOSING.has(outcome);
     const isLost  = LOST.has(outcome);
@@ -603,18 +620,43 @@ app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, nex
     const seq   = lead.fcount + 1;
     const stage = isLost ? 'Lost Lead' : outcome;
     await run(
-      `INSERT INTO followups (lead_id, user_id, seq, call_status, outcome, model_id, activity_id, next_date, remarks, other_so_called, order_id, tally_receipt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO followups (lead_id, user_id, seq, call_status, outcome, model_id, activity_id, next_date, remarks, other_so_called, order_id, tally_receipt, test_drive_date, exchange_expected_price, exchange_offered_price)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       lead.id, req.user.id, seq, call_status, outcome,
       model_id ? Number(model_id) : null, activity_id ? Number(activity_id) : null,
       nd, remarks?.trim() || null, other_so_called?.trim() || null,
       order_id?.trim() || null, tally_receipt?.trim() || null,
+      outcome === 'Need Test Drive' ? String(test_drive_date).trim() : null,
+      outcome === 'Exchange Issue' ? String(exchange_expected_price).trim() : null,
+      outcome === 'Exchange Issue' ? String(exchange_offered_price).trim() : null,
     );
     await run(
       `UPDATE leads SET fcount = ?, stage = ?, next_date = ?, status = ? WHERE id = ?`,
       seq, stage, nd, closing ? 'closed' : 'open', lead.id,
     );
     res.json({ ok: true, seq, closed: closing });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/leads/:id/flag', auth('sales', 'admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const lead = await get(`SELECT assigned_to, is_flagged FROM leads WHERE id = ?`, id);
+    if (!lead) return res.status(404).json({ error: 'Not found' });
+    if (req.user.role === 'sales' && lead.assigned_to !== req.user.id)
+      return res.status(403).json({ error: 'Not your lead' });
+    const newFlag = lead.is_flagged ? 0 : 1;
+    await run(`UPDATE leads SET is_flagged = ? WHERE id = ?`, newFlag, id);
+    res.json({ ok: true, is_flagged: newFlag });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/leads/:id/close-flag', auth('manager', 'admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { remarks } = req.body || {};
+    await run(`UPDATE leads SET is_flagged = 0, flag_remarks = ? WHERE id = ?`, remarks?.trim() || null, id);
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 

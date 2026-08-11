@@ -511,6 +511,35 @@ async function openStageLeads(officerId, stage) {
   }
 }
 
+async function openFlaggedLeads(officerId, officerName) {
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="flx">← Back</button></div>
+    <div class="card" id="flCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#flx').onclick = () => sheet.remove();
+
+  try {
+    const leads = await api(`/manager/leads?officer_id=${officerId}&flagged=1`);
+    const card = sheet.querySelector('#flCard');
+    card.innerHTML = `<h2 style="color:#f57c00">⚑ Flagged Leads — ${esc(officerName)} · ${leads.length}</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Stage</th><th>F#</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.stage || '—')}</td>
+          <td>F${l.fcount}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No flagged leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => {
+      row.onclick = () => openLead(Number(row.dataset.id));
+    });
+  } catch (e) {
+    sheet.querySelector('#flCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
+  }
+}
+
 function tblHtml(cols, rows, empty = 'No data') {
   if (!rows.length) return `<p style="padding:16px;color:var(--muted);text-align:center">${empty}</p>`;
   return `<div class="tbl-wrap"><table class="tbl">
@@ -525,9 +554,11 @@ async function managerView() {
   try { d = await api('/manager/analytics'); }
   catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${e.message}</div>`; return; }
 
-  const { kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes } = d;
+  const { kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged = [] } = d;
   const connected    = outcomes.filter(o => o.call_status === 'Connected');
   const notConnected = outcomes.filter(o => o.call_status === 'Not Connected');
+  const connTotal    = connected.reduce((s, o) => s + o.cnt, 0);
+  const notConnTotal = notConnected.reduce((s, o) => s + o.cnt, 0);
 
   view.innerHTML = `
     ${kpiRow([
@@ -553,14 +584,28 @@ async function managerView() {
       <div class="outcome-grid">
         <div>
           <div class="outcome-head ok">✓ Connected</div>
-          ${tblHtml(['Outcome','Count'], connected.map(o => [esc(o.outcome), outcomeLink('Connected', o.outcome, o.cnt)]))}
+          ${tblHtml(['Outcome','Count'], [
+            ...connected.map(o => [esc(o.outcome), outcomeLink('Connected', o.outcome, o.cnt)]),
+            [`<b>Total Connected</b>`, `<b>${connTotal}</b>`],
+          ])}
         </div>
         <div>
           <div class="outcome-head bad">✗ Not Connected</div>
-          ${tblHtml(['Outcome','Count'], notConnected.map(o => [esc(o.outcome), outcomeLink('Not Connected', o.outcome, o.cnt)]))}
+          ${tblHtml(['Outcome','Count'], [
+            ...notConnected.map(o => [esc(o.outcome), outcomeLink('Not Connected', o.outcome, o.cnt)]),
+            [`<b>Total Not Connected</b>`, `<b>${notConnTotal}</b>`],
+          ])}
         </div>
       </div>
     </div>
+
+    ${flagged.length ? `<div class="card" style="border-color:#f57c00">
+      <h2 style="color:#f57c00">⚑ Flagged Leads by Officer</h2>
+      ${tblHtml(
+        ['Officer','Flagged Leads'],
+        flagged.map(r => [esc(r.officer), `<button class="tbl-link" onclick="openFlaggedLeads(${r.officer_id},${JSON.stringify(r.officer)})">${r.flagged}</button>`]),
+      )}
+    </div>` : ''}
 
     <div class="card">
       <h2>Overdue Follow-ups by Officer</h2>
@@ -575,12 +620,12 @@ async function managerView() {
       <h2>Salesforce Officer — Call Outcome Analysis</h2>
       ${tblHtml(
         ['SF Sales Officer','Total Leads','Total Calls','Connected','Not Connected',
-         'Test Drive','Showroom','Booking Done','Retail Done','Need Time','Need SO Call',
+         'Test Drive','Showroom','Exchange','Booking Done','Retail Done','Need Time','Need SO Call',
          'More Details','Discount','Not Interested','Already Booked','Lost',
          'RNR','Switch Off','Call Back','Call Fwd','Line Busy','Invalid No.'],
         officerOutcomes.map(r => [
           esc(r.so_name), r.total, r.total_calls, r.connected, r.not_connected,
-          r.need_test_drive, r.showroom_visit, r.booking_done, r.retail_done,
+          r.need_test_drive, r.showroom_visit, r.exchange_issue, r.booking_done, r.retail_done,
           r.need_time, r.need_so_call, r.need_more_details, r.discount_issue,
           r.not_interested, r.already_booked, r.lost_calls,
           r.rnr, r.switch_off, r.call_me_back, r.call_forwarding, r.line_busy, r.invalid_number,
@@ -657,11 +702,16 @@ async function leadsView() {
     view.innerHTML = kpi + searchHtml + `<div class="empty">${blank[t]}</div>`;
   } else {
     view.innerHTML = kpi + searchHtml + leads.map(l => `
-      <button class="card lead" data-id="${l.id}" data-name="${esc(l.customer_name.toLowerCase())}" data-mobile="${esc(l.mobile)}">
-        <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
-        <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
-        <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
-      </button>`).join('');
+      <div class="card lead" data-id="${l.id}" data-name="${esc(l.customer_name.toLowerCase())}" data-mobile="${esc(l.mobile)}" tabindex="0" role="button">
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <div style="flex:1;min-width:0">
+            <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
+            <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
+            <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
+          </div>
+          ${me.role === 'sales' ? `<button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to SM/TL'}">⚑</button>` : ''}
+        </div>
+      </div>`).join('');
   }
 
   const sInput = document.getElementById('leadSearch');
@@ -676,7 +726,23 @@ async function leadsView() {
     sInput.focus();
   }
 
-  view.querySelectorAll('.lead').forEach(b => b.onclick = () => openLead(b.dataset.id));
+  view.querySelectorAll('.lead').forEach(card => {
+    card.onclick = (e) => { if (!e.target.closest('.flag-btn')) openLead(card.dataset.id); };
+    card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') openLead(card.dataset.id); };
+  });
+
+  view.querySelectorAll('.flag-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      btn.disabled = true;
+      try {
+        const data = await api(`/leads/${btn.dataset.id}/flag`, 'POST');
+        btn.classList.toggle('flagged', !!data.is_flagged);
+        btn.title = data.is_flagged ? 'Remove flag' : 'Flag to SM/TL';
+      } catch (err) { say(err.message, 'err'); }
+      btn.disabled = false;
+    };
+  });
   
   if (isBulkAdmin) {
     const fb = document.getElementById('bulkFile');
@@ -855,7 +921,18 @@ async function openLead(id) {
         <em>${esc(f.created_at)} · ${esc(f.by_name)}${f.next_date ? ' · next ' + f.next_date : ''}
         ${f.model ? ' · ' + esc(f.model) : ''}${f.activity ? ' · ' + esc(f.activity) : ''}</em>
         ${f.other_so_called ? `<div><b>Other SO called:</b> ${esc(f.other_so_called)}</div>` : ''}
+        ${f.test_drive_date ? `<div><b>Test Drive Date:</b> ${esc(f.test_drive_date)}</div>` : ''}
+        ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
+
+    ${l.is_flagged && me.role === 'manager' ? `<div class="card" style="border-color:#f57c00">
+      <h2 style="color:#f57c00">⚑ Flagged by Sales Officer</h2>
+      ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}
+      <label>Close Flag with Remarks</label>
+      <textarea id="flagRemarks" placeholder="Enter remarks…"></textarea>
+      <button class="btn" id="closeFlagBtn" style="background:#f57c00">Close Flag</button>
+      <div id="flagMsg"></div>
+    </div>` : ''}
 
     ${canAct ? `<div class="card">
       <h2>Log follow-up F${nextSeq}</h2>
@@ -875,6 +952,16 @@ async function openLead(id) {
       <div id="tallyWrap" class="hide">
         <label>Tally Receipt No. <span class="req">*</span></label>
         <input id="tallyNo" placeholder="Enter tally receipt number">
+      </div>
+      <div id="testDriveWrap" class="hide">
+        <label>Test Drive Date <span class="req">*</span></label>
+        <input id="testDriveDate" type="date" min="${me.today}" max="${me.maxDate}">
+      </div>
+      <div id="exchangeWrap" class="hide">
+        <label>Expected Price (₹) <span class="req">*</span></label>
+        <input id="exExpected" type="number" placeholder="Customer's expected price" min="0">
+        <label>Offered Price (₹) <span class="req">*</span></label>
+        <input id="exOffered" type="number" placeholder="Price offered to customer" min="0">
       </div>
       <div id="dateWrap" class="hide">
         <label>Next follow-up date <span class="req">*</span></label>
@@ -898,10 +985,28 @@ async function openLead(id) {
   const close = () => sheet.remove();
   sheet.onclick = (e) => { if (e.target === sheet) close(); };
   sheet.querySelector('#x').onclick = close;
+
+  const closeFlagBtn = sheet.querySelector('#closeFlagBtn');
+  if (closeFlagBtn) {
+    closeFlagBtn.onclick = async () => {
+      const remarks = sheet.querySelector('#flagRemarks').value.trim();
+      closeFlagBtn.disabled = true;
+      try {
+        await api(`/leads/${l.id}/close-flag`, 'POST', { remarks });
+        document.querySelectorAll('.sheet').forEach(s => s.remove());
+        managerView();
+      } catch (err) {
+        const m = sheet.querySelector('#flagMsg');
+        if (m) { m.className = 'msg err'; m.textContent = err.message; }
+        closeFlagBtn.disabled = false;
+      }
+    };
+  }
+
   if (!canAct) return;
 
   const NO_DATE   = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
-  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Already Booked': 'red', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue' };
+  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Already Booked': 'red', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue', 'Exchange Issue': 'blue' };
   let call = '', outcome = '';
 
   const pick = (wrap, onPick) => {
@@ -926,12 +1031,16 @@ async function openLead(id) {
     sheet.querySelector('#dateWrap').classList.add('hide');
     sheet.querySelector('#orderWrap').classList.add('hide');
     sheet.querySelector('#tallyWrap').classList.add('hide');
+    sheet.querySelector('#testDriveWrap').classList.add('hide');
+    sheet.querySelector('#exchangeWrap').classList.add('hide');
     pick(out, (o) => {
       outcome = o;
       const skipDate = NO_DATE.has(o);
       sheet.querySelector('#dateWrap').classList.toggle('hide', skipDate);
       sheet.querySelector('#orderWrap').classList.toggle('hide', o !== 'Booking Done');
       sheet.querySelector('#tallyWrap').classList.toggle('hide', o !== 'Retail Done');
+      sheet.querySelector('#testDriveWrap').classList.toggle('hide', o !== 'Need Test Drive');
+      sheet.querySelector('#exchangeWrap').classList.toggle('hide', o !== 'Exchange Issue');
     });
   });
 
@@ -941,8 +1050,11 @@ async function openLead(id) {
     const skipDate = NO_DATE.has(outcome);
     const nd = sheet.querySelector('#nd').value;
     if (!skipDate && !nd) return say('Next follow-up date is required');
-    if (outcome === 'Booking Done' && !sheet.querySelector('#orderId').value.trim()) return say('Order ID is required');
-    if (outcome === 'Retail Done'  && !sheet.querySelector('#tallyNo').value.trim())  return say('Tally Receipt No. is required');
+    if (outcome === 'Booking Done'   && !sheet.querySelector('#orderId').value.trim())     return say('Order ID is required');
+    if (outcome === 'Retail Done'    && !sheet.querySelector('#tallyNo').value.trim())     return say('Tally Receipt No. is required');
+    if (outcome === 'Need Test Drive'&& !sheet.querySelector('#testDriveDate').value)      return say('Test drive date is required');
+    if (outcome === 'Exchange Issue' && !sheet.querySelector('#exExpected').value.trim())  return say('Expected price is required');
+    if (outcome === 'Exchange Issue' && !sheet.querySelector('#exOffered').value.trim())   return say('Offered price is required');
 
     let oscValue = '';
     if (call === 'Connected') {
@@ -954,8 +1066,11 @@ async function openLead(id) {
       await api(`/leads/${l.id}/followup`, 'POST', {
         call_status: call, outcome,
         next_date:     skipDate ? null : nd,
-        order_id:      outcome === 'Booking Done' ? sheet.querySelector('#orderId').value.trim() : undefined,
-        tally_receipt: outcome === 'Retail Done'  ? sheet.querySelector('#tallyNo').value.trim()  : undefined,
+        order_id:      outcome === 'Booking Done'    ? sheet.querySelector('#orderId').value.trim()     : undefined,
+        tally_receipt: outcome === 'Retail Done'     ? sheet.querySelector('#tallyNo').value.trim()     : undefined,
+        test_drive_date:          outcome === 'Need Test Drive' ? sheet.querySelector('#testDriveDate').value           : undefined,
+        exchange_expected_price:  outcome === 'Exchange Issue'  ? sheet.querySelector('#exExpected').value.trim()      : undefined,
+        exchange_offered_price:   outcome === 'Exchange Issue'  ? sheet.querySelector('#exOffered').value.trim()       : undefined,
         remarks:       sheet.querySelector('#rm').value.trim(),
         other_so_called: oscValue,
       });
