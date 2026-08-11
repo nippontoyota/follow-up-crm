@@ -603,7 +603,7 @@ async function managerView() {
       <h2 style="color:#f57c00">⚑ Flagged Leads by Officer</h2>
       ${tblHtml(
         ['Officer','Flagged Leads'],
-        flagged.map(r => [esc(r.officer), `<button class="tbl-link" onclick="openFlaggedLeads(${r.officer_id},${JSON.stringify(r.officer)})">${r.flagged}</button>`]),
+        flagged.map(r => [esc(r.officer), `<button class="tbl-link flag-drill" data-oid="${r.officer_id}" data-oname="${esc(r.officer)}">${r.flagged}</button>`]),
       )}
     </div>` : ''}
 
@@ -650,6 +650,10 @@ async function managerView() {
         'No data'
       )}
     </div>`;
+
+  view.querySelectorAll('.flag-drill').forEach(btn => {
+    btn.onclick = () => openFlaggedLeads(btn.dataset.oid, btn.dataset.oname);
+  });
 }
 
 function kpiRow(cards) {
