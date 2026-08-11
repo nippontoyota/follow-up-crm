@@ -887,7 +887,6 @@ async function openLead(id) {
           <option value="Yes">Yes</option>
           <option value="No">No</option>
         </select>
-        <input id="oscName" class="hide" style="margin-top:8px" placeholder="Enter the SO's name">
       </div>
       <label>Remarks</label><textarea id="rm"></textarea>
       <button class="btn" id="submit">Save follow-up</button>
@@ -914,17 +913,6 @@ async function openLead(id) {
       });
   };
 
-  const oscSelect = sheet.querySelector('#osc');
-  const oscName = sheet.querySelector('#oscName');
-  if (oscSelect && oscName) {
-    oscSelect.onchange = () => {
-      const isYes = oscSelect.value === 'Yes';
-      oscName.classList.toggle('hide', !isYes);
-      if (isYes && !oscName.value && l.salesforce_history && l.salesforce_history.length > 0) {
-        oscName.value = l.salesforce_history[0].so_name;
-      }
-    };
-  }
 
   pick(sheet.querySelector('#cs'), (v) => {
     call = v; outcome = '';
@@ -958,13 +946,7 @@ async function openLead(id) {
 
     let oscValue = '';
     if (call === 'Connected') {
-      const oscSel = sheet.querySelector('#osc').value;
-      if (oscSel === 'Yes') {
-        oscValue = sheet.querySelector('#oscName').value.trim();
-        if (!oscValue) return say("Please enter the name of the SO who called.");
-      } else {
-        oscValue = oscSel;
-      }
+      oscValue = sheet.querySelector('#osc').value;
     }
 
     e.target.disabled = true;
