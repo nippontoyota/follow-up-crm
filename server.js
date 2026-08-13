@@ -363,13 +363,24 @@ app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
 
       for (const l of branchLeads) {
         const assigned_to = l.assigned_to ? Number(l.assigned_to) : (sos.length ? sos[soIdx % sos.length].id : null);
+        const mobile = String(l.mobile).trim();
         await run(
           `INSERT INTO leads (customer_name, mobile, source_id, branch_id, location, remarks, created_by, assigned_to, model_id, activity_id)
            VALUES (?,?,?,?,?,?,?,?,?,?)`,
-          String(l.customer_name).trim(), String(l.mobile).trim(), Number(l.source_id), Number(branchId),
+          String(l.customer_name).trim(), mobile, Number(l.source_id), Number(branchId),
           l.location?.trim() || null, l.remarks?.trim() || null, req.user.id, assigned_to,
           l.model_id ? Number(l.model_id) : null, l.activity_id ? Number(l.activity_id) : null
         );
+        if (l.so_name?.trim()) {
+          await run(`
+            INSERT INTO salesforce_calls (mobile, so_name, so_mobile, created_at)
+            VALUES (?, ?, ?, TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
+            ON CONFLICT (mobile) DO UPDATE SET
+              so_name = EXCLUDED.so_name,
+              so_mobile = EXCLUDED.so_mobile,
+              created_at = EXCLUDED.created_at
+          `, mobile, l.so_name.trim(), l.so_mobile?.trim() || null);
+        }
         soIdx++;
         added++;
       }

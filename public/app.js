@@ -252,17 +252,7 @@ const LIST_LABELS = { branches: 'Branches', sources: 'Sources', activities: 'Act
 
 async function listsView() {
   masters = await api('/masters');
-  view.innerHTML = `
-    <div class="card" style="background:var(--brand-light); border: 1px solid var(--brand); box-shadow:none;">
-      <h2 style="color:var(--brand); margin-bottom: 4px;">Salesforce Analytics Sync</h2>
-      <label style="margin-top:0; margin-bottom:12px; color:var(--muted)">Upload .xlsx sheet (needs Mobile, SO Name & SO Mobile columns).</label>
-      <div class="grid2">
-        <input type="file" id="sfFile" accept=".xlsx, .xls">
-        <button class="btn" id="sfUpload">Upload</button>
-      </div>
-      <div id="sfMsg" class="msg" style="display:none; margin-top:12px"></div>
-    </div>
-  ` + Object.entries(LIST_LABELS).map(([key, label]) => `
+  view.innerHTML = Object.entries(LIST_LABELS).map(([key, label]) => `
     <div class="card">
       <h2>${label} (${masters[key].length})</h2>
       <div class="grid2">
@@ -273,45 +263,6 @@ async function listsView() {
         <div class="row"><span>${esc(m.name)}</span>
           <button data-del="${key}" data-id="${m.id}">Remove</button></div>`).join('')}</div>
     </div>`).join('') + '<div id="msg"></div>';
-
-  document.getElementById('sfUpload').onclick = async (e) => {
-    const file = document.getElementById('sfFile').files[0];
-    const msg = document.getElementById('sfMsg');
-    const show = (txt, isErr = false) => { msg.style.display = 'block'; msg.className = 'msg ' + (isErr ? 'err' : 'ok'); msg.textContent = txt; };
-    if (!file) return show('Select a file first', true);
-    
-    e.target.disabled = true;
-    show('Parsing file locally...', false);
-    
-    try {
-      const buf = await file.arrayBuffer();
-      if (typeof XLSX === 'undefined') throw new Error('SheetJS library failed to load');
-      const wb = XLSX.read(buf);
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(ws);
-      const records = data.map(r => ({
-        mobile: r.Mobile || r['Mobile Number'] || r.Phone || r.UID || r.uid || r.Contact,
-        so_name: r['SO Name'] || r.SO || r.Name || r['Sales Officer'] || r.Caller,
-        so_mobile: r['SO Mobile'] || r['SO Mobile Number'] || r.so_mobile || ''
-      })).filter(r => r.mobile && r.so_name);
-      
-      show(`Validating ${records.length} records...`, false);
-      const valRes = await api('/salesforce-validate', 'POST', records);
-      
-      if (valRes.duplicates && valRes.duplicates.length > 0) {
-        show(`Found ${valRes.duplicates.length} duplicate(s). Waiting for review...`, false);
-        showSfReviewSheet(valRes.valid, valRes.duplicates);
-      } else {
-        show(`Uploading ${valRes.valid.length} new records...`, false);
-        const res = await api('/salesforce-upload', 'POST', valRes.valid);
-        show(`Done! Processed ${res.processed} records.`, false);
-        document.getElementById('sfFile').value = '';
-      }
-    } catch (err) {
-      show(err.message, true);
-    }
-    e.target.disabled = false;
-  };
 
   view.querySelectorAll('[data-add]').forEach(b => b.onclick = async () => {
     const name = val('in-' + b.dataset.add);
@@ -324,80 +275,6 @@ async function listsView() {
     try { await api(`/masters/${b.dataset.del}/${b.dataset.id}`, 'DELETE'); listsView(); }
     catch (e) { say(e.message); }
   });
-}
-
-let sfValid = [];
-let sfDuplicates = [];
-
-function showSfReviewSheet(valid, duplicates) {
-  sfValid = valid;
-  sfDuplicates = duplicates;
-
-  const sheet = el(`<div class="sheet"><div>
-    <div class="close"><button class="btn ghost" id="x">Cancel</button></div>
-    <div class="card">
-      <h2>Salesforce Upload Review</h2>
-      <p><b>${valid.length}</b> new records are ready to import.</p>
-      <p style="color:var(--bad)"><b>${duplicates.length}</b> duplicate records found (mobile number already exists).</p>
-      <p>Select which duplicates to update/overwrite the existing records.</p>
-    </div>
-    
-    <div id="duplicateList">
-      ${duplicates.map((l, i) => `
-        <div class="card" data-idx="${i}" style="border-left: 3px solid var(--bad); display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <div style="font-size:14px; font-weight:600; margin-bottom:4px;">${esc(l.mobile)}</div>
-            <div style="font-size:13px; color:var(--muted);">New SO: ${esc(l.so_name)}</div>
-          </div>
-          <div>
-            <input type="checkbox" class="accept-cb" style="width:24px; height:24px; cursor:pointer;" checked>
-            <label style="display:inline; margin-left:4px; vertical-align:top; font-size:13px;">Accept</label>
-          </div>
-        </div>
-      `).join('')}
-    </div>
-
-    <div class="card">
-      <button class="btn" id="confirmSfUpload">Confirm & Upload</button>
-      <div id="sfReviewMsg"></div>
-    </div>
-  </div></div>`);
-
-  document.body.appendChild(sheet);
-  const close = () => { sheet.remove(); sfValid = []; sfDuplicates = []; document.getElementById('sfFile').value = ''; document.getElementById('sfMsg').style.display = 'none'; };
-  sheet.querySelector('#x').onclick = close;
-
-  sheet.querySelector('#confirmSfUpload').onclick = async (e) => {
-    const accepted = [];
-    sheet.querySelectorAll('#duplicateList .card').forEach(card => {
-      const idx = card.dataset.idx;
-      const cb = card.querySelector('.accept-cb');
-      if (cb.checked) {
-        accepted.push(sfDuplicates[idx]);
-      }
-    });
-
-    const totalToUpload = [...sfValid, ...accepted];
-    if (!totalToUpload.length) {
-      const msgEl = sheet.querySelector('#sfReviewMsg');
-      if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'No records selected for upload.'; }
-      return;
-    }
-
-    e.target.disabled = true;
-    e.target.textContent = 'Uploading...';
-    try {
-      const res = await api('/salesforce-upload', 'POST', totalToUpload);
-      close();
-      say(`Successfully imported/updated ${res.processed} Salesforce records!`, 'ok');
-    } catch (err) {
-      const m = sheet.querySelector('#sfReviewMsg');
-      if (m) { m.className = 'msg err'; m.textContent = err.message; }
-      else alert(err.message);
-      e.target.disabled = false;
-      e.target.textContent = 'Confirm & Upload';
-    }
-  };
 }
 
 /* -------------------------------------------------------- marketing: capture */
@@ -769,10 +646,14 @@ async function handleBulkUpload(e) {
     const records = data.map(r => {
       let branch = null, source = null, mobile = null, customer_name = null;
       let model = null, activity = null, location = null, remarks = null;
+      let so_name = null, so_mobile = null;
       for (const key of Object.keys(r)) {
         const k = key.toLowerCase().trim();
         const v = r[key];
-        if (k.includes('branch')) branch = v;
+        // SO columns must be checked before generic name/phone checks
+        if (k === 'so name' || k === 'so_name' || k === 'soname' || k.includes('sales officer name') || k.includes('consultant name')) so_name = String(v || '').trim() || null;
+        else if (k === 'so phone' || k === 'so phone no' || k === 'so_phone' || k === 'so_mobile' || k === 'so mobile' || k.includes('sales officer phone') || k.includes('consultant phone')) so_mobile = String(v || '').replace(/\D/g, '').slice(-10) || null;
+        else if (k.includes('branch')) branch = v;
         else if (k.includes('source')) source = v;
         else if (k.includes('mobile') || k.includes('phone') || k === 'uid' || k === 'contact') mobile = String(v).replace(/\D/g, '').slice(-10);
         else if (k.includes('customer') || k.includes('name')) customer_name = v;
@@ -781,7 +662,7 @@ async function handleBulkUpload(e) {
         else if (k.includes('location')) location = v;
         else if (k.includes('remark')) remarks = v;
       }
-      return { branch, source, mobile, customer_name, model, activity, location, remarks };
+      return { branch, source, mobile, customer_name, model, activity, location, remarks, so_name, so_mobile };
     }).filter(r => r.mobile || r.customer_name);
 
     if (!records.length) throw new Error('No valid rows found in sheet');
