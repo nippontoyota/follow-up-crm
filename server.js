@@ -354,10 +354,15 @@ app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
 
     let added = 0;
     for (const branchId of Object.keys(byBranch)) {
-      const sos = await all(`SELECT id FROM users WHERE role = 'sales' AND active = 1 AND branch_id = ? ORDER BY id`, Number(branchId));
+      const branchLeads = byBranch[branchId];
+      // Use manually selected officer if provided, otherwise fall back to round-robin
+      const manualOfficer = branchLeads[0]?.assigned_to ? Number(branchLeads[0].assigned_to) : null;
+      let sos = manualOfficer
+        ? [{ id: manualOfficer }]
+        : await all(`SELECT id FROM users WHERE role = 'sales' AND active = 1 AND branch_id = ? ORDER BY id`, Number(branchId));
       let soIdx = 0;
-      
-      for (const l of byBranch[branchId]) {
+
+      for (const l of branchLeads) {
         const assigned_to = sos.length ? sos[soIdx % sos.length].id : null;
         await run(
           `INSERT INTO leads (customer_name, mobile, source_id, branch_id, location, remarks, created_by, assigned_to, model_id, activity_id)

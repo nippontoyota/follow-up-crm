@@ -798,7 +798,34 @@ async function handleBulkUpload(e) {
   }
 }
 
-function showBulkReviewSheet(duplicates = 0) {
+async function showBulkReviewSheet(duplicates = 0) {
+  // Fetch sales officers to build per-branch assignment selectors
+  let allUsers = [];
+  try { allUsers = await api('/users'); } catch { /* non-fatal */ }
+  const salesOfficers = allUsers.filter(u => u.role === 'sales' && u.active === 1);
+
+  // Group valid leads by branch to show one selector per branch
+  const branchMap = {};
+  for (const l of bulkValid) {
+    if (!branchMap[l.branch_id]) {
+      const branchName = masters.branches.find(b => b.id === l.branch_id)?.name || `Branch ${l.branch_id}`;
+      branchMap[l.branch_id] = { name: branchName, count: 0 };
+    }
+    branchMap[l.branch_id].count++;
+  }
+
+  const assignHtml = Object.entries(branchMap).map(([branchId, info]) => {
+    const bOfficers = salesOfficers.filter(u => u.branch_id === Number(branchId));
+    return `<div style="margin-bottom:14px">
+      <label style="font-weight:600">${esc(info.name)} <span style="font-weight:400;color:var(--muted)">(${info.count} lead${info.count !== 1 ? 's' : ''})</span></label>
+      <select id="assign-${branchId}" style="${!bOfficers.length ? 'border-color:var(--bad)' : ''}">
+        <option value="">Select sales officer…</option>
+        ${bOfficers.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}
+        ${!bOfficers.length ? `<option disabled>No active officers in this branch</option>` : ''}
+      </select>
+    </div>`;
+  }).join('');
+
   const sheet = el(`<div class="sheet"><div>
     <div class="close"><button class="btn ghost" id="x">Cancel</button></div>
     <div class="card">
@@ -807,7 +834,12 @@ function showBulkReviewSheet(duplicates = 0) {
       ${duplicates ? `<p style="color:var(--text-light)"><b>${duplicates}</b> duplicate leads were automatically skipped.</p>` : ''}
       ${bulkInvalid.length ? `<p style="color:var(--bad)"><b>${bulkInvalid.length}</b> leads have errors (typos or missing data). Please fix them below or they will be skipped.</p>` : ''}
     </div>
-    
+
+    ${bulkValid.length ? `<div class="card">
+      <h2>Assign to Sales Officer</h2>
+      ${assignHtml}
+    </div>` : ''}
+
     ${bulkInvalid.length ? `<div id="invalidList">
       ${bulkInvalid.map((l, i) => `
         <div class="card" data-idx="${i}" style="border-left: 3px solid var(--bad)">
@@ -828,7 +860,7 @@ function showBulkReviewSheet(duplicates = 0) {
     </div>` : ''}
 
     <div class="card">
-      <button class="btn" id="confirmBulk">Confirm & Auto-Assign</button>
+      <button class="btn" id="confirmBulk">Confirm & Assign</button>
       <div id="msg"></div>
     </div>
   </div></div>`);
@@ -838,8 +870,19 @@ function showBulkReviewSheet(duplicates = 0) {
   sheet.querySelector('#x').onclick = close;
 
   sheet.querySelector('#confirmBulk').onclick = async (e) => {
+    // Validate officer selections
+    const assignMap = {};
+    for (const branchId of Object.keys(branchMap)) {
+      const sel = sheet.querySelector(`#assign-${branchId}`);
+      if (!sel || !sel.value) {
+        const msgEl = sheet.querySelector('#msg');
+        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = `Select a sales officer for ${branchMap[branchId].name}.`; }
+        return;
+      }
+      assignMap[branchId] = Number(sel.value);
+    }
+
     const fixed = [];
-    
     sheet.querySelectorAll('#invalidList .card').forEach(card => {
       const idx = card.dataset.idx;
       const original = bulkInvalid[idx];
@@ -847,19 +890,22 @@ function showBulkReviewSheet(duplicates = 0) {
       const so = card.querySelector('.fix-so').value;
       const mo = card.querySelector('.fix-mo').value;
       const ac = card.querySelector('.fix-ac').value;
-      
       if (br && so && original.customer_name && original.mobile && original.mobile.length === 10) {
         fixed.push({
           ...original,
           branch_id: Number(br),
           source_id: Number(so),
           model_id: mo ? Number(mo) : null,
-          activity_id: ac ? Number(ac) : null
+          activity_id: ac ? Number(ac) : null,
+          assigned_to: assignMap[br] || null,
         });
       }
     });
 
-    const totalToAssign = [...bulkValid, ...fixed];
+    const totalToAssign = [
+      ...bulkValid.map(l => ({ ...l, assigned_to: assignMap[l.branch_id] || null })),
+      ...fixed,
+    ];
     if (!totalToAssign.length) {
       const msgEl = sheet.querySelector('#msg');
       if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'No valid leads to assign.'; }
@@ -878,7 +924,7 @@ function showBulkReviewSheet(duplicates = 0) {
       if (m) { m.className = 'msg err'; m.textContent = err.message; }
       else alert(err.message);
       e.target.disabled = false;
-      e.target.textContent = 'Confirm & Auto-Assign';
+      e.target.textContent = 'Confirm & Assign';
     }
   };
 }
