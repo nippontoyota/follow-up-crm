@@ -195,7 +195,7 @@ app.post('/api/salesforce-upload', auth('admin'), async (req, res, next) => {
 app.get('/api/users', auth('admin'), async (req, res, next) => {
   try {
     res.json(await all(
-      `SELECT u.id, u.username, u.name, u.role, u.active, b.name AS branch
+      `SELECT u.id, u.username, u.name, u.role, u.active, u.branch_id, b.name AS branch
        FROM users u LEFT JOIN branches b ON b.id = u.branch_id
        ORDER BY u.role, u.name`,
     ));
@@ -356,14 +356,13 @@ app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
     for (const branchId of Object.keys(byBranch)) {
       const branchLeads = byBranch[branchId];
       // Use manually selected officer if provided, otherwise fall back to round-robin
-      const manualOfficer = branchLeads[0]?.assigned_to ? Number(branchLeads[0].assigned_to) : null;
-      let sos = manualOfficer
-        ? [{ id: manualOfficer }]
-        : await all(`SELECT id FROM users WHERE role = 'sales' AND active = 1 AND branch_id = ? ORDER BY id`, Number(branchId));
+      // Fall back to round-robin only if no client-side assignment provided
+      const hasManual = branchLeads.some(l => l.assigned_to);
+      const sos = hasManual ? [] : await all(`SELECT id FROM users WHERE role = 'sales' AND active = 1 AND branch_id = ? ORDER BY id`, Number(branchId));
       let soIdx = 0;
 
       for (const l of branchLeads) {
-        const assigned_to = sos.length ? sos[soIdx % sos.length].id : null;
+        const assigned_to = l.assigned_to ? Number(l.assigned_to) : (sos.length ? sos[soIdx % sos.length].id : null);
         await run(
           `INSERT INTO leads (customer_name, mobile, source_id, branch_id, location, remarks, created_by, assigned_to, model_id, activity_id)
            VALUES (?,?,?,?,?,?,?,?,?,?)`,

@@ -816,13 +816,17 @@ async function showBulkReviewSheet(duplicates = 0) {
 
   const assignHtml = Object.entries(branchMap).map(([branchId, info]) => {
     const bOfficers = salesOfficers.filter(u => u.branch_id === Number(branchId));
-    return `<div style="margin-bottom:14px">
-      <label style="font-weight:600">${esc(info.name)} <span style="font-weight:400;color:var(--muted)">(${info.count} lead${info.count !== 1 ? 's' : ''})</span></label>
-      <select id="assign-${branchId}" style="${!bOfficers.length ? 'border-color:var(--bad)' : ''}">
-        <option value="">Select sales officer…</option>
-        ${bOfficers.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}
-        ${!bOfficers.length ? `<option disabled>No active officers in this branch</option>` : ''}
-      </select>
+    return `<div style="margin-bottom:18px">
+      <div style="font-weight:600;margin-bottom:6px">${esc(info.name)} <span style="font-weight:400;color:var(--muted);font-size:13px">(${info.count} lead${info.count !== 1 ? 's' : ''})</span></div>
+      ${!bOfficers.length
+        ? `<p style="color:var(--bad);font-size:13px">No active sales officers in this branch.</p>`
+        : `<div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${bOfficers.map(u => `<label style="display:flex;align-items:center;gap:6px;font-size:14px;background:var(--bg);border:1.5px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer">
+              <input type="checkbox" class="assign-cb" data-branch="${branchId}" value="${u.id}" style="accent-color:var(--brand);width:15px;height:15px">
+              ${esc(u.name)}
+            </label>`).join('')}
+          </div>`
+      }
     </div>`;
   }).join('');
 
@@ -870,17 +874,26 @@ async function showBulkReviewSheet(duplicates = 0) {
   sheet.querySelector('#x').onclick = close;
 
   sheet.querySelector('#confirmBulk').onclick = async (e) => {
-    // Validate officer selections
-    const assignMap = {};
+    // Collect checked officers per branch; require at least one per branch
+    const assignMap = {}; // branchId -> [officerId, ...]
     for (const branchId of Object.keys(branchMap)) {
-      const sel = sheet.querySelector(`#assign-${branchId}`);
-      if (!sel || !sel.value) {
+      const checked = [...sheet.querySelectorAll(`.assign-cb[data-branch="${branchId}"]`)].filter(cb => cb.checked).map(cb => Number(cb.value));
+      if (!checked.length) {
         const msgEl = sheet.querySelector('#msg');
-        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = `Select a sales officer for ${branchMap[branchId].name}.`; }
+        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = `Select at least one officer for ${branchMap[branchId].name}.`; }
         return;
       }
-      assignMap[branchId] = Number(sel.value);
+      assignMap[branchId] = checked;
     }
+
+    // Round-robin counter per branch
+    const rrIdx = {};
+    const pickOfficer = (branchId) => {
+      const officers = assignMap[branchId] || [];
+      if (!officers.length) return null;
+      if (!rrIdx[branchId]) rrIdx[branchId] = 0;
+      return officers[rrIdx[branchId]++ % officers.length];
+    };
 
     const fixed = [];
     sheet.querySelectorAll('#invalidList .card').forEach(card => {
@@ -897,13 +910,13 @@ async function showBulkReviewSheet(duplicates = 0) {
           source_id: Number(so),
           model_id: mo ? Number(mo) : null,
           activity_id: ac ? Number(ac) : null,
-          assigned_to: assignMap[br] || null,
+          assigned_to: pickOfficer(br),
         });
       }
     });
 
     const totalToAssign = [
-      ...bulkValid.map(l => ({ ...l, assigned_to: assignMap[l.branch_id] || null })),
+      ...bulkValid.map(l => ({ ...l, assigned_to: pickOfficer(String(l.branch_id)) })),
       ...fixed,
     ];
     if (!totalToAssign.length) {
