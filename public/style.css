@@ -347,16 +347,35 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 
 /* -------------------------------------------------------------- pagination */
 
-.pager { display: flex; justify-content: center; margin: 14px 0 16px; }
+.pager { display: flex; justify-content: center; margin: 14px 0 16px; width: 100%; }
 .pager-bar {
-  display: inline-flex; align-items: center; gap: 12px;
-  max-width: 100%; padding: 8px 10px;
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; max-width: 100%; padding: 8px 10px;
   background: var(--card); border: 1.5px solid var(--line); border-radius: 12px;
-  overflow-x: auto; -webkit-overflow-scrolling: touch;
 }
-.pager-nums { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pager-prev, .pager-next {
+  flex-shrink: 0; min-width: 40px; height: 40px;
+  border: 1.5px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--text);
+  font-size: 22px; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.pager-prev:hover:not(:disabled), .pager-next:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.pager-prev:disabled, .pager-next:disabled { opacity: .35; cursor: default; }
+.pager-info {
+  display: none; flex-shrink: 0;
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  white-space: nowrap; text-align: center;
+}
+.pager-nums {
+  display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.pager-nums::-webkit-scrollbar { display: none; }
 .pager-num {
-  min-width: 36px; height: 36px; padding: 0 8px;
+  min-width: 36px; height: 36px; padding: 0 8px; flex-shrink: 0;
   border: 1.5px solid var(--line); border-radius: 8px;
   background: #fff; color: var(--muted);
   font-size: 14px; font-weight: 500; cursor: pointer;
@@ -383,6 +402,32 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
   appearance: none; -webkit-appearance: none; box-shadow: none;
 }
 .pager-select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-light); }
+
+@media (max-width: 599px) {
+  .pager { margin: 12px 0 14px; }
+  .pager-bar {
+    display: grid;
+    grid-template-columns: 44px 1fr 44px;
+    grid-template-rows: auto auto;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .pager-prev { grid-column: 1; grid-row: 1; min-width: 44px; height: 44px; }
+  .pager-info { display: block; grid-column: 2; grid-row: 1; align-self: center; font-size: 14px; }
+  .pager-next { grid-column: 3; grid-row: 1; min-width: 44px; height: 44px; }
+  .pager-nums { display: none; }
+  .pager-jump {
+    grid-column: 1 / -1; grid-row: 2;
+    justify-content: center; width: 100%;
+    border-left: none; border-top: 1.5px solid var(--line);
+    padding: 10px 0 0; margin: 0;
+  }
+  .pager-select { min-width: 64px; height: 40px; font-size: 15px; }
+}
+
+@media (min-width: 600px) {
+  .pager-bar { width: auto; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
 
 /* ------------------------------------------------------------------- kpi */
 

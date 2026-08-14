@@ -114,6 +114,19 @@ app.get('/api/masters', auth(), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.get('/api/masters/:type', auth('admin'), async (req, res, next) => {
+  try {
+    const t = MASTERS[req.params.type];
+    if (!t) return bad(res, 'Unknown list');
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const total = (await get(`SELECT COUNT(*)::int AS c FROM ${t}`))?.c || 0;
+    const items = await all(`SELECT * FROM ${t} ORDER BY name LIMIT ? OFFSET ?`, limit, offset);
+    res.json({ items, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
+  } catch (e) { next(e); }
+});
+
 app.post('/api/masters/:type', auth('admin'), async (req, res, next) => {
   try {
     const t = MASTERS[req.params.type];
@@ -198,11 +211,23 @@ app.post('/api/salesforce-upload', auth('admin'), async (req, res, next) => {
 
 app.get('/api/users', auth('admin'), async (req, res, next) => {
   try {
-    res.json(await all(
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const where = [], args = [];
+
+    if (req.query.role) { where.push('u.role = ?'); args.push(req.query.role); }
+    if (req.query.active === '1') { where.push('u.active = 1'); }
+
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const total = (await get(`SELECT COUNT(*)::int AS c FROM users u ${whereSql}`, ...args))?.c || 0;
+    const users = await all(
       `SELECT u.id, u.username, u.name, u.role, u.active, u.branch_id, b.name AS branch
        FROM users u LEFT JOIN branches b ON b.id = u.branch_id
-       ORDER BY u.role, u.name`,
-    ));
+       ${whereSql} ORDER BY u.role, u.name LIMIT ? OFFSET ?`,
+      ...args, limit, offset,
+    );
+    res.json({ users, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 

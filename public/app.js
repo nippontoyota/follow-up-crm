@@ -10,6 +10,11 @@ let tab = '';
 let leadsPage = 1;
 let leadsQ = '';
 const LEADS_PER_PAGE = 25;
+let usersPage = 1;
+const USERS_PER_PAGE = 25;
+const LISTS_PER_PAGE = 25;
+const PAGINATED_LISTS = new Set(['branches', 'sources']);
+let listsPage = { branches: 1, sources: 1 };
 let leadsGen = 0;
 let leadsCtrl = null;
 let leadsStatsCache = null;
@@ -183,6 +188,8 @@ async function boot() {
 function go(t) {
   tab = t;
   if (['fresh', 'today', 'leads'].includes(t)) { leadsPage = 1; leadsQ = ''; invalidateLeadsStats(); }
+  if (t === 'users') usersPage = 1;
+  if (t === 'lists') listsPage = { branches: 1, sources: 1 };
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
@@ -192,7 +199,15 @@ function go(t) {
 /* ------------------------------------------------------------- admin: users */
 
 async function usersView() {
-  const users = await api('/users');
+  const params = new URLSearchParams({ page: usersPage, limit: USERS_PER_PAGE });
+  const [data, officersData] = await Promise.all([
+    api('/users?' + params),
+    api('/users?role=sales&active=1&limit=100'),
+  ]);
+  const { items: users, total, page, pages } = parsePage(data, 'users', usersPage, USERS_PER_PAGE);
+  const { items: officers } = parsePage(officersData, 'users', 1, 100);
+  const pg = renderPager(page, pages, total);
+
   view.innerHTML = `
     <div class="card">
       <h2>Create user</h2>
@@ -215,13 +230,16 @@ async function usersView() {
       <div id="msg"></div>
     </div>
     <div class="card">
-      <h2>Users (${users.length})</h2>
-      <div class="rows">${users.map(u => `
+      <h2>Users (${total})</h2>
+      ${pg}
+      <div class="rows">${users.length ? users.map(u => `
         <div class="row">
           <span><b>${esc(u.name)}</b><br><em>@${esc(u.username)} · ${u.role}${u.branch ? ' · ' + esc(u.branch) : ''}${u.active ? '' : ' · disabled'}</em></span>
           <button data-id="${u.id}">${u.active ? 'Disable' : 'Enable'}</button>
-        </div>`).join('')}</div>
+        </div>`).join('') : '<div class="empty">No users on this page.</div>'}</div>
     </div>`;
+
+  bindPager(p => { usersPage = p; usersView(); });
 
   document.getElementById('role').onchange = (e) =>
     document.getElementById('branchWrap').classList.toggle('hide', !['sales','manager'].includes(e.target.value));
@@ -242,7 +260,6 @@ async function usersView() {
   });
 
   // Reassign leads card
-  const officers = users.filter(u => u.role === 'sales' && u.active);
   const officerOpts = officers.map(u => `<option value="${u.id}">${esc(u.name)}${u.branch ? ' - ' + esc(u.branch) : ''}</option>`).join('');
   const reassignCard = el(`<div class="card reassign-card">
     <div class="reassign-head">
@@ -362,17 +379,35 @@ const LIST_PLACEHOLDER = { branches: 'branch', sources: 'source', activities: 'a
 
 async function listsView() {
   masters = await api('/masters');
-  view.innerHTML = Object.entries(LIST_LABELS).map(([key, label]) => `
-    <div class="card">
-      <h2>${label} (${masters[key].length})</h2>
+
+  const paged = {
+    branches: parsePage(masters.branches, 'items', listsPage.branches, LISTS_PER_PAGE),
+    sources: parsePage(masters.sources, 'items', listsPage.sources, LISTS_PER_PAGE),
+  };
+
+  view.innerHTML = Object.entries(LIST_LABELS).map(([key, label]) => {
+    const pg = PAGINATED_LISTS.has(key) ? paged[key] : null;
+    const items = pg ? pg.items : masters[key];
+    const total = pg ? pg.total : items.length;
+    const pager = pg ? renderPager(pg.page, pg.pages, pg.total) : '';
+    return `
+    <div class="card" data-list="${key}">
+      <h2>${label} (${total})</h2>
       <div class="grid2">
         <input id="in-${key}" placeholder="Add ${LIST_PLACEHOLDER[key]}">
         <button class="btn" data-add="${key}">Add</button>
       </div>
-      <div class="rows">${masters[key].map(m => `
+      ${pager}
+      <div class="rows">${items.length ? items.map(m => `
         <div class="row"><span>${esc(m.name)}</span>
-          <button data-del="${key}" data-id="${m.id}">Remove</button></div>`).join('')}</div>
-    </div>`).join('') + '<div id="msg"></div>';
+          <button data-del="${key}" data-id="${m.id}">Remove</button></div>`).join('') : '<div class="empty">No entries on this page.</div>'}</div>
+    </div>`;
+  }).join('') + '<div id="msg"></div>';
+
+  for (const key of PAGINATED_LISTS) {
+    const card = view.querySelector(`[data-list="${key}"]`);
+    if (card) bindPager(p => { listsPage[key] = p; listsView(); }, card);
+  }
 
   view.querySelectorAll('[data-add]').forEach(b => b.onclick = async () => {
     const name = val('in-' + b.dataset.add);
@@ -702,12 +737,12 @@ function kpiRow(cards) {
   ).join('')}</div>`;
 }
 
-function parseLeadsPage(data, page, limit) {
+function parsePage(data, itemKey, page, limit) {
   if (Array.isArray(data)) {
     const total = data.length;
     const start = (page - 1) * limit;
     return {
-      leads: data.slice(start, start + limit),
+      items: data.slice(start, start + limit),
       total,
       page,
       limit,
@@ -715,7 +750,7 @@ function parseLeadsPage(data, page, limit) {
     };
   }
   return {
-    leads: data.leads || [],
+    items: data[itemKey] || [],
     total: data.total ?? 0,
     page: data.page ?? page,
     limit: data.limit ?? limit,
@@ -750,9 +785,14 @@ function renderPager(page, pages, total) {
     const n = i + 1;
     return `<option value="${n}"${n === page ? ' selected' : ''}>${n}</option>`;
   }).join('');
+  const prev = page > 1 ? page - 1 : null;
+  const next = page < pages ? page + 1 : null;
   return `<div class="pager">
     <div class="pager-bar">
+      <button type="button" class="pager-prev" data-page="${prev || ''}" aria-label="Previous page"${prev ? '' : ' disabled'}>‹</button>
+      <span class="pager-info" aria-live="polite">Page ${page} of ${pages}</span>
       <div class="pager-nums">${nums}</div>
+      <button type="button" class="pager-next" data-page="${next || ''}" aria-label="Next page"${next ? '' : ' disabled'}>›</button>
       <label class="pager-jump">
         <span class="pager-jump-lbl">Go to</span>
         <select class="pager-select" aria-label="Jump to page">${opts}</select>
@@ -761,19 +801,17 @@ function renderPager(page, pages, total) {
   </div>`;
 }
 
-function bindPager() {
-  view.querySelectorAll('.pager-num:not(.on)').forEach(btn => {
+function bindPager(onPage, root = view) {
+  root.querySelectorAll('.pager-num:not(.on), .pager-prev:not([disabled]), .pager-next:not([disabled])').forEach(btn => {
     btn.onclick = () => {
-      leadsPage = Number(btn.dataset.page);
-      leadsView();
-      view.scrollIntoView({ behavior: 'smooth' });
+      onPage(Number(btn.dataset.page));
+      root.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
   });
-  view.querySelectorAll('.pager-select').forEach(sel => {
+  root.querySelectorAll('.pager-select').forEach(sel => {
     sel.onchange = () => {
-      leadsPage = Number(sel.value);
-      leadsView();
-      view.scrollIntoView({ behavior: 'smooth' });
+      onPage(Number(sel.value));
+      root.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
   });
 }
@@ -805,7 +843,7 @@ async function leadsView() {
   }
   if (gen !== leadsGen) return;
 
-  const { leads, total, page, pages } = parseLeadsPage(data, leadsPage, LEADS_PER_PAGE);
+  const { items: leads, total, page, pages } = parsePage(data, 'leads', leadsPage, LEADS_PER_PAGE);
   const pg = renderPager(page, pages, total);
 
   const kpi = {
@@ -866,7 +904,7 @@ async function leadsView() {
       }).join('')}</div>`;
   }
 
-  bindPager();
+  bindPager(p => { leadsPage = p; leadsView(); });
 
   const sInput = document.getElementById('leadSearch');
   if (sInput) {
@@ -961,9 +999,11 @@ async function handleBulkUpload(e) {
 
 async function showBulkReviewSheet(duplicates = 0) {
   // Fetch sales officers to build per-branch assignment selectors
-  let allUsers = [];
-  try { allUsers = await api('/users'); } catch { /* non-fatal */ }
-  const salesOfficers = allUsers.filter(u => u.role === 'sales' && u.active === 1);
+  let salesOfficers = [];
+  try {
+    const data = await api('/users?role=sales&active=1&limit=100');
+    salesOfficers = parsePage(data, 'users', 1, 100).items;
+  } catch { /* non-fatal */ }
 
   // Group valid leads by branch to show one selector per branch
   const branchMap = {};
