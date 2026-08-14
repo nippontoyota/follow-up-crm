@@ -423,7 +423,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
     const branchId = req.user.branch_id;
     if (!branchId) return bad(res, 'No branch assigned');
 
-    const [kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged] = await Promise.all([
+    const [kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged, lostCases] = await Promise.all([
       get(`SELECT
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
@@ -445,9 +445,15 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
        GROUP BY u.id, u.name ORDER BY u.name`, branchId),
 
       all(`SELECT f.call_status, f.outcome, COUNT(*)::int AS cnt
-       FROM followups f JOIN leads l ON l.id = f.lead_id
-       WHERE l.branch_id = ?
-       GROUP BY f.call_status, f.outcome ORDER BY f.call_status, cnt DESC`, branchId),
+       FROM (
+         SELECT DISTINCT ON (f2.lead_id) f2.lead_id, f2.call_status, f2.outcome
+         FROM followups f2
+         JOIN leads l2 ON l2.id = f2.lead_id
+         WHERE l2.branch_id = ?
+         ORDER BY f2.lead_id, f2.created_at DESC
+       ) f
+       GROUP BY f.call_status, f.outcome
+       ORDER BY f.call_status, cnt DESC`, branchId),
 
       all(`SELECT u.id AS officer_id, u.name AS officer,
         COUNT(l.id) FILTER (WHERE l.status = 'open' AND l.fcount > 0)::int AS pending,
@@ -504,9 +510,21 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
            GROUP BY u.id, u.name
            HAVING COUNT(l.id) > 0
            ORDER BY flagged DESC`, branchId),
+
+      all(`SELECT f.outcome, COUNT(*)::int AS cnt
+           FROM (
+             SELECT DISTINCT ON (f2.lead_id) f2.lead_id, f2.outcome
+             FROM followups f2
+             JOIN leads l2 ON l2.id = f2.lead_id
+             WHERE l2.branch_id = ?
+             ORDER BY f2.lead_id, f2.created_at DESC
+           ) f
+           WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer')
+           GROUP BY f.outcome
+           ORDER BY cnt DESC`, branchId),
     ]);
 
-    res.json({ kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged });
+    res.json({ kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged, lostCases });
   } catch (e) { next(e); }
 });
 
@@ -514,7 +532,7 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
   try {
     const branchId = req.user.branch_id;
     if (!branchId) return bad(res, 'No branch assigned');
-    const { officer_id, stage, call_status, outcome, flagged } = req.query;
+    const { officer_id, stage, call_status, outcome, latest_outcome, flagged } = req.query;
 
     const BASE = `
       SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
@@ -534,9 +552,16 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
     } else if (call_status && outcome) {
       leads = await all(`${BASE}
         WHERE l.branch_id = ?
-          AND EXISTS (SELECT 1 FROM followups f WHERE f.lead_id = l.id AND f.call_status = ? AND f.outcome = ?)
+          AND (SELECT f.call_status FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
+          AND (SELECT f.outcome     FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
         ORDER BY l.next_date NULLS FIRST, l.id DESC
       `, branchId, call_status, outcome);
+    } else if (latest_outcome) {
+      leads = await all(`${BASE}
+        WHERE l.branch_id = ?
+          AND (SELECT f.outcome FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
+        ORDER BY l.next_date NULLS FIRST, l.id DESC
+      `, branchId, latest_outcome);
     } else {
       if (!officer_id) return bad(res, 'officer_id required');
       const STAGE_FILTER = {

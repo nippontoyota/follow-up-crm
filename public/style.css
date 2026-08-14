@@ -237,6 +237,18 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .msg.err { background: #fee2e2; color: var(--bad); }
 .msg.ok  { background: #dcfce7; color: var(--ok); }
 
+/* floating toast – shown when no inline #msg is available */
+#toast {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 9999; min-width: 240px; max-width: 90vw;
+  padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18); opacity: 0;
+  transition: opacity .25s; pointer-events: none; text-align: center;
+}
+#toast.show { opacity: 1; pointer-events: auto; }
+#toast.err { background: #fee2e2; color: var(--bad); }
+#toast.ok  { background: #dcfce7; color: var(--ok); }
+
 /* ------------------------------------------------------------------ lists */
 
 .rows { border-top: 1px solid var(--line); margin-top: 16px; }

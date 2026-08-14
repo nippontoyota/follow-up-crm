@@ -25,11 +25,26 @@ async function api(path, method = 'GET', body) {
   return data;
 }
 
+let _toastTimer;
+function toast(msg, kind = 'err') {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    document.body.appendChild(t);
+  }
+  clearTimeout(_toastTimer);
+  t.className = kind;
+  t.textContent = msg;
+  t.classList.add('show');
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+}
+
 function say(msg, kind = 'err') {
   // The open sheet owns the message slot while it is up, otherwise the page does.
   const scope = document.querySelector('.sheet') || document;
   const box = scope.querySelector('#msg') || document.getElementById('msg');
-  if (!box) return alert(msg);
+  if (!box) return toast(msg, kind);
   box.className = 'msg ' + kind;
   box.textContent = msg;
   box.scrollIntoView({ block: 'nearest' });
@@ -327,6 +342,12 @@ function outcomeLink(callStatus, outcome, count) {
   return `<button class="tbl-link" onclick="openOutcomeLeads('${cs}','${oc}','${esc(outcome)}')">${count}</button>`;
 }
 
+function lostCaseLink(outcome, count) {
+  if (!count) return `<span style="color:var(--muted)">0</span>`;
+  const oc = encodeURIComponent(outcome);
+  return `<button class="tbl-link" style="color:var(--bad)" onclick="openLostLeads('${oc}','${esc(outcome)}')">${count}</button>`;
+}
+
 async function openOutcomeLeads(callStatus, outcome, label) {
   const sheet = el(`<div class="sheet"><div>
     <div class="close"><button class="btn ghost" id="olx">← Back</button></div>
@@ -354,6 +375,36 @@ async function openOutcomeLeads(callStatus, outcome, label) {
     });
   } catch (e) {
     sheet.querySelector('#olCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
+  }
+}
+
+async function openLostLeads(outcome, label) {
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="llx">← Back</button></div>
+    <div class="card" id="llCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#llx').onclick = () => sheet.remove();
+
+  try {
+    const leads = await api(`/manager/leads?latest_outcome=${outcome}`);
+    const card = sheet.querySelector('#llCard');
+    card.innerHTML = `<h2 style="color:var(--bad)">Lost — ${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Officer</th><th>F#</th><th>Stage</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.officer || '—')}</td>
+          <td>${l.fcount}</td>
+          <td>${esc(l.stage || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => {
+      row.onclick = () => openLead(Number(row.dataset.id));
+    });
+  } catch (e) {
+    sheet.querySelector('#llCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
   }
 }
 
@@ -431,11 +482,12 @@ async function managerView() {
   try { d = await api('/manager/analytics'); }
   catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${e.message}</div>`; return; }
 
-  const { kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged = [] } = d;
+  const { kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged = [], lostCases = [] } = d;
   const connected    = outcomes.filter(o => o.call_status === 'Connected');
   const notConnected = outcomes.filter(o => o.call_status === 'Not Connected');
   const connTotal    = connected.reduce((s, o) => s + o.cnt, 0);
   const notConnTotal = notConnected.reduce((s, o) => s + o.cnt, 0);
+  const lostTotal    = lostCases.reduce((s, o) => s + o.cnt, 0);
 
   view.innerHTML = `
     ${kpiRow([
@@ -457,7 +509,7 @@ async function managerView() {
     </div>
 
     <div class="card">
-      <h2>Call Outcome Analysis</h2>
+      <h2>Call Outcome Analysis <span style="font-size:13px;color:var(--muted);font-weight:400">(latest call per lead)</span></h2>
       <div class="outcome-grid">
         <div>
           <div class="outcome-head ok">✓ Connected</div>
@@ -474,6 +526,22 @@ async function managerView() {
           ])}
         </div>
       </div>
+      <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)">
+        <span>Untouched (no calls): <b style="color:var(--text)">${kpi.untouched}</b></span>
+        <span>Grand Total: <b style="color:var(--text)">${connTotal + notConnTotal + kpi.untouched}</b></span>
+      </div>
+    </div>
+
+    <div class="card" style="border-color:var(--bad)">
+      <h2 style="color:var(--bad)">Lost Case Analysis</h2>
+      ${lostCases.length ? `
+        ${tblHtml(
+          ['Lost Reason', 'Leads'],
+          [
+            ...lostCases.map(r => [esc(r.outcome), lostCaseLink(r.outcome, r.cnt)]),
+            [`<b>Total Lost</b>`, `<b>${lostTotal}</b>`],
+          ]
+        )}` : '<p style="color:var(--muted);padding:8px 0">No lost leads yet.</p>'}
     </div>
 
     ${flagged.length ? `<div class="card" style="border-color:#f57c00">
@@ -816,7 +884,7 @@ async function showBulkReviewSheet(duplicates = 0) {
     } catch (err) {
       const m = sheet.querySelector('#msg');
       if (m) { m.className = 'msg err'; m.textContent = err.message; }
-      else alert(err.message);
+      else toast(err.message, 'err');
       e.target.disabled = false;
       e.target.textContent = 'Confirm & Assign';
     }
