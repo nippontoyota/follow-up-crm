@@ -763,7 +763,7 @@ app.get('/api/analytics', auth('admin'), async (req, res, next) => {
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  res.status(500).json({ error: 'Server error' });
+  res.status(500).json({ error: err.message || 'Server error' });
 });
 
 /* ----------------------------------------------------------------- start */
