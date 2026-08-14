@@ -414,6 +414,88 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .c-won { color: var(--ok); }
 .c-open { color: var(--brand); }
 
+/* -------------------------------------------------------- reassign leads */
+
+.reassign-head { margin-bottom: 20px; }
+.reassign-head h2 { margin-bottom: 6px; }
+.reassign-desc {
+  margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; max-width: 56ch;
+}
+
+.reassign-grid {
+  display: grid; gap: 16px; margin-bottom: 8px;
+}
+@media (min-width: 600px) {
+  .reassign-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.reassign-field > label { margin-top: 0; }
+
+.reassign-hint {
+  margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45;
+}
+
+.reassign-targets-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 0;
+}
+.reassign-targets-head > label { margin: 0; }
+
+.reassign-targets-tools { display: flex; gap: 6px; }
+.ra-tool {
+  width: auto; padding: 5px 10px; font-size: 12px; font-weight: 500;
+  color: var(--brand); background: var(--brand-light); border: 1px solid transparent;
+  border-radius: 6px; cursor: pointer; transition: background .15s, border-color .15s;
+  text-align: center;
+}
+.ra-tool:hover { border-color: var(--brand); background: #fff; }
+
+.reassign-targets {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px;
+  max-height: 300px; overflow-y: auto; margin-top: 10px; padding: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reassign-target {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px;
+  background: #fff; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s;
+  margin: 0; font-weight: 400;
+}
+.reassign-target:hover:not(.is-source) { border-color: var(--brand); background: var(--brand-light); }
+.reassign-target:has(input:checked) {
+  border-color: var(--brand); background: var(--brand-light);
+  box-shadow: 0 0 0 1px var(--brand);
+}
+.reassign-target.is-source {
+  opacity: .5; cursor: not-allowed; background: #f8f6f3; border-style: dashed;
+}
+.reassign-target input {
+  width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0;
+  accent-color: var(--brand); cursor: pointer;
+}
+.reassign-target.is-source input { cursor: not-allowed; }
+
+.reassign-target-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.reassign-target-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.35; word-break: break-word; }
+.reassign-target-branch { font-size: 12px; color: var(--muted); line-height: 1.35; word-break: break-word; }
+.reassign-target-tag {
+  align-self: flex-start; margin-top: 2px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); background: #eee8df; padding: 2px 6px; border-radius: 4px;
+}
+
+.reassign-summary {
+  margin: 12px 0 0; font-size: 13px; font-weight: 500; color: var(--brand);
+}
+.reassign-summary.warn { color: var(--muted); font-weight: 400; }
+
+.reassign-actions { margin-top: 20px; }
+.reassign-actions .btn { margin-top: 0; max-width: 280px; }
+@media (max-width: 599px) {
+  .reassign-actions .btn { max-width: none; }
+}
+
 /* Always light — cream theme, no dark mode override */
 input, select, textarea {
   color-scheme: light;
