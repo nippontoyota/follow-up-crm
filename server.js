@@ -17,7 +17,7 @@ const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejec
 const MAX_DAYS_AHEAD = 3;
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
 /* ---------------------------------------------------------------- helpers */
