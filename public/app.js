@@ -502,8 +502,8 @@ async function managerView() {
     <div class="card">
       <h2>Sales Officer Performance</h2>
       ${tblHtml(
-        ['Officer','Total','Untouched','Follow-up','Lost','Booked','Retail'],
-        byOfficer.map(r => [r.officer, r.total, r.untouched, r.followup, r.lost, r.booked, r.retailed]),
+        ['Officer','Total','Untouched','Under Follow-up','Today\'s Follow-up','Lost','Booked','Retail'],
+        byOfficer.map(r => [r.officer, r.total, r.untouched, r.followup, r.today_followup, r.lost, r.booked, r.retailed]),
         'No sales officers in this branch'
       )}
     </div>

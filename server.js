@@ -437,12 +437,13 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
         COUNT(l.id)::int AS total,
         COUNT(l.id) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
         COUNT(l.id) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+        COUNT(l.id) FILTER (WHERE l.next_date = ? AND l.status = 'open')::int AS today_followup,
         COUNT(l.id) FILTER (WHERE l.stage = 'Lost Lead'    AND l.status = 'closed')::int AS lost,
         COUNT(l.id) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
         COUNT(l.id) FILTER (WHERE l.stage = 'Retail Done'  AND l.status = 'closed')::int AS retailed
        FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
        WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
-       GROUP BY u.id, u.name ORDER BY u.name`, branchId),
+       GROUP BY u.id, u.name ORDER BY u.name`, today(), branchId),
 
       all(`SELECT f.call_status, f.outcome, COUNT(*)::int AS cnt
        FROM (
