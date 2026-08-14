@@ -371,8 +371,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .pager-jump {
   display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
   padding-left: 12px; border-left: 1.5px solid var(--line);
+  margin: 0; font-weight: 400;
 }
-.pager-jump-lbl { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.pager-jump-lbl { font-size: 13px; color: var(--muted); white-space: nowrap; margin: 0; line-height: 1; }
 .pager-select {
   width: auto; min-width: 56px; max-width: 72px; height: 36px;
   padding: 0 28px 0 10px; margin: 0;
