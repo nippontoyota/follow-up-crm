@@ -3,13 +3,17 @@ import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const { Pool } = pg;
 
+const host = process.env.DB_HOST || 'localhost';
+const isLocal = ['localhost', '127.0.0.1', '::1'].includes(host);
+const useSsl = process.env.DB_SSL === 'true' || (!isLocal && process.env.DB_SSL !== 'false');
+
 export const pool = new Pool({
-  host: process.env.DB_HOST,
+  host,
   port: Number(process.env.DB_PORT || 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  ssl: { rejectUnauthorized: false },
+  database: process.env.DB_NAME || 'followup_crm',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASS ?? '',
+  ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,

@@ -7,6 +7,16 @@ const hdr = document.getElementById('hdr');
 let me = null;        // current user + server config (today, maxDate, outcomes)
 let masters = {};     // branches / sources / activities / models
 let tab = '';
+let leadsPage = 1;
+let leadsQ = '';
+const LEADS_PER_PAGE = 25;
+let leadsGen = 0;
+let leadsCtrl = null;
+let leadsStatsCache = null;
+let searchTimer = null;
+const inflightGets = new Map();
+
+function invalidateLeadsStats() { leadsStatsCache = null; }
 
 /* ------------------------------------------------------------------- utils */
 
@@ -14,15 +24,25 @@ const el = (html) => Object.assign(document.createElement('div'), { innerHTML: h
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const val = (id) => document.getElementById(id).value.trim();
 
-async function api(path, method = 'GET', body) {
-  const r = await fetch('/api' + path, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || 'Something went wrong');
-  return data;
+async function api(path, method = 'GET', body, { signal } = {}) {
+  const key = `${method}:${path}:${body ? JSON.stringify(body) : ''}`;
+  if (method === 'GET' && !signal && inflightGets.has(key)) return inflightGets.get(key);
+
+  const run = async () => {
+    const r = await fetch('/api' + path, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Something went wrong');
+    return data;
+  };
+
+  const p = run().finally(() => { if (method === 'GET' && !signal) inflightGets.delete(key); });
+  if (method === 'GET' && !signal) inflightGets.set(key, p);
+  return p;
 }
 
 let _toastTimer;
@@ -162,6 +182,7 @@ async function boot() {
 
 function go(t) {
   tab = t;
+  if (['fresh', 'today', 'leads'].includes(t)) { leadsPage = 1; leadsQ = ''; invalidateLeadsStats(); }
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
@@ -264,6 +285,7 @@ async function usersView() {
 /* ------------------------------------------------------------- admin: lists */
 
 const LIST_LABELS = { branches: 'Branches', sources: 'Sources', activities: 'Activities', models: 'Model names' };
+const LIST_PLACEHOLDER = { branches: 'branch', sources: 'source', activities: 'activity', models: 'model name' };
 
 async function listsView() {
   masters = await api('/masters');
@@ -271,7 +293,7 @@ async function listsView() {
     <div class="card">
       <h2>${label} (${masters[key].length})</h2>
       <div class="grid2">
-        <input id="in-${key}" placeholder="Add ${label.toLowerCase().replace(/s$/, '')}">
+        <input id="in-${key}" placeholder="Add ${LIST_PLACEHOLDER[key]}">
         <button class="btn" data-add="${key}">Add</button>
       </div>
       <div class="rows">${masters[key].map(m => `
@@ -607,20 +629,121 @@ function kpiRow(cards) {
   ).join('')}</div>`;
 }
 
+function parseLeadsPage(data, page, limit) {
+  if (Array.isArray(data)) {
+    const total = data.length;
+    const start = (page - 1) * limit;
+    return {
+      leads: data.slice(start, start + limit),
+      total,
+      page,
+      limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+  return {
+    leads: data.leads || [],
+    total: data.total ?? 0,
+    page: data.page ?? page,
+    limit: data.limit ?? limit,
+    pages: data.pages ?? 1,
+  };
+}
+
+function pageNumbers(current, total) {
+  if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
+  const items = [];
+  if (current <= 3) {
+    for (let i = 1; i <= Math.min(4, total); i++) items.push(i);
+    if (total > 5) { items.push('…'); items.push(total); }
+    else if (total === 5) items.push(5);
+  } else if (current >= total - 2) {
+    items.push(1, '…');
+    for (let i = total - 3; i <= total; i++) items.push(i);
+  } else {
+    items.push(1, '…', current - 1, current, current + 1, '…', total);
+  }
+  return items;
+}
+
+function renderPager(page, pages, total) {
+  if (!total || pages <= 1) return '';
+  const nums = pageNumbers(page, pages).map(n =>
+    n === '…'
+      ? `<span class="pager-ellipsis">…</span>`
+      : `<button type="button" class="pager-num${n === page ? ' on' : ''}" data-page="${n}">${n}</button>`,
+  ).join('');
+  const opts = Array.from({ length: pages }, (_, i) => {
+    const n = i + 1;
+    return `<option value="${n}"${n === page ? ' selected' : ''}>${n}</option>`;
+  }).join('');
+  return `<div class="pager">
+    <div class="pager-bar">
+      <div class="pager-nums">${nums}</div>
+      <label class="pager-jump">
+        <span class="pager-jump-lbl">Go to</span>
+        <select class="pager-select" aria-label="Jump to page">${opts}</select>
+      </label>
+    </div>
+  </div>`;
+}
+
+function bindPager() {
+  view.querySelectorAll('.pager-num:not(.on)').forEach(btn => {
+    btn.onclick = () => {
+      leadsPage = Number(btn.dataset.page);
+      leadsView();
+      view.scrollIntoView({ behavior: 'smooth' });
+    };
+  });
+  view.querySelectorAll('.pager-select').forEach(sel => {
+    sel.onchange = () => {
+      leadsPage = Number(sel.value);
+      leadsView();
+      view.scrollIntoView({ behavior: 'smooth' });
+    };
+  });
+}
+
 async function leadsView() {
+  const gen = ++leadsGen;
+  leadsCtrl?.abort();
+  leadsCtrl = new AbortController();
+  const sig = leadsCtrl.signal;
+
   const t = tab === 'leads' ? 'all' : tab;
   view.innerHTML = '<div class="empty">Loading…</div>';
-  const [leads, stats] = await Promise.all([api('/leads?tab=' + t), api('/leads/stats')]);
+  const params = new URLSearchParams({ tab: t, page: leadsPage, limit: LEADS_PER_PAGE });
+  if (leadsQ) params.set('q', leadsQ);
+
+  let data, stats;
+  try {
+    const statsP = leadsStatsCache
+      ? Promise.resolve(leadsStatsCache)
+      : api('/leads/stats', 'GET', undefined, { signal: sig }).then(s => (leadsStatsCache = s, s));
+    [data, stats] = await Promise.all([
+      api('/leads?' + params, 'GET', undefined, { signal: sig }),
+      statsP,
+    ]);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    view.innerHTML = `<div class="empty msg err">${esc(e.message)}</div>`;
+    return;
+  }
+  if (gen !== leadsGen) return;
+
+  const { leads, total, page, pages } = parseLeadsPage(data, leadsPage, LEADS_PER_PAGE);
+  const pg = renderPager(page, pages, total);
 
   const kpi = {
     fresh: kpiRow([
-      { num: leads.length,  lbl: 'Fresh Leads', col: 'brand' },
+      { num: stats.fresh,  lbl: 'Fresh Leads', col: 'brand' },
       { num: stats.booked,  lbl: 'Booked',      col: 'ok'    },
       { num: stats.retailed,lbl: 'Retailed',     col: 'ok'    },
       { num: stats.lost,    lbl: 'Lost',         col: 'bad'   },
     ]),
     today: kpiRow([
-      { num: leads.length,      lbl: "Today's Follow-ups", col: 'brand' },
+      { num: stats.today_count, lbl: "Today's Follow-ups", col: 'brand' },
       { num: stats.booked,      lbl: 'Booked',             col: 'ok'    },
       { num: stats.retailed,    lbl: 'Retailed',           col: 'ok'    },
       { num: stats.lost,        lbl: 'Lost',               col: 'bad'   },
@@ -638,7 +761,7 @@ async function leadsView() {
     <div class="search-bar-wrap">
       <div class="search-bar-inner">
         <svg class="search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="search" id="leadSearch" placeholder="Search by name or mobile…" autocomplete="off">
+        <input type="search" id="leadSearch" placeholder="Search by name or mobile…" autocomplete="off" value="${esc(leadsQ)}">
         ${isBulkAdmin ? `
           <input type="file" id="bulkFile" accept=".xlsx,.xls" style="display:none">
           <button class="btn ghost" style="width:auto;margin:0;padding:6px 14px;font-size:13px;white-space:nowrap" onclick="document.getElementById('bulkFile').click()">Bulk Upload</button>
@@ -647,28 +770,44 @@ async function leadsView() {
     </div>`;
 
   if (!leads.length) {
-    const blank = { fresh: 'No fresh leads right now.', today: 'Nothing due today. Nice work.', all: 'No leads yet.' };
-    view.innerHTML = kpi + searchHtml + `<div class="empty">${blank[t]}</div>`;
+    const blank = {
+      fresh: leadsQ ? 'No matching fresh leads.' : 'No fresh leads right now.',
+      today: leadsQ ? 'No matching follow-ups.' : 'Nothing due today. Nice work.',
+      all: leadsQ ? 'No matching leads.' : 'No leads yet.',
+    };
+    view.innerHTML = kpi + searchHtml + pg + `<div class="empty">${blank[t]}</div>`;
   } else {
-    view.innerHTML = kpi + searchHtml + leads.map(l => `
-      <div class="card lead" data-id="${l.id}" data-name="${esc(l.customer_name.toLowerCase())}" data-mobile="${esc(l.mobile)}" tabindex="0" role="button">
-        <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
-        <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
-        <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
-        ${me.role === 'sales' ? `<div style="margin-top:10px"><button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to SM/TL'}">⚑ Flag to SM/TL</button></div>` : ''}
-      </div>`).join('');
+    view.innerHTML = kpi + searchHtml + pg + `
+      <div id="leadList">${leads.map((l, i) => {
+        const num = (page - 1) * LEADS_PER_PAGE + i + 1;
+        return `
+      <div class="card lead" data-id="${l.id}" tabindex="0" role="button">
+        <span class="lead-num" aria-hidden="true">${num}</span>
+        <div class="lead-body">
+          <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
+          <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
+          <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
+          ${me.role === 'sales' ? `<div style="margin-top:10px"><button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to SM/TL'}">⚑ Flag to SM/TL</button></div>` : ''}
+        </div>
+      </div>`;
+      }).join('')}</div>`;
   }
+
+  bindPager();
 
   const sInput = document.getElementById('leadSearch');
   if (sInput) {
     sInput.oninput = () => {
-      const q = sInput.value.toLowerCase().trim();
-      view.querySelectorAll('.lead').forEach(b => {
-        const hit = !q || b.dataset.name.includes(q) || b.dataset.mobile.includes(q);
-        b.style.display = hit ? '' : 'none';
-      });
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        const q = sInput.value.trim();
+        if (q === leadsQ) return;
+        leadsQ = q;
+        leadsPage = 1;
+        leadsView();
+      }, 300);
     };
-    sInput.focus();
+    if (leadsQ) sInput.focus();
   }
 
   view.querySelectorAll('.lead').forEach(card => {
@@ -880,6 +1019,7 @@ async function showBulkReviewSheet(duplicates = 0) {
       const res = await api('/leads/bulk-assign', 'POST', totalToAssign);
       close();
       say(`Successfully imported & assigned ${res.added} leads!`, 'ok');
+      invalidateLeadsStats();
       leadsView();
     } catch (err) {
       const m = sheet.querySelector('#msg');
@@ -1083,6 +1223,7 @@ async function openLead(id) {
         other_so_called: oscValue,
       });
       close();
+      invalidateLeadsStats();
       leadsView();
     } catch (err) { say(err.message); e.target.disabled = false; }
   };

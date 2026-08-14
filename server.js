@@ -18,7 +18,11 @@ const MAX_DAYS_AHEAD = 3;
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public'));
+app.use(express.static('public', {
+  setHeaders(res, filePath) {
+    if (/\.(js|css|html)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -402,7 +406,10 @@ const LEAD_SELECT = `
 
 app.get('/api/leads', auth(), async (req, res, next) => {
   try {
-    const { tab = 'all' } = req.query;
+    const { tab = 'all', q = '' } = req.query;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
     const where = [], args = [];
 
     if (req.user.role === 'sales')     { where.push('l.assigned_to = ?'); args.push(req.user.id); }
@@ -411,10 +418,20 @@ app.get('/api/leads', auth(), async (req, res, next) => {
     if (tab === 'fresh') where.push(`l.status = 'open' AND l.fcount = 0`);
     else if (tab === 'today') { where.push(`l.status = 'open' AND l.fcount > 0 AND l.next_date <= ?`); args.push(today()); }
 
-    const sql = `${LEAD_SELECT}
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY l.next_date NULLS FIRST, l.id DESC LIMIT 500`;
-    res.json(await all(sql, ...args));
+    const search = String(q).trim();
+    if (search) {
+      const pat = `%${search.replace(/[%_\\]/g, '\\$&')}%`;
+      where.push(`(l.customer_name ILIKE ? OR l.mobile ILIKE ?)`);
+      args.push(pat, pat);
+    }
+
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const total = (await get(`SELECT COUNT(*)::int AS c FROM leads l ${whereSql}`, ...args))?.c || 0;
+    const leads = await all(
+      `${LEAD_SELECT} ${whereSql} ORDER BY l.next_date NULLS FIRST, l.id DESC LIMIT ? OFFSET ?`,
+      ...args, limit, offset,
+    );
+    res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 
@@ -768,6 +785,7 @@ app.use((err, _req, res, _next) => {
 
 /* ----------------------------------------------------------------- start */
 
-initDb()
+const boot = process.env.DB_SKIP_INIT === '1' ? Promise.resolve() : initDb();
+boot
   .then(() => app.listen(PORT, () => console.log(`Follow-up CRM running on http://localhost:${PORT}`)))
   .catch(e => { console.error('DB init failed:', e.message); process.exit(1); });
