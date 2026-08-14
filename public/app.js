@@ -65,17 +65,22 @@ async function fetchAiLostSummary(branchId) {
     const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } });
     if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch AI summary');
     const data = await res.json();
-    // Clean any remaining markdown artifacts on the client side too
-    const clean = esc(data.summary)
-      .replace(/\*+/g, '')
-      .replace(/^#+\s*/gm, '')
-      .replace(/^[-•]\s*/gm, '')
-      .replace(/\\n/g, '\n')
-      .split(/\n{2,}/)
-      .filter(p => p.trim())
-      .map(p => `<p style="margin:0 0 10px;line-height:1.6">${p.trim().replace(/\n/g, ' ')}</p>`)
-      .join('');
-    box.innerHTML = clean || '<p style="color:var(--muted)">No insights available.</p>';
+    const raw = data.summary.replace(/\*+/g, '').replace(/^#+\s*/gm, '').trim();
+    // Split on ~ bullet markers or fallback to line breaks
+    const lines = raw.split(/(?:^|\n)\s*~\s*/).filter(l => l.trim());
+    if (lines.length > 1 || raw.includes('~')) {
+      // Bullet-point mode: render as styled list
+      const items = lines.map(l => {
+        // Bold numbers and percentages
+        const formatted = esc(l.trim()).replace(/(\d+[\d,.]*\s*%?)/g, '<b style="color:var(--text);font-size:15px">$1</b>');
+        return `<li style="margin-bottom:8px;line-height:1.6;color:var(--text-light)">${formatted}</li>`;
+      }).join('');
+      box.innerHTML = `<ul style="list-style:none;padding:0;margin:0">${items}</ul>`;
+    } else {
+      // Fallback: paragraph mode with bold numbers
+      const formatted = esc(raw).replace(/(\d+[\d,.]*\s*%?)/g, '<b style="color:var(--text);font-size:15px">$1</b>');
+      box.innerHTML = `<p style="margin:0;line-height:1.7;color:var(--text-light)">${formatted}</p>`;
+    }
   } catch (err) {
     box.innerHTML = '<span style="color:var(--bad)">Error: ' + esc(err.message) + '</span>';
   }

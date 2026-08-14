@@ -552,15 +552,31 @@ input, select, textarea {
 /* ------------------------------------------------------------------ ai summary */
 .ai-summary-box {
   margin: 12px 0;
-  padding: 16px;
+  padding: 16px 20px;
   background: linear-gradient(145deg, #f8fafc, #f1f5f9);
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   font-size: 14px;
   line-height: 1.6;
   color: var(--text);
-  white-space: pre-wrap;
   box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+}
+.ai-summary-box ul { list-style: none; padding: 0; margin: 0; }
+.ai-summary-box li {
+  position: relative;
+  padding: 10px 0 10px 20px;
+  border-bottom: 1px solid #e8edf2;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.ai-summary-box li:last-child { border-bottom: none; }
+.ai-summary-box li::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 16px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
 }
 
 .ai-loading {

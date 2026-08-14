@@ -620,16 +620,20 @@ app.get('/api/manager/ai-lost-summary', auth('manager', 'admin'), async (req, re
 
 Loss reason breakdown: ${breakdownLine}
 
-INSTRUCTIONS:
-- Write in plain text only. Do NOT use asterisks, bold markers, bullet points, numbered lists, markdown, or any special formatting.
-- Write in short paragraphs separated by blank lines.
-- Focus strictly on data patterns, numbers, and percentages from the remarks provided.
-- Identify the top 3 to 4 reasons leads are being lost, with exact counts and percentages.
-- Highlight any correlations between loss reasons (e.g. finance issues leading to drop-offs, competitor pricing patterns).
-- Mention any specific competitor names, pricing gaps, or recurring customer objections found in the remarks.
-- Do NOT include a recommendations section or actionable suggestions.
-- Do NOT include section headings like "Summary" or "Insights" or "Recommendations".
-- Keep it under 200 words.
+OUTPUT FORMAT — follow this EXACTLY:
+- Start each point on a new line beginning with the ~ character.
+- Each point should be one concise sentence.
+- Include exact numbers and percentages in every point.
+- Do NOT use asterisks, hashtags, bold markers, markdown, or any other formatting.
+- Do NOT use numbered lists or sub-bullets.
+- Do NOT include section headings.
+- Do NOT include recommendations or suggestions.
+
+CONTENT RULES:
+- First 3 to 4 points: top loss reasons with count and percentage out of ${totalLost} total.
+- Next 1 to 2 points: correlations or patterns found across the remarks (e.g. finance + drop-off link, pricing gaps).
+- Last 1 to 2 points: specific competitor names or recurring objections mentioned in remarks.
+- Maximum 8 points total. Keep each point under 25 words.
 
 Remarks data:
 ${remarksText}`;
@@ -642,8 +646,8 @@ ${remarksText}`;
     });
 
     let summary = chatCompletion.choices[0]?.message?.content || 'Unable to generate summary.';
-    // Strip any remaining markdown artifacts
-    summary = summary.replace(/\*+/g, '').replace(/^#+\s*/gm, '').replace(/^[-•]\s*/gm, '').replace(/^\d+\.\s*/gm, '').trim();
+    // Clean stray markdown but preserve ~ bullet markers
+    summary = summary.replace(/\*+/g, '').replace(/^#+\s*/gm, '').trim();
     res.json({ summary });
 
   } catch (e) { 
