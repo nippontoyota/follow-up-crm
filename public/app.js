@@ -50,6 +50,37 @@ async function api(path, method = 'GET', body, { signal } = {}) {
   return p;
 }
 
+const formatDate = (s) => {
+  const d = new Date(s);
+  return isNaN(d) ? '' : `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()%12||12).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} ${d.getHours()>=12?'PM':'AM'}`;
+};
+
+async function fetchAiLostSummary(branchId) {
+  const box = document.getElementById('aiSummaryBox');
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = '<div class="ai-loading">Generating AI Summary...</div>';
+  try {
+    const url = branchId ? `/api/manager/ai-lost-summary?branch_id=${branchId}` : '/api/manager/ai-lost-summary';
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } });
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch AI summary');
+    const data = await res.json();
+    // Clean any remaining markdown artifacts on the client side too
+    const clean = esc(data.summary)
+      .replace(/\*+/g, '')
+      .replace(/^#+\s*/gm, '')
+      .replace(/^[-•]\s*/gm, '')
+      .replace(/\\n/g, '\n')
+      .split(/\n{2,}/)
+      .filter(p => p.trim())
+      .map(p => `<p style="margin:0 0 10px;line-height:1.6">${p.trim().replace(/\n/g, ' ')}</p>`)
+      .join('');
+    box.innerHTML = clean || '<p style="color:var(--muted)">No insights available.</p>';
+  } catch (err) {
+    box.innerHTML = '<span style="color:var(--bad)">Error: ' + esc(err.message) + '</span>';
+  }
+}
+
 let _toastTimer;
 function toast(msg, kind = 'err') {
   let t = document.getElementById('toast');
@@ -662,7 +693,11 @@ async function managerView() {
     </div>
 
     <div class="card" style="border-color:var(--bad)">
-      <h2 style="color:var(--bad)">Lost Case Analysis</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="color:var(--bad);margin:0;">Lost Case Analysis</h2>
+        ${lostCases.length ? `<button class="btn" style="background:var(--primary);font-size:13px;padding:4px 8px;" onclick="fetchAiLostSummary()">✨ AI Summary</button>` : ''}
+      </div>
+      <div id="aiSummaryBox" class="ai-summary-box" style="display:none;"></div>
       ${lostCases.length ? `
         ${tblHtml(
           ['Lost Reason', 'Leads'],
@@ -1364,6 +1399,17 @@ async function analyticsView(branchId = null, branchName = null) {
             <span class="c-open">${s.open} open</span>
           </div>
         </div>`).join('')}</div>` : '<div class="empty">No data</div>'}
+    </div>
+
+    <div class="card" style="border-color:var(--primary)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="color:var(--primary);margin:0;">🤖 AI Lost-Lead Analysis ${branchId ? '— ' + esc(branchName) : '— All Branches'}</h2>
+        <button class="btn" style="background:var(--primary);font-size:13px;padding:6px 14px;" onclick="fetchAiLostSummary(${branchId || ''})">
+          ✨ Generate AI Summary
+        </button>
+      </div>
+      <p style="color:var(--muted);font-size:13px;margin:0 0 8px;">Analyze lost lead remarks using AI to find patterns and actionable insights.</p>
+      <div id="aiSummaryBox" class="ai-summary-box" style="display:none;"></div>
     </div>
   `;
 }

@@ -1,4 +1,5 @@
 import express from 'express';
+import Groq from 'groq-sdk';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pool, get, all, run, ins, hash, verify, initDb } from './db.js';
@@ -569,6 +570,86 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
 
     res.json({ kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged, lostCases });
   } catch (e) { next(e); }
+});
+
+app.get('/api/manager/ai-lost-summary', auth('manager', 'admin'), async (req, res, next) => {
+  try {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GROQ_API_KEY is not configured in .env' });
+    }
+
+    // Admin can pass branch_id as query param; manager uses their assigned branch
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : req.user.branch_id;
+
+    // Fetch remarks from followups where outcome is a lost outcome
+    const branchFilter = branchId ? 'AND l.branch_id = $1' : '';
+    const branchArgs = branchId ? [branchId] : [];
+    const lostFollowups = await all(`
+      SELECT f.remarks, f.outcome, l.customer_name
+      FROM followups f
+      JOIN leads l ON l.id = f.lead_id
+      WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer')
+        AND f.remarks IS NOT NULL
+        ${branchFilter}
+      ORDER BY f.created_at DESC
+      LIMIT 100
+    `, ...branchArgs);
+
+    if (lostFollowups.length === 0) {
+      return res.json({ summary: 'No recent lost leads remarks available for analysis.' });
+    }
+
+    const groq = new Groq({ apiKey });
+
+    const remarksText = lostFollowups
+      .map(f => `[Reason: ${f.outcome}] Customer: ${f.customer_name} - Remarks: ${f.remarks}`)
+      .join('\n');
+
+    const totalLost = lostFollowups.length;
+    const reasonCounts = {};
+    for (const f of lostFollowups) {
+      reasonCounts[f.outcome] = (reasonCounts[f.outcome] || 0) + 1;
+    }
+    const breakdownLine = Object.entries(reasonCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([r, c]) => `${r}: ${c}`)
+      .join(', ');
+
+    const prompt = `You are a business analyst for an automobile dealership CRM. Below are ${totalLost} recent lost lead records with their loss reasons and sales officer remarks.
+
+Loss reason breakdown: ${breakdownLine}
+
+INSTRUCTIONS:
+- Write in plain text only. Do NOT use asterisks, bold markers, bullet points, numbered lists, markdown, or any special formatting.
+- Write in short paragraphs separated by blank lines.
+- Focus strictly on data patterns, numbers, and percentages from the remarks provided.
+- Identify the top 3 to 4 reasons leads are being lost, with exact counts and percentages.
+- Highlight any correlations between loss reasons (e.g. finance issues leading to drop-offs, competitor pricing patterns).
+- Mention any specific competitor names, pricing gaps, or recurring customer objections found in the remarks.
+- Do NOT include a recommendations section or actionable suggestions.
+- Do NOT include section headings like "Summary" or "Insights" or "Recommendations".
+- Keep it under 200 words.
+
+Remarks data:
+${remarksText}`;
+
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.1-8b-instant',
+      temperature: 0.3,
+      max_tokens: 800,
+    });
+
+    let summary = chatCompletion.choices[0]?.message?.content || 'Unable to generate summary.';
+    // Strip any remaining markdown artifacts
+    summary = summary.replace(/\*+/g, '').replace(/^#+\s*/gm, '').replace(/^[-•]\s*/gm, '').replace(/^\d+\.\s*/gm, '').trim();
+    res.json({ summary });
+
+  } catch (e) { 
+    console.error('Groq AI Error:', e);
+    res.status(500).json({ error: 'Failed to generate AI summary' });
+  }
 });
 
 app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) => {
