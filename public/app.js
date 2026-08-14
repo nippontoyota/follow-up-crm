@@ -154,7 +154,7 @@ function loginView() {
 /* -------------------------------------------------------------------- shell */
 
 const TABS = {
-  admin:   [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
+  admin:   [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
   sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   manager: [['dashboard', 'Dashboard', '📊']],
@@ -193,19 +193,14 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, users: usersView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ analytics: analyticsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
 
 async function usersView() {
-  const params = new URLSearchParams({ page: usersPage, limit: USERS_PER_PAGE });
-  const [data, officersData] = await Promise.all([
-    api('/users?' + params),
-    api('/users?role=sales&active=1&limit=100'),
-  ]);
+  const data = await api(`/users?page=${usersPage}&limit=${USERS_PER_PAGE}`);
   const { items: users, total, page, pages } = parsePage(data, 'users', usersPage, USERS_PER_PAGE);
-  const { items: officers } = parsePage(officersData, 'users', 1, 100);
   const pg = renderPager(page, pages, total);
 
   view.innerHTML = `
@@ -258,118 +253,122 @@ async function usersView() {
     try { await api(`/users/${b.dataset.id}/toggle`, 'POST'); usersView(); }
     catch (e) { say(e.message); }
   });
+}
 
-  // Reassign leads card
+async function reassignView() {
+  const officersData = await api('/users?role=sales&active=1&limit=100');
+  const { items: officers } = parsePage(officersData, 'users', 1, 100);
   const officerOpts = officers.map(u => `<option value="${u.id}">${esc(u.name)}${u.branch ? ' - ' + esc(u.branch) : ''}</option>`).join('');
-  const reassignCard = el(`<div class="card reassign-card">
-    <div class="reassign-head">
-      <h2>Reassign Leads</h2>
-      <p class="reassign-desc">Move open leads from one sales officer to others. Selected leads are split evenly across the officers you pick.</p>
-    </div>
-    ${officers.length ? `
-    <div class="reassign-grid">
-      <div class="reassign-field">
-        <label for="raFrom">From officer</label>
-        <select id="raFrom"><option value="">Select officer…</option>${officerOpts}</select>
+
+  view.innerHTML = `
+    <div class="card reassign-card">
+      <div class="reassign-head">
+        <h2>Reassign Leads</h2>
+        <p class="reassign-desc">Move open leads from one sales officer to others. Selected leads are split evenly across the officers you pick.</p>
       </div>
-      <div class="reassign-field">
-        <label for="raMode">Which leads</label>
-        <select id="raMode">
-          <option value="untouched">Untouched only (no follow-ups yet)</option>
-          <option value="open">All open leads</option>
-        </select>
-        <p class="reassign-hint" id="raModeHint">Only open leads with zero follow-ups (fcount = 0).</p>
-      </div>
-    </div>
-    <div class="reassign-field">
-      <div class="reassign-targets-head">
-        <label>To officers</label>
-        <div class="reassign-targets-tools">
-          <button type="button" class="ra-tool" id="raAll">Select all</button>
-          <button type="button" class="ra-tool" id="raNone">Clear</button>
+      ${officers.length ? `
+      <div class="reassign-grid">
+        <div class="reassign-field">
+          <label for="raFrom">From officer</label>
+          <select id="raFrom"><option value="">Select officer…</option>${officerOpts}</select>
+        </div>
+        <div class="reassign-field">
+          <label for="raMode">Which leads</label>
+          <select id="raMode">
+            <option value="untouched">Untouched only (no follow-ups yet)</option>
+            <option value="open">All open leads</option>
+          </select>
+          <p class="reassign-hint" id="raModeHint">Only open leads with zero follow-ups (fcount = 0).</p>
         </div>
       </div>
-      <p class="reassign-hint">Choose one or more officers. Leads are distributed equally among them.</p>
-      <div class="reassign-targets" id="raTo">
-        ${officers.map(u => `
-          <label class="reassign-target" data-id="${u.id}">
-            <input type="checkbox" value="${u.id}">
-            <span class="reassign-target-body">
-              <span class="reassign-target-name">${esc(u.name)}</span>
-              ${u.branch ? `<span class="reassign-target-branch">${esc(u.branch)}</span>` : ''}
-              <span class="reassign-target-tag hide">Source</span>
-            </span>
-          </label>`).join('')}
+      <div class="reassign-field">
+        <div class="reassign-targets-head">
+          <label>To officers</label>
+          <div class="reassign-targets-tools">
+            <button type="button" class="ra-tool" id="raAll">Select all</button>
+            <button type="button" class="ra-tool" id="raNone">Clear</button>
+          </div>
+        </div>
+        <p class="reassign-hint">Choose one or more officers. Leads are distributed equally among them.</p>
+        <div class="reassign-targets" id="raTo">
+          ${officers.map(u => `
+            <label class="reassign-target" data-id="${u.id}">
+              <input type="checkbox" value="${u.id}">
+              <span class="reassign-target-body">
+                <span class="reassign-target-name">${esc(u.name)}</span>
+                ${u.branch ? `<span class="reassign-target-branch">${esc(u.branch)}</span>` : ''}
+                <span class="reassign-target-tag hide">Source</span>
+              </span>
+            </label>`).join('')}
+        </div>
+        <p class="reassign-summary warn" id="raSummary">Select at least one target officer</p>
       </div>
-      <p class="reassign-summary warn" id="raSummary">Select at least one target officer</p>
-    </div>
-    <div class="reassign-actions">
-      <button class="btn" id="raBtn">Reassign leads</button>
-    </div>
-    <div id="raMsg"></div>
-    ` : `<p class="empty" style="padding:24px 16px">No active sales officers to reassign between.</p>`}
-  </div>`);
-  view.appendChild(reassignCard);
+      <div class="reassign-actions">
+        <button class="btn" id="raBtn">Reassign leads</button>
+      </div>
+      <div id="raMsg"></div>
+      ` : `<p class="empty" style="padding:24px 16px">No active sales officers to reassign between.</p>`}
+    </div>`;
 
-  if (officers.length) {
-    const modeHints = {
-      untouched: 'Only open leads with zero follow-ups (fcount = 0).',
-      open: 'Every open lead currently assigned to the source officer.',
-    };
+  if (!officers.length) return;
 
-    const updateRaSummary = () => {
-      const n = document.querySelectorAll('#raTo input:checked:not(:disabled)').length;
-      const summaryEl = document.getElementById('raSummary');
-      summaryEl.textContent = n
-        ? `${n} officer${n !== 1 ? 's' : ''} selected`
-        : 'Select at least one target officer';
-      summaryEl.classList.toggle('warn', n === 0);
-    };
+  const modeHints = {
+    untouched: 'Only open leads with zero follow-ups (fcount = 0).',
+    open: 'Every open lead currently assigned to the source officer.',
+  };
 
-    const syncRaFrom = () => {
-      const fromId = val('raFrom');
-      document.querySelectorAll('#raTo .reassign-target').forEach(label => {
-        const isSource = label.dataset.id === fromId;
-        label.classList.toggle('is-source', isSource);
-        label.querySelector('.reassign-target-tag')?.classList.toggle('hide', !isSource);
-        const cb = label.querySelector('input');
-        if (isSource) { cb.checked = false; cb.disabled = true; }
-        else { cb.disabled = false; }
-      });
-      updateRaSummary();
-    };
+  const updateRaSummary = () => {
+    const n = document.querySelectorAll('#raTo input:checked:not(:disabled)').length;
+    const summaryEl = document.getElementById('raSummary');
+    summaryEl.textContent = n
+      ? `${n} officer${n !== 1 ? 's' : ''} selected`
+      : 'Select at least one target officer';
+    summaryEl.classList.toggle('warn', n === 0);
+  };
 
-    document.getElementById('raFrom').onchange = syncRaFrom;
-    document.getElementById('raMode').onchange = (e) => {
-      document.getElementById('raModeHint').textContent = modeHints[e.target.value];
-    };
-    document.getElementById('raAll').onclick = () => {
-      document.querySelectorAll('#raTo input:not(:disabled)').forEach(c => { c.checked = true; });
-      updateRaSummary();
-    };
-    document.getElementById('raNone').onclick = () => {
-      document.querySelectorAll('#raTo input').forEach(c => { c.checked = false; });
-      updateRaSummary();
-    };
-    document.querySelectorAll('#raTo input').forEach(c => { c.onchange = updateRaSummary; });
+  const syncRaFrom = () => {
+    const fromId = val('raFrom');
+    document.querySelectorAll('#raTo .reassign-target').forEach(label => {
+      const isSource = label.dataset.id === fromId;
+      label.classList.toggle('is-source', isSource);
+      label.querySelector('.reassign-target-tag')?.classList.toggle('hide', !isSource);
+      const cb = label.querySelector('input');
+      if (isSource) { cb.checked = false; cb.disabled = true; }
+      else { cb.disabled = false; }
+    });
+    updateRaSummary();
+  };
 
-    document.getElementById('raBtn').onclick = async () => {
-      const fromId = val('raFrom');
-      const toIds = [...document.querySelectorAll('#raTo input:checked')].map(c => Number(c.value));
-      const mode  = val('raMode');
-      const msgEl = document.getElementById('raMsg');
-      if (!fromId) { msgEl.className='msg err'; msgEl.textContent='Select the source officer.'; return; }
-      if (!toIds.length) { msgEl.className='msg err'; msgEl.textContent='Tick at least one target officer.'; return; }
-      if (toIds.includes(Number(fromId))) { msgEl.className='msg err'; msgEl.textContent='Source cannot also be a target.'; return; }
-      document.getElementById('raBtn').disabled = true;
-      try {
-        const r = await api('/admin/reassign-leads', 'POST', { from_id: Number(fromId), to_ids: toIds, mode });
-        msgEl.className = 'msg ok';
-        msgEl.textContent = `Done - ${r.moved} lead${r.moved !== 1 ? 's' : ''} reassigned equally across ${toIds.length} officer${toIds.length !== 1 ? 's' : ''}.`;
-      } catch (e) { msgEl.className='msg err'; msgEl.textContent=e.message; }
-      document.getElementById('raBtn').disabled = false;
-    };
-  }
+  document.getElementById('raFrom').onchange = syncRaFrom;
+  document.getElementById('raMode').onchange = (e) => {
+    document.getElementById('raModeHint').textContent = modeHints[e.target.value];
+  };
+  document.getElementById('raAll').onclick = () => {
+    document.querySelectorAll('#raTo input:not(:disabled)').forEach(c => { c.checked = true; });
+    updateRaSummary();
+  };
+  document.getElementById('raNone').onclick = () => {
+    document.querySelectorAll('#raTo input').forEach(c => { c.checked = false; });
+    updateRaSummary();
+  };
+  document.querySelectorAll('#raTo input').forEach(c => { c.onchange = updateRaSummary; });
+
+  document.getElementById('raBtn').onclick = async () => {
+    const fromId = val('raFrom');
+    const toIds = [...document.querySelectorAll('#raTo input:checked')].map(c => Number(c.value));
+    const mode  = val('raMode');
+    const msgEl = document.getElementById('raMsg');
+    if (!fromId) { msgEl.className='msg err'; msgEl.textContent='Select the source officer.'; return; }
+    if (!toIds.length) { msgEl.className='msg err'; msgEl.textContent='Tick at least one target officer.'; return; }
+    if (toIds.includes(Number(fromId))) { msgEl.className='msg err'; msgEl.textContent='Source cannot also be a target.'; return; }
+    document.getElementById('raBtn').disabled = true;
+    try {
+      const r = await api('/admin/reassign-leads', 'POST', { from_id: Number(fromId), to_ids: toIds, mode });
+      msgEl.className = 'msg ok';
+      msgEl.textContent = `Done - ${r.moved} lead${r.moved !== 1 ? 's' : ''} reassigned equally across ${toIds.length} officer${toIds.length !== 1 ? 's' : ''}.`;
+    } catch (e) { msgEl.className='msg err'; msgEl.textContent=e.message; }
+    document.getElementById('raBtn').disabled = false;
+  };
 }
 
 /* ------------------------------------------------------------- admin: lists */
