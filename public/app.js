@@ -1406,16 +1406,21 @@ async function analyticsView(branchId = null, branchName = null) {
         </div>`).join('')}</div>` : '<div class="empty">No data</div>'}
     </div>
 
-    <div class="card" style="border-color:var(--primary)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h2 style="color:var(--primary);margin:0;">🤖 AI Lost-Lead Analysis ${branchId ? '— ' + esc(branchName) : '— All Branches'}</h2>
-        <button class="btn" style="background:var(--primary);font-size:13px;padding:6px 14px;" onclick="fetchAiLostSummary(${branchId || ''})">
-          ✨ Generate AI Summary
+    <section class="card ai-analysis" aria-labelledby="ai-analysis-title">
+      <div class="ai-analysis-head">
+        <div class="ai-analysis-heading">
+          <span class="ai-analysis-eyebrow">AI analysis</span>
+          <h2 id="ai-analysis-title">🤖 Lost-Lead Analysis</h2>
+          <span class="ai-analysis-scope">${branchId ? esc(branchName) : 'All Branches'}</span>
+        </div>
+        <button type="button" class="btn ai-analysis-action" onclick="fetchAiLostSummary(${branchId || ''})">
+          <span aria-hidden="true">✨</span>
+          <span>Generate summary</span>
         </button>
       </div>
-      <p style="color:var(--muted);font-size:13px;margin:0 0 8px;">Analyze lost lead remarks using AI to find patterns and actionable insights.</p>
+      <p class="ai-analysis-desc">Analyze lost lead remarks to find patterns and actionable insights.</p>
       <div id="aiSummaryBox" class="ai-summary-box" style="display:none;"></div>
-    </div>
+    </section>
   `;
 }
 
