@@ -642,7 +642,9 @@ ${remarksText}`;
       messages: [{ role: 'user', content: prompt }],
       model: 'openai/gpt-oss-20b',
       temperature: 0.3,
-      max_tokens: 800,
+      max_completion_tokens: 2048,
+      reasoning_effort: 'low',
+      include_reasoning: false,
     });
 
     let summary = chatCompletion.choices[0]?.message?.content || 'Unable to generate summary.';
