@@ -576,7 +576,7 @@ app.get('/api/manager/ai-lost-summary', auth('manager', 'admin'), async (req, re
   try {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'GROQ_API_KEY is not configured in .env' });
+      return res.status(500).json({ error: 'GROQ_API_KEY is not configured in the server environment' });
     }
 
     // Admin can pass branch_id as query param; manager uses their assigned branch
@@ -640,7 +640,7 @@ ${remarksText}`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      model: 'llama-3.1-8b-instant',
+      model: 'openai/gpt-oss-20b',
       temperature: 0.3,
       max_tokens: 800,
     });

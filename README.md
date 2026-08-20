@@ -9,6 +9,14 @@ npm install
 npm start
 ```
 
+For AI lost-lead analysis, configure `GROQ_API_KEY` in the server environment. On Render, add it under the service's Environment Variables (do not commit it or rely on a local `.env` file):
+
+```dotenv
+GROQ_API_KEY=gsk_...
+```
+
+Without this environment variable, the regular CRM still runs but the AI Summary button reports that the AI integration is not configured.
+
 Open http://localhost:3000 — first run seeds **admin / admin123** (change it by creating a new admin and disabling this one).
 
 Data lives in `crm.db` (SQLite, created on first run). `.secret` holds the cookie signing key — keep both out of version control.
