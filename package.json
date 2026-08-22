@@ -8,10 +8,15 @@
   },
   "scripts": {
     "start": "node server.js",
-    "dev": "node --env-file=.env --watch server.js"
+    "dev": "node --env-file=.env --watch server.js",
+    "test-leads:seed": "node --env-file=.env scripts/test-leads.js seed",
+    "test-leads:cleanup": "node --env-file=.env scripts/test-leads.js cleanup",
+    "test-leads:teardown": "node --env-file=.env scripts/test-leads.js teardown",
+    "test-leads:list": "node --env-file=.env scripts/test-leads.js list"
   },
   "dependencies": {
     "express": "^4.21.2",
+    "groq-sdk": "^1.5.0",
     "pg": "^8.22.0"
   },
   "devDependencies": {

@@ -1,4 +1,5 @@
 import express from 'express';
+import Groq from 'groq-sdk';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pool, get, all, run, ins, hash, verify, initDb } from './db.js';
@@ -18,7 +19,11 @@ const MAX_DAYS_AHEAD = 3;
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public'));
+app.use(express.static('public', {
+  setHeaders(res, filePath) {
+    if (/\.(js|css|html)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -110,6 +115,19 @@ app.get('/api/masters', auth(), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.get('/api/masters/:type', auth('admin'), async (req, res, next) => {
+  try {
+    const t = MASTERS[req.params.type];
+    if (!t) return bad(res, 'Unknown list');
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const total = (await get(`SELECT COUNT(*)::int AS c FROM ${t}`))?.c || 0;
+    const items = await all(`SELECT * FROM ${t} ORDER BY name LIMIT ? OFFSET ?`, limit, offset);
+    res.json({ items, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
+  } catch (e) { next(e); }
+});
+
 app.post('/api/masters/:type', auth('admin'), async (req, res, next) => {
   try {
     const t = MASTERS[req.params.type];
@@ -194,11 +212,23 @@ app.post('/api/salesforce-upload', auth('admin'), async (req, res, next) => {
 
 app.get('/api/users', auth('admin'), async (req, res, next) => {
   try {
-    res.json(await all(
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const where = [], args = [];
+
+    if (req.query.role) { where.push('u.role = ?'); args.push(req.query.role); }
+    if (req.query.active === '1') { where.push('u.active = 1'); }
+
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const total = (await get(`SELECT COUNT(*)::int AS c FROM users u ${whereSql}`, ...args))?.c || 0;
+    const users = await all(
       `SELECT u.id, u.username, u.name, u.role, u.active, u.branch_id, b.name AS branch
        FROM users u LEFT JOIN branches b ON b.id = u.branch_id
-       ORDER BY u.role, u.name`,
-    ));
+       ${whereSql} ORDER BY u.role, u.name LIMIT ? OFFSET ?`,
+      ...args, limit, offset,
+    );
+    res.json({ users, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 
@@ -402,7 +432,10 @@ const LEAD_SELECT = `
 
 app.get('/api/leads', auth(), async (req, res, next) => {
   try {
-    const { tab = 'all' } = req.query;
+    const { tab = 'all', q = '' } = req.query;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
     const where = [], args = [];
 
     if (req.user.role === 'sales')     { where.push('l.assigned_to = ?'); args.push(req.user.id); }
@@ -411,10 +444,20 @@ app.get('/api/leads', auth(), async (req, res, next) => {
     if (tab === 'fresh') where.push(`l.status = 'open' AND l.fcount = 0`);
     else if (tab === 'today') { where.push(`l.status = 'open' AND l.fcount > 0 AND l.next_date <= ?`); args.push(today()); }
 
-    const sql = `${LEAD_SELECT}
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY l.next_date NULLS FIRST, l.id DESC LIMIT 500`;
-    res.json(await all(sql, ...args));
+    const search = String(q).trim();
+    if (search) {
+      const pat = `%${search.replace(/[%_\\]/g, '\\$&')}%`;
+      where.push(`(l.customer_name ILIKE ? OR l.mobile ILIKE ?)`);
+      args.push(pat, pat);
+    }
+
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const total = (await get(`SELECT COUNT(*)::int AS c FROM leads l ${whereSql}`, ...args))?.c || 0;
+    const leads = await all(
+      `${LEAD_SELECT} ${whereSql} ORDER BY l.next_date NULLS FIRST, l.id DESC LIMIT ? OFFSET ?`,
+      ...args, limit, offset,
+    );
+    res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 
@@ -553,6 +596,92 @@ app.get('/api/manager/leads/export', auth('manager', 'admin'), async (req, res, 
     `, branchId);
     res.json(leads);
   } catch (e) { next(e); }
+});
+
+app.get('/api/manager/ai-lost-summary', auth('manager', 'admin'), async (req, res, next) => {
+  try {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GROQ_API_KEY is not configured in the server environment' });
+    }
+
+    // Admin can pass branch_id as query param; manager uses their assigned branch
+    const branchId = req.query.branch_id ? Number(req.query.branch_id) : req.user.branch_id;
+
+    // Fetch remarks from followups where outcome is a lost outcome
+    const branchFilter = branchId ? 'AND l.branch_id = $1' : '';
+    const branchArgs = branchId ? [branchId] : [];
+    const lostFollowups = await all(`
+      SELECT f.remarks, f.outcome, l.customer_name
+      FROM followups f
+      JOIN leads l ON l.id = f.lead_id
+      WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer')
+        AND f.remarks IS NOT NULL
+        ${branchFilter}
+      ORDER BY f.created_at DESC
+      LIMIT 100
+    `, ...branchArgs);
+
+    if (lostFollowups.length === 0) {
+      return res.json({ summary: 'No recent lost leads remarks available for analysis.' });
+    }
+
+    const groq = new Groq({ apiKey });
+
+    const remarksText = lostFollowups
+      .map(f => `[Reason: ${f.outcome}] Customer: ${f.customer_name} - Remarks: ${f.remarks}`)
+      .join('\n');
+
+    const totalLost = lostFollowups.length;
+    const reasonCounts = {};
+    for (const f of lostFollowups) {
+      reasonCounts[f.outcome] = (reasonCounts[f.outcome] || 0) + 1;
+    }
+    const breakdownLine = Object.entries(reasonCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([r, c]) => `${r}: ${c}`)
+      .join(', ');
+
+    const prompt = `You are a business analyst for an automobile dealership CRM. Below are ${totalLost} recent lost lead records with their loss reasons and sales officer remarks.
+
+Loss reason breakdown: ${breakdownLine}
+
+OUTPUT FORMAT — follow this EXACTLY:
+- Start each point on a new line beginning with the ~ character.
+- Each point should be one concise sentence.
+- Include exact numbers and percentages in every point.
+- Do NOT use asterisks, hashtags, bold markers, markdown, or any other formatting.
+- Do NOT use numbered lists or sub-bullets.
+- Do NOT include section headings.
+- Do NOT include recommendations or suggestions.
+
+CONTENT RULES:
+- First 3 to 4 points: top loss reasons with count and percentage out of ${totalLost} total.
+- Next 1 to 2 points: correlations or patterns found across the remarks (e.g. finance + drop-off link, pricing gaps).
+- Last 1 to 2 points: specific competitor names or recurring objections mentioned in remarks.
+- Maximum 8 points total. Keep each point under 25 words.
+
+Remarks data:
+${remarksText}`;
+
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'openai/gpt-oss-20b',
+      temperature: 0.3,
+      max_completion_tokens: 2048,
+      reasoning_effort: 'low',
+      include_reasoning: false,
+    });
+
+    let summary = chatCompletion.choices[0]?.message?.content || 'Unable to generate summary.';
+    // Clean stray markdown but preserve ~ bullet markers
+    summary = summary.replace(/\*+/g, '').replace(/^#+\s*/gm, '').trim();
+    res.json({ summary });
+
+  } catch (e) {
+    console.error('Groq AI Error:', e);
+    res.status(500).json({ error: 'Failed to generate AI summary' });
+  }
 });
 
 app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) => {
@@ -794,6 +923,7 @@ app.use((err, _req, res, _next) => {
 
 /* ----------------------------------------------------------------- start */
 
-initDb()
+const boot = process.env.DB_SKIP_INIT === '1' ? Promise.resolve() : initDb();
+boot
   .then(() => app.listen(PORT, () => console.log(`Follow-up CRM running on http://localhost:${PORT}`)))
   .catch(e => { console.error('DB init failed:', e.message); process.exit(1); });
