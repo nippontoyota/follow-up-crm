@@ -476,6 +476,46 @@ function tblHtml(cols, rows, empty = 'No data') {
   </table></div>`;
 }
 
+async function downloadLeadsExcel() {
+  if (typeof XLSX === 'undefined') return say('SheetJS not loaded — try refreshing');
+  const btn = document.getElementById('exportBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try {
+    const leads = await api('/manager/leads/export');
+    const rows = leads.map(l => ({
+      'Customer Name':       l.customer_name,
+      'Mobile':              l.mobile,
+      'Branch':              l.branch || '',
+      'Source':              l.source || '',
+      'Officer':             l.officer || '',
+      'Follow-up Count':     l.fcount,
+      'Stage':               l.stage || '',
+      'Status':              l.status || '',
+      'Next Follow-up Date': l.next_date || '',
+      'Location':            l.location || '',
+      'Lead Remarks':        l.lead_remarks || '',
+      'Latest Call Status':  l.latest_call_status || '',
+      'Latest Outcome':      l.latest_outcome || '',
+      'Latest Call Remarks': l.latest_remarks || '',
+      'Latest Call Date':    l.latest_call_date || '',
+      'Lead Created':        l.created_at ? l.created_at.slice(0, 10) : '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // auto-fit column widths
+    const headers = Object.keys(rows[0] || {});
+    ws['!cols'] = headers.map(h => {
+      const max = rows.reduce((m, r) => Math.max(m, String(r[h] ?? '').length), h.length);
+      return { wch: Math.min(max + 2, 40) };
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Follow-up Leads');
+    XLSX.writeFile(wb, `followup_leads_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (e) { say(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '⬇ Download Excel'; } }
+}
+
 async function managerView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
   let d;
@@ -490,6 +530,9 @@ async function managerView() {
   const lostTotal    = lostCases.reduce((s, o) => s + o.cnt, 0);
 
   view.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;padding:0 4px 8px">
+      <button id="exportBtn" class="btn" style="width:auto;padding:8px 18px;font-size:13px" onclick="downloadLeadsExcel()">⬇ Download Excel</button>
+    </div>
     ${kpiRow([
       { num: kpi.total,    lbl: 'Total Leads',     col: 'brand' },
       { num: kpi.untouched,lbl: 'Untouched',       col: 'warn'  },
