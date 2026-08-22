@@ -653,6 +653,7 @@ async function downloadLeadsExcel() {
       'Branch':              l.branch || '',
       'Source':              l.source || '',
       'Officer':             l.officer || '',
+      'SO Name':             l.so_name || '',
       'Follow-up Count':     l.fcount,
       'Stage':               l.stage || '',
       'Status':              l.status || '',

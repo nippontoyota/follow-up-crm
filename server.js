@@ -578,14 +578,15 @@ app.get('/api/manager/leads/export', auth('manager', 'admin'), async (req, res, 
     if (!branchId) return bad(res, 'No branch assigned');
     const leads = await all(`
       SELECT l.customer_name, l.mobile, b.name AS branch, s.name AS source,
-             u.name AS officer, l.fcount, l.stage, l.status, l.next_date,
+             u.name AS officer, sc.so_name, l.fcount, l.stage, l.status, l.next_date,
              l.location, l.remarks AS lead_remarks, l.created_at,
              f.call_status AS latest_call_status, f.outcome AS latest_outcome,
              f.remarks AS latest_remarks, f.created_at AS latest_call_date
       FROM leads l
-      LEFT JOIN users    u ON u.id = l.assigned_to
-      LEFT JOIN branches b ON b.id = l.branch_id
-      LEFT JOIN sources  s ON s.id = l.source_id
+      LEFT JOIN users          u  ON u.id  = l.assigned_to
+      LEFT JOIN branches       b  ON b.id  = l.branch_id
+      LEFT JOIN sources        s  ON s.id  = l.source_id
+      LEFT JOIN salesforce_calls sc ON sc.mobile = l.mobile
       LEFT JOIN LATERAL (
         SELECT call_status, outcome, remarks, created_at
         FROM followups WHERE lead_id = l.id
