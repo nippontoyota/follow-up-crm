@@ -641,6 +641,33 @@ function tblHtml(cols, rows, empty = 'No data') {
   </table></div>`;
 }
 
+function downloadFlagHistoryExcel() {
+  if (typeof XLSX === 'undefined') return say('SheetJS not loaded — try refreshing');
+  const btn = document.getElementById('flagExportBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try {
+    const rows = (window._flagHistory || []).map(r => ({
+      'Customer Name': r.customer_name,
+      'Mobile':        r.mobile,
+      'Officer':       r.officer || '',
+      'Stage':         r.stage || '',
+      'Flag Status':   r.is_flagged ? 'Active' : 'Resolved',
+      'SM Remarks':    r.flag_remarks || '',
+    }));
+    if (!rows.length) { say('No flag history to export', 'err'); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const headers = Object.keys(rows[0]);
+    ws['!cols'] = headers.map(h => {
+      const max = rows.reduce((m, r) => Math.max(m, String(r[h] ?? '').length), h.length);
+      return { wch: Math.min(max + 2, 50) };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Flag History');
+    XLSX.writeFile(wb, `flag_history_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (e) { say(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '⬇ Download Excel'; } }
+}
+
 async function downloadLeadsExcel() {
   if (typeof XLSX === 'undefined') return say('SheetJS not loaded — try refreshing');
   const btn = document.getElementById('exportBtn');
@@ -689,6 +716,7 @@ async function managerView() {
   catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${e.message}</div>`; return; }
 
   const { kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged = [], lostCases = [], flagHistory = [] } = d;
+  window._flagHistory = flagHistory;
   const connected    = outcomes.filter(o => o.call_status === 'Connected');
   const notConnected = outcomes.filter(o => o.call_status === 'Not Connected');
   const connTotal    = connected.reduce((s, o) => s + o.cnt, 0);
@@ -766,7 +794,10 @@ async function managerView() {
     </div>` : ''}
 
     ${flagHistory.length ? `<div class="card" style="border-color:#f57c00">
-      <h2 style="color:#f57c00">⚑ Flag History (All Flagged Leads)</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="color:#f57c00;margin:0">⚑ Flag History (All Flagged Leads)</h2>
+        <button id="flagExportBtn" class="btn" style="width:auto;padding:6px 14px;font-size:13px" onclick="downloadFlagHistoryExcel()">⬇ Download Excel</button>
+      </div>
       <div class="tbl-wrap"><table class="tbl">
         <thead><tr>
           <th>Customer</th><th>Mobile</th><th>Officer</th><th>Stage</th>
