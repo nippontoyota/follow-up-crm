@@ -688,7 +688,7 @@ async function managerView() {
   try { d = await api('/manager/analytics'); }
   catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${e.message}</div>`; return; }
 
-  const { kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged = [], lostCases = [] } = d;
+  const { kpi, byOfficer, outcomes, byStage, overdue, officerOutcomes, flagged = [], lostCases = [], flagHistory = [] } = d;
   const connected    = outcomes.filter(o => o.call_status === 'Connected');
   const notConnected = outcomes.filter(o => o.call_status === 'Not Connected');
   const connTotal    = connected.reduce((s, o) => s + o.cnt, 0);
@@ -765,6 +765,27 @@ async function managerView() {
       )}
     </div>` : ''}
 
+    ${flagHistory.length ? `<div class="card" style="border-color:#f57c00">
+      <h2 style="color:#f57c00">⚑ Flag History (All Flagged Leads)</h2>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr>
+          <th>Customer</th><th>Mobile</th><th>Officer</th><th>Stage</th>
+          <th>Flag Status</th><th>SM Remarks</th>
+        </tr></thead>
+        <tbody>${flagHistory.map(r => `<tr class="lead-row flag-hist-row" data-id="${r.id}" style="cursor:pointer">
+          <td>${esc(r.customer_name)}</td>
+          <td>${esc(r.mobile)}</td>
+          <td>${esc(r.officer || '—')}</td>
+          <td>${esc(r.stage || '—')}</td>
+          <td><span style="color:${r.is_flagged ? '#f57c00' : 'var(--ok)'}">
+            ${r.is_flagged ? '⚑ Active' : '✓ Resolved'}
+          </span></td>
+          <td style="color:var(--muted)">${esc(r.flag_remarks || '—')}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
+
     <div class="card">
       <h2>Overdue Follow-ups by Officer</h2>
       ${tblHtml(
@@ -811,6 +832,9 @@ async function managerView() {
 
   view.querySelectorAll('.flag-drill').forEach(btn => {
     btn.onclick = () => openFlaggedLeads(btn.dataset.oid, btn.dataset.oname);
+  });
+  view.querySelectorAll('.flag-hist-row').forEach(row => {
+    row.onclick = () => openLead(Number(row.dataset.id));
   });
 }
 
