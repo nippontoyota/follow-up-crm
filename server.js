@@ -567,10 +567,11 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
            GROUP BY f.outcome
            ORDER BY cnt DESC`, branchId),
 
-      all(`SELECT l.id, l.customer_name, l.mobile, l.is_flagged, l.flag_remarks,
-                  u.name AS officer, l.stage, l.status
+      all(`SELECT l.id, l.customer_name, l.mobile, l.fcount, l.is_flagged, l.flag_remarks,
+                  u.name AS officer, sc.so_name, l.stage, l.status
            FROM leads l
-           LEFT JOIN users u ON u.id = l.assigned_to
+           LEFT JOIN users            u  ON u.id      = l.assigned_to
+           LEFT JOIN salesforce_calls sc ON sc.mobile  = l.mobile
            WHERE l.branch_id = ? AND (l.is_flagged = 1 OR l.flag_remarks IS NOT NULL)
            ORDER BY l.is_flagged DESC, l.id DESC`, branchId),
     ]);

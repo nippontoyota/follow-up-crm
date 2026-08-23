@@ -647,12 +647,14 @@ function downloadFlagHistoryExcel() {
   if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
   try {
     const rows = (window._flagHistory || []).map(r => ({
-      'Customer Name': r.customer_name,
-      'Mobile':        r.mobile,
-      'Officer':       r.officer || '',
-      'Stage':         r.stage || '',
-      'Flag Status':   r.is_flagged ? 'Active' : 'Resolved',
-      'SM Remarks':    r.flag_remarks || '',
+      'Customer Name':  r.customer_name,
+      'Mobile':         r.mobile,
+      'Officer':        r.officer || '',
+      'SO Name':        r.so_name || '',
+      'Follow-up Count':r.fcount,
+      'Stage':          r.stage || '',
+      'Flag Status':    r.is_flagged ? 'Active' : 'Resolved',
+      'SM Remarks':     r.flag_remarks || '',
     }));
     if (!rows.length) { say('No flag history to export', 'err'); return; }
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -800,13 +802,15 @@ async function managerView() {
       </div>
       <div class="tbl-wrap"><table class="tbl">
         <thead><tr>
-          <th>Customer</th><th>Mobile</th><th>Officer</th><th>Stage</th>
-          <th>Flag Status</th><th>SM Remarks</th>
+          <th>Customer</th><th>Mobile</th><th>Officer</th><th>SO Name</th>
+          <th>Follow-ups</th><th>Stage</th><th>Flag Status</th><th>SM Remarks</th>
         </tr></thead>
         <tbody>${flagHistory.map(r => `<tr class="lead-row flag-hist-row" data-id="${r.id}" style="cursor:pointer">
           <td>${esc(r.customer_name)}</td>
           <td>${esc(r.mobile)}</td>
           <td>${esc(r.officer || '—')}</td>
+          <td>${esc(r.so_name || '—')}</td>
+          <td>${r.fcount}</td>
           <td>${esc(r.stage || '—')}</td>
           <td><span style="color:${r.is_flagged ? '#f57c00' : 'var(--ok)'}">
             ${r.is_flagged ? '⚑ Active' : '✓ Resolved'}
