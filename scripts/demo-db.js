@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { hash } from '../db.js';
+import branchCodes from '../demo-data/branch-codes.json' with { type: 'json' };
 
 const { Client } = pg;
 const DEMO_DB = 'followup_crm_demo';
@@ -53,7 +54,7 @@ async function seed() {
   const { initDb, pool, run, get, all } = await import('../db.js');
   await initDb();
 
-  const branches = ['Nippon Toyota - Kochi', 'Nippon Toyota - Muvattupuzha', 'Nippon Toyota - Thiruvalla'];
+  const branches = [...new Set(['Nippon Toyota - Kochi', ...Object.values(branchCodes)])];
   const sources = ['Meta', 'Referral', 'YouTube', 'JustDial'];
   const activities = ['Website Enquiry', 'Test Drive Camp', 'Dealer Visit'];
   const models = ['Hyryder', 'Glanza', 'Innova Hycross'];

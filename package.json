@@ -13,6 +13,7 @@
     "demo:db": "node --env-file=.env.demo scripts/demo-db.js create",
     "demo:reset": "node --env-file=.env.demo scripts/demo-db.js reset",
     "demo:seed": "node --env-file=.env.demo scripts/demo-db.js seed",
+    "payslip:snapshot": "node scripts/snapshot-payslip-sales.js",
     "demo:workbook": "node scripts/generate-demo-workbook.js",
     "demo:smoke": "node scripts/demo-smoke.js",
     "test-leads:seed": "node --env-file=.env scripts/test-leads.js seed",

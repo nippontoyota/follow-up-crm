@@ -36,12 +36,13 @@ assert.equal(callGuyRows.length, 5, 'demo must have exactly five active Call Guy
 const callGuyIds = callGuyRows.map(u => u.id);
 
 const records = [
-  { customer_name: 'Smoke Test Kochi', mobile: runMobile('1'), branch: 'Nippon Toyota - Kochi', source: 'Meta', model: 'Hyryder', location: 'Kochi', so_name: 'Anil Menon', so_mobile: '9000001001', so_status: 'New' },
+  { customer_name: 'Smoke Test Kalamassery', mobile: runMobile('1'), branch: 'C001B', source: 'Meta', model: 'Hyryder', location: 'Kalamassery', so_name: 'Abhijith V M', so_mobile: '9656341149', so_status: 'New' },
   { customer_name: 'Smoke Test Muvattupuzha', mobile: runMobile('2'), branch: 'Nippon Toyota - Muvattupuzha', source: 'Referral', model: 'Glanza', location: 'Muvattupuzha', so_name: 'Binu Thomas', so_mobile: '9000001002', so_status: 'Called' },
 ];
 const valid = await api('/api/leads/bulk-validate', admin, 'POST', records);
 assert.equal(valid.status, 200);
 assert.equal(valid.data.valid.length, records.length);
+assert.equal(valid.data.valid[0].branch, 'Nippon Toyota - Kalamassery');
 const assigned = await api('/api/leads/bulk-assign', admin, 'POST', { leads: valid.data.valid, call_guy_ids: callGuyIds });
 assert.equal(assigned.status, 200, assigned.data.error);
 assert.equal(assigned.data.added, records.length);

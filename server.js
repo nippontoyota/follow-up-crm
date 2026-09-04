@@ -3,6 +3,7 @@ import Groq from 'groq-sdk';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pool, get, all, run, ins, hash, verify, initDb } from './db.js';
+import branchCodes from './demo-data/branch-codes.json' with { type: 'json' };
 
 const PORT = process.env.PORT || 3000;
 
@@ -24,6 +25,15 @@ export const OUTCOMES = {
 const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
 const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
 const MAX_DAYS_AHEAD = 3;
+
+function canonicalBranchInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const compact = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (branchCodes[compact]) return branchCodes[compact];
+  const name = raw.replace(/^nippon\s+toyota\s*-\s*/i, '').trim();
+  return `Nippon Toyota - ${name}`;
+}
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -323,7 +333,11 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
       all(`SELECT mobile FROM leads`)
     ]);
 
-    const bMap = new Map(branches.map(b => [b.name.toLowerCase().trim(), b.id]));
+    const bMap = new Map(branches.flatMap(b => {
+      const canonical = canonicalBranchInput(b.name).toLowerCase();
+      const short = b.name.replace(/^nippon\s+toyota\s*-\s*/i, '').toLowerCase().trim();
+      return [[b.name.toLowerCase().trim(), b.id], [canonical, b.id], [short, b.id]];
+    }));
     const sMap = new Map(sources.map(s => [s.name.toLowerCase().trim(), s.id]));
     const mMap = new Map(models.map(m => [m.name.toLowerCase().trim(), m.id]));
     const aMap = new Map(activities.map(a => [a.name.toLowerCase().trim(), a.id]));
@@ -346,7 +360,8 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
         r.mobile = m;
       }
 
-      const bName = String(r.branch || '').trim();
+      const uploadedBranch = String(r.branch || '').trim();
+      const bName = canonicalBranchInput(uploadedBranch);
       const sName = String(r.source || '').trim();
       const mName = String(r.model || '').trim();
       const aName = String(r.activity || '').trim();
@@ -358,6 +373,8 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
 
       const mapped = {
         ...r,
+        original_branch: uploadedBranch,
+        branch: bName,
         branch_id: bId || null,
         source_id: sId || null,
         model_id: mId || null,

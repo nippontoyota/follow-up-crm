@@ -1254,7 +1254,7 @@ async function showBulkReviewSheet(duplicates = 0) {
           <div style="font-size:14px; font-weight:600; margin-bottom:4px;">${esc(l.customer_name || '(No name)')} <span style="font-weight:400; color:var(--muted); font-size:13px">· ${esc(l.mobile || '(No mobile)')}</span></div>
           ${l.err_missing ? `<div class="msg err" style="margin-top:0; margin-bottom:12px; padding:6px 10px; font-size:12px;">Missing required fields (Name, Mobile, Branch, or Source)</div>` : ''}
           <div class="kpi-row" style="grid-template-columns: 1fr 1fr; margin-bottom:0; text-align:left;">
-            <div><label style="margin-top:0">Branch ${l.err_branch ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.branch)+')</span>' : ''}</label>
+            <div><label style="margin-top:0">Branch ${l.err_branch ? '<span class="req" style="font-size:11px"><br>(Unknown: '+esc(l.original_branch || l.branch)+')</span>' : ''}</label>
                  <select class="fix-br" ${l.err_branch ? 'style="border-color:var(--bad)"' : ''}>${options(masters.branches, l.branch_id)}</select></div>
             <div><label style="margin-top:0">Source ${l.err_source ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.source)+')</span>' : ''}</label>
                  <select class="fix-so" ${l.err_source ? 'style="border-color:var(--bad)"' : ''}>${options(masters.sources, l.source_id)}</select></div>
