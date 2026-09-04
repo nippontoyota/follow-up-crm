@@ -917,7 +917,8 @@ async function salesPerformanceView() {
     let branchName = '';
     if (me.role === 'sales_manager') branchId = me.branch_id;
     else if (me.role === 'admin') {
-      branchId = new URLSearchParams(location.hash.slice(1)).get('branch_id') || '';
+      const hashQuery = location.hash.includes('?') ? location.hash.slice(location.hash.indexOf('?') + 1) : '';
+      branchId = new URLSearchParams(hashQuery).get('branch_id') || '';
       branchName = masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     }
     if (!branchId && me.role === 'admin') {
