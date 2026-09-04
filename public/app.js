@@ -252,9 +252,6 @@ async function usersView() {
       <select id="role">
         <option value="">Select…</option>
         <option value="admin">Admin</option>
-        <option value="marketing">Marketing</option>
-        <option value="sales">Sales Officer</option>
-        <option value="manager">Sales Manager</option>
         <option value="call_guy">Call Guy</option>
         <option value="call_center_manager">Call Center Manager</option>
         <option value="sales_manager">Branch Sales Manager</option>

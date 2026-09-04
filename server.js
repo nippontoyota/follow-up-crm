@@ -244,7 +244,7 @@ app.post('/api/users', auth('admin'), async (req, res, next) => {
   try {
     const { name, username, role, branch_id } = req.body || {};
     const password = String(req.body?.password || '').trim();
-    if (!name?.trim() || !username?.trim() || !password || !['admin', 'marketing', 'sales', 'manager', 'call_guy', 'call_center_manager', 'sales_manager'].includes(role))
+    if (!name?.trim() || !username?.trim() || !password || !['admin', 'call_guy', 'call_center_manager', 'sales_manager'].includes(role))
       return bad(res, 'Name, username, password and role are required');
     if (password.length < 6) return bad(res, 'Password must be at least 6 characters');
     if (['sales', 'manager', 'sales_manager'].includes(role) && !branch_id) return bad(res, 'A branch is required for this role');
