@@ -76,6 +76,7 @@ async function seed() {
     ['sales-manager-kochi', 'Gita Sales Manager', 'sales_manager', branchByName.get(branches[0])],
     ['sales-manager-muv', 'Hari Sales Manager', 'sales_manager', branchByName.get(branches[1])],
     ['sales-manager-thiruvalla', 'Isha Sales Manager', 'sales_manager', branchByName.get(branches[2])],
+    ['sales-manager-kalamassery', 'Jaya Sales Manager', 'sales_manager', branchByName.get('Nippon Toyota - Kalamassery')],
   ];
   for (const [username, name, role, branchId] of users) {
     await run(`INSERT INTO users(username,password,name,role,branch_id) VALUES(?,?,?,?,?)
