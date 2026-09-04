@@ -190,10 +190,13 @@ function loginView() {
 /* -------------------------------------------------------------------- shell */
 
 const TABS = {
-  admin:   [['analytics', 'Analytics', '📊'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
+  admin:   [['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['salesPerf', 'Sales Officers', '👥'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
   sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
+  call_guy: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   manager: [['dashboard', 'Dashboard', '📊']],
+  call_center_manager: [['callCenter', 'Call Center', '☎️']],
+  sales_manager: [['salesPerf', 'Sales Officers', '👥']],
 };
 
 async function boot() {
@@ -202,7 +205,7 @@ async function boot() {
 
   hdr.classList.remove('hide');
   nav.classList.remove('hide');
-  const roleLabel = { admin: 'Admin', marketing: 'Marketing', manager: 'Sales Manager' };
+  const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Guy', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager' };
   document.getElementById('hdrUser').textContent = roleLabel[me.role]
     ? `${me.name} · ${roleLabel[me.role]}` : '';
 
@@ -229,7 +232,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -252,6 +255,9 @@ async function usersView() {
         <option value="marketing">Marketing</option>
         <option value="sales">Sales Officer</option>
         <option value="manager">Sales Manager</option>
+        <option value="call_guy">Call Guy</option>
+        <option value="call_center_manager">Call Center Manager</option>
+        <option value="sales_manager">Branch Sales Manager</option>
       </select>
       <div id="branchWrap" class="hide">
         <label>Branch <span class="req">*</span></label>
@@ -273,7 +279,7 @@ async function usersView() {
   bindPager(p => { usersPage = p; usersView(); });
 
   document.getElementById('role').onchange = (e) =>
-    document.getElementById('branchWrap').classList.toggle('hide', !['sales','manager'].includes(e.target.value));
+    document.getElementById('branchWrap').classList.toggle('hide', !['sales','manager','sales_manager'].includes(e.target.value));
 
   document.getElementById('save').onclick = async () => {
     try {
@@ -873,6 +879,70 @@ async function managerView() {
   });
 }
 
+async function callCenterView() {
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const d = await api('/call-center/analytics');
+    const s = d.summary || d.kpi || {};
+    view.innerHTML = `${kpiRow([
+      { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
+      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn' },
+      { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
+      { num: s.overdue || 0, lbl: 'Overdue', col: 'bad' },
+      { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
+      { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
+      { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
+    ])}
+    <div class="card"><h2>Call Guy Performance</h2>${tblHtml(
+      ['Call Guy','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
+      d.byCallGuy.map(r => [esc(r.call_guy), r.total, r.untouched, r.followup, r.due, r.booked, r.retailed, r.lost]),
+      'No Call Guys found'
+    )}</div>
+    <div class="card"><h2>Performance by Branch</h2>${tblHtml(
+      ['Branch','Total','Open','Won'], d.byBranch.map(r => [esc(r.branch), r.total, r.open, r.won]), 'No branch data'
+    )}</div>
+    <div class="card"><h2>Call Outcomes</h2>${tblHtml(
+      ['Call Status','Outcome','Count'], d.outcomes.map(r => [esc(r.call_status), esc(r.outcome), r.count]), 'No calls logged'
+    )}</div>
+    <div class="card"><h2>Overdue Work</h2>${tblHtml(
+      ['Call Guy','Overdue Leads'], d.overdue.map(r => [esc(r.call_guy), r.overdue]), 'No overdue follow-ups'
+    )}</div>`;
+  } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+}
+
+async function salesPerformanceView() {
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    let branchId = '';
+    let branchName = '';
+    if (me.role === 'sales_manager') branchId = me.branch_id;
+    else if (me.role === 'admin') {
+      branchId = new URLSearchParams(location.hash.slice(1)).get('branch_id') || '';
+      branchName = masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
+    }
+    if (!branchId && me.role === 'admin') {
+      view.innerHTML = `<div class="card"><h2>Sales Officer Performance</h2><label>Branch</label><select id="salesBranch">${options(masters.branches)}</select><button class="btn" id="loadSales">View performance</button></div>`;
+      document.getElementById('loadSales').onclick = () => { const id = document.getElementById('salesBranch').value; if (id) { location.hash = 'salesPerf?branch_id=' + id; salesPerformanceView(); } };
+      return;
+    }
+    const d = await api(`/sales-manager/analytics?branch_id=${encodeURIComponent(branchId)}`);
+    const s = d.summary || {};
+    view.innerHTML = `${kpiRow([
+      { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
+      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn' },
+      { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
+      { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
+      { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
+      { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
+    ])}
+    <div class="card"><h2>Sales Officer Performance${branchName ? ` · ${esc(branchName)}` : ''}</h2>${tblHtml(
+      ['Original Sales Officer','Total Leads','Untouched','Follow-up','Due','Booked','Retail','Lost'],
+      d.bySalesOfficer.map(r => [esc(r.sales_officer), r.total, r.untouched, r.followup, r.due, r.booked, r.retailed, r.lost]),
+      'No imported Sales Officer data found'
+    )}</div>`;
+  } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+}
+
 function kpiRow(cards) {
   return `<div class="kpi-row">${cards.map(c =>
     `<div class="kpi-card kpi-${c.col}"><div class="kpi-num">${c.num}</div><div class="kpi-lbl">${c.lbl}</div></div>`
@@ -1040,7 +1110,7 @@ async function leadsView() {
           <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
           <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
           <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
-          ${me.role === 'sales' ? `<div style="margin-top:10px"><button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to SM/TL'}">⚑ Flag to SM/TL</button></div>` : ''}
+          ${['sales', 'call_guy'].includes(me.role) ? `<div style="margin-top:10px"><button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to manager'}">⚑ Flag to manager</button></div>` : ''}
         </div>
       </div>`;
       }).join('')}</div>`;
@@ -1106,7 +1176,7 @@ async function handleBulkUpload(e) {
     const records = data.map(r => {
       let branch = null, source = null, mobile = null, customer_name = null;
       let model = null, activity = null, location = null, remarks = null;
-      let so_name = null, so_mobile = null;
+      let so_name = null, so_mobile = null, so_status = null;
       for (const key of Object.keys(r)) {
         const k = key.toLowerCase().trim();
         const v = r[key];
@@ -1121,8 +1191,9 @@ async function handleBulkUpload(e) {
         else if (k.includes('activity')) activity = v;
         else if (k.includes('location')) location = v;
         else if (k.includes('remark')) remarks = v;
+        else if (k === 'status' || k.includes('salesforce status')) so_status = String(v || '').trim() || null;
       }
-      return { branch, source, mobile, customer_name, model, activity, location, remarks, so_name, so_mobile };
+      return { branch, source, mobile, customer_name, model, activity, location, remarks, so_name, so_mobile, so_status };
     }).filter(r => r.mobile || r.customer_name);
 
     if (!records.length) throw new Error('No valid rows found in sheet');
@@ -1140,11 +1211,11 @@ async function handleBulkUpload(e) {
 }
 
 async function showBulkReviewSheet(duplicates = 0) {
-  // Fetch sales officers to build per-branch assignment selectors
-  let salesOfficers = [];
+  // Fetch the shared Call Guy pool. Branch does not limit assignment.
+  let callGuys = [];
   try {
-    const data = await api('/users?role=sales&active=1&limit=100');
-    salesOfficers = parsePage(data, 'users', 1, 100).items;
+    const data = await api('/users?role=call_guy&active=1&limit=100');
+    callGuys = parsePage(data, 'users', 1, 100).items;
   } catch { /* non-fatal */ }
 
   // Group valid leads by branch to show one selector per branch
@@ -1157,21 +1228,13 @@ async function showBulkReviewSheet(duplicates = 0) {
     branchMap[l.branch_id].count++;
   }
 
-  const assignHtml = Object.entries(branchMap).map(([branchId, info]) => {
-    const bOfficers = salesOfficers.filter(u => u.branch_id === Number(branchId));
-    return `<div style="margin-bottom:18px">
-      <div style="font-weight:600;margin-bottom:6px">${esc(info.name)} <span style="font-weight:400;color:var(--muted);font-size:13px">(${info.count} lead${info.count !== 1 ? 's' : ''})</span></div>
-      ${!bOfficers.length
-        ? `<p style="color:var(--bad);font-size:13px">No active sales officers in this branch.</p>`
-        : `<div style="display:flex;flex-wrap:wrap;gap:8px">
-            ${bOfficers.map(u => `<label style="display:flex;align-items:center;gap:6px;font-size:14px;background:var(--bg);border:1.5px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer">
-              <input type="checkbox" class="assign-cb" data-branch="${branchId}" value="${u.id}" style="accent-color:var(--brand);width:15px;height:15px">
-              ${esc(u.name)}
-            </label>`).join('')}
-          </div>`
-      }
+  const assignHtml = `<p style="color:var(--muted);font-size:13px">${Object.values(branchMap).reduce((n, b) => n + b.count, 0)} leads from ${Object.keys(branchMap).length} branch${Object.keys(branchMap).length !== 1 ? 'es' : ''} will be distributed across the shared Call Guy pool.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      ${callGuys.map(u => `<label style="display:flex;align-items:center;gap:6px;font-size:14px;background:var(--bg);border:1.5px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer">
+        <input type="checkbox" class="assign-cb" value="${u.id}" style="accent-color:var(--brand);width:15px;height:15px">
+        ${esc(u.name)}
+      </label>`).join('')}
     </div>`;
-  }).join('');
 
   const sheet = el(`<div class="sheet"><div>
     <div class="close"><button class="btn ghost" id="x">Cancel</button></div>
@@ -1183,7 +1246,7 @@ async function showBulkReviewSheet(duplicates = 0) {
     </div>
 
     ${bulkValid.length ? `<div class="card">
-      <h2>Assign to Sales Officer</h2>
+      <h2>Assign to five Call Guys</h2>
       ${assignHtml}
     </div>` : ''}
 
@@ -1217,26 +1280,12 @@ async function showBulkReviewSheet(duplicates = 0) {
   sheet.querySelector('#x').onclick = close;
 
   sheet.querySelector('#confirmBulk').onclick = async (e) => {
-    // Collect checked officers per branch; require at least one per branch
-    const assignMap = {}; // branchId -> [officerId, ...]
-    for (const branchId of Object.keys(branchMap)) {
-      const checked = [...sheet.querySelectorAll(`.assign-cb[data-branch="${branchId}"]`)].filter(cb => cb.checked).map(cb => Number(cb.value));
-      if (!checked.length) {
-        const msgEl = sheet.querySelector('#msg');
-        if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = `Select at least one officer for ${branchMap[branchId].name}.`; }
-        return;
-      }
-      assignMap[branchId] = checked;
+    const selectedCallGuys = [...sheet.querySelectorAll('.assign-cb:checked')].map(cb => Number(cb.value));
+    if (selectedCallGuys.length !== 5) {
+      const msgEl = sheet.querySelector('#msg');
+      if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'Select exactly five Call Guys.'; }
+      return;
     }
-
-    // Round-robin counter per branch
-    const rrIdx = {};
-    const pickOfficer = (branchId) => {
-      const officers = assignMap[branchId] || [];
-      if (!officers.length) return null;
-      if (!rrIdx[branchId]) rrIdx[branchId] = 0;
-      return officers[rrIdx[branchId]++ % officers.length];
-    };
 
     const fixed = [];
     sheet.querySelectorAll('#invalidList .card').forEach(card => {
@@ -1253,13 +1302,12 @@ async function showBulkReviewSheet(duplicates = 0) {
           source_id: Number(so),
           model_id: mo ? Number(mo) : null,
           activity_id: ac ? Number(ac) : null,
-          assigned_to: pickOfficer(br),
         });
       }
     });
 
     const totalToAssign = [
-      ...bulkValid.map(l => ({ ...l, assigned_to: pickOfficer(String(l.branch_id)) })),
+      ...bulkValid,
       ...fixed,
     ];
     if (!totalToAssign.length) {
@@ -1271,7 +1319,7 @@ async function showBulkReviewSheet(duplicates = 0) {
     e.target.disabled = true;
     e.target.textContent = 'Assigning...';
     try {
-      const res = await api('/leads/bulk-assign', 'POST', totalToAssign);
+      const res = await api('/leads/bulk-assign', 'POST', { leads: totalToAssign, call_guy_ids: selectedCallGuys });
       close();
       say(`Successfully imported & assigned ${res.added} leads!`, 'ok');
       invalidateLeadsStats();
@@ -1290,7 +1338,7 @@ async function showBulkReviewSheet(duplicates = 0) {
 
 async function openLead(id) {
   const l = await api('/leads/' + id);
-  const canAct = (me.role === 'sales' || me.role === 'admin') && l.status === 'open';
+  const canAct = (['sales', 'call_guy'].includes(me.role) || me.role === 'admin') && l.status === 'open';
   const nextSeq = l.fcount + 1;
 
   const sheet = el(`<div class="sheet"><div>
@@ -1304,7 +1352,8 @@ async function openLead(id) {
       <div class="kv"><b>Remarks</b><span>${esc(l.remarks || '—')}</span></div>
       <div class="kv"><b>Model</b><span>${esc(l.model || '—')}</span></div>
       <div class="kv"><b>Activity</b><span>${esc(l.activity || '—')}</span></div>
-      <div class="kv"><b>Officer</b><span>${esc(l.officer || 'Unassigned')}</span></div>
+      <div class="kv"><b>Original Sales Officer</b><span>${esc(l.original_so_name || 'Not provided')}</span></div>
+      <div class="kv"><b>Assigned Call Guy</b><span>${esc(l.officer || 'Unassigned')}</span></div>
     </div>
 
     ${l.salesforce_history && l.salesforce_history.length ? `
@@ -1328,8 +1377,8 @@ async function openLead(id) {
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
-    ${l.is_flagged && me.role === 'manager' ? `<div class="card" style="border-color:#f57c00">
-      <h2 style="color:#f57c00">⚑ Flagged by Sales Officer</h2>
+    ${l.is_flagged && ['manager', 'call_center_manager', 'admin'].includes(me.role) ? `<div class="card" style="border-color:#f57c00">
+      <h2 style="color:#f57c00">⚑ Flagged by Call Guy</h2>
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}
       <label>Close Flag with Remarks</label>
       <textarea id="flagRemarks" placeholder="Enter remarks…"></textarea>

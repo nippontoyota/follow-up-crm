@@ -6,6 +6,14 @@ import { pool, get, all, run, ins, hash, verify, initDb } from './db.js';
 
 const PORT = process.env.PORT || 3000;
 
+if (process.env.DEMO_MODE === '1') {
+  const demoHost = String(process.env.DB_HOST || '').toLowerCase();
+  const demoName = String(process.env.DB_NAME || '');
+  if (!['localhost', '127.0.0.1', '::1'].includes(demoHost) || demoName !== 'followup_crm_demo') {
+    throw new Error('Demo mode requires DB_HOST=localhost and DB_NAME=followup_crm_demo');
+  }
+}
+
 if (!existsSync('.secret')) writeFileSync('.secret', randomBytes(32).toString('hex'));
 const SECRET = process.env.SESSION_SECRET || readFileSync('.secret', 'utf8').trim();
 
@@ -236,14 +244,14 @@ app.post('/api/users', auth('admin'), async (req, res, next) => {
   try {
     const { name, username, role, branch_id } = req.body || {};
     const password = String(req.body?.password || '').trim();
-    if (!name?.trim() || !username?.trim() || !password || !['admin', 'marketing', 'sales', 'manager'].includes(role))
+    if (!name?.trim() || !username?.trim() || !password || !['admin', 'marketing', 'sales', 'manager', 'call_guy', 'call_center_manager', 'sales_manager'].includes(role))
       return bad(res, 'Name, username, password and role are required');
     if (password.length < 6) return bad(res, 'Password must be at least 6 characters');
-    if (['sales', 'manager'].includes(role) && !branch_id) return bad(res, 'A branch is required for this role');
+    if (['sales', 'manager', 'sales_manager'].includes(role) && !branch_id) return bad(res, 'A branch is required for this role');
     const id = await ins(
       `INSERT INTO users (username, password, name, role, branch_id) VALUES (?,?,?,?,?)`,
       String(username).trim().toLowerCase(), hash(password), name.trim(), role,
-      ['sales', 'manager'].includes(role) ? Number(branch_id) : null,
+      ['sales', 'manager', 'sales_manager'].includes(role) ? Number(branch_id) : null,
     );
     res.json({ id });
   } catch (e) {
@@ -373,8 +381,18 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
 
 app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
   try {
-    const leads = req.body || [];
+    const leads = Array.isArray(req.body) ? req.body : (req.body?.leads || []);
+    const selectedCallGuys = Array.isArray(req.body) ? [] : (req.body?.call_guy_ids || []);
     if (!leads.length) return res.json({ ok: true, added: 0 });
+
+    const callGuyIds = [...new Set((selectedCallGuys.length ? selectedCallGuys : leads.map(l => l.assigned_to))
+      .map(Number).filter(Number.isInteger))];
+    if (callGuyIds.length !== 5) return bad(res, 'Select exactly five Call Guys');
+    const validCallGuys = await all(
+      `SELECT id FROM users WHERE id = ANY(?) AND role = 'call_guy' AND active = 1`,
+      callGuyIds,
+    );
+    if (validCallGuys.length !== 5) return bad(res, 'All selected users must be active Call Guys');
 
     const byBranch = {};
     for (const l of leads) {
@@ -382,40 +400,43 @@ app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
       byBranch[l.branch_id].push(l);
     }
 
-    let added = 0;
+    const leadRows = [];
+    const sfRows = [];
+    let globalIndex = 0;
     for (const branchId of Object.keys(byBranch)) {
       const branchLeads = byBranch[branchId];
-      // Use manually selected officer if provided, otherwise fall back to round-robin
-      // Fall back to round-robin only if no client-side assignment provided
-      const hasManual = branchLeads.some(l => l.assigned_to);
-      const sos = hasManual ? [] : await all(`SELECT id FROM users WHERE role = 'sales' AND active = 1 AND branch_id = ? ORDER BY id`, Number(branchId));
-      let soIdx = 0;
 
       for (const l of branchLeads) {
-        const assigned_to = l.assigned_to ? Number(l.assigned_to) : (sos.length ? sos[soIdx % sos.length].id : null);
+        const assigned_to = callGuyIds[globalIndex++ % callGuyIds.length];
         const mobile = String(l.mobile).trim();
-        await run(
-          `INSERT INTO leads (customer_name, mobile, source_id, branch_id, location, remarks, created_by, assigned_to, model_id, activity_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        leadRows.push([
           String(l.customer_name).trim(), mobile, Number(l.source_id), Number(branchId),
           l.location?.trim() || null, l.remarks?.trim() || null, req.user.id, assigned_to,
-          l.model_id ? Number(l.model_id) : null, l.activity_id ? Number(l.activity_id) : null
-        );
-        if (l.so_name?.trim()) {
-          await run(`
-            INSERT INTO salesforce_calls (mobile, so_name, so_mobile, created_at)
-            VALUES (?, ?, ?, TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
-            ON CONFLICT (mobile) DO UPDATE SET
-              so_name = EXCLUDED.so_name,
-              so_mobile = EXCLUDED.so_mobile,
-              created_at = EXCLUDED.created_at
-          `, mobile, l.so_name.trim(), l.so_mobile?.trim() || null);
-        }
-        soIdx++;
-        added++;
+          l.model_id ? Number(l.model_id) : null, l.activity_id ? Number(l.activity_id) : null,
+          l.so_name?.trim() || l.original_so_name?.trim() || null,
+          l.so_mobile?.trim() || l.original_so_mobile?.trim() || null,
+        ]);
+        if (l.so_name?.trim()) sfRows.push([mobile, l.so_name.trim(), l.so_mobile?.trim() || null, l.so_status?.trim() || null]);
       }
     }
-    res.json({ ok: true, added });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const leadValues = leadRows.flat();
+      const leadPlaceholders = leadRows.map((_, row) => `(${Array.from({ length: 12 }, (_, col) => '$' + (row * 12 + col + 1)).join(',')})`).join(',');
+      await client.query(`INSERT INTO leads (customer_name,mobile,source_id,branch_id,location,remarks,created_by,assigned_to,model_id,activity_id,original_so_name,original_so_mobile) VALUES ${leadPlaceholders}`, leadValues);
+      if (sfRows.length) {
+        const sfValues = sfRows.flat();
+        const sfPlaceholders = sfRows.map((_, row) => `($${row * 4 + 1},$${row * 4 + 2},$${row * 4 + 3},$${row * 4 + 4},TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS'))`).join(',');
+        await client.query(`INSERT INTO salesforce_calls(mobile,so_name,so_mobile,status,created_at) VALUES ${sfPlaceholders}
+          ON CONFLICT(mobile) DO UPDATE SET so_name=EXCLUDED.so_name,so_mobile=EXCLUDED.so_mobile,status=EXCLUDED.status,created_at=EXCLUDED.created_at`, sfValues);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally { client.release(); }
+    res.json({ ok: true, added: leadRows.length });
   } catch(e) { next(e); }
 });
 
@@ -438,8 +459,9 @@ app.get('/api/leads', auth(), async (req, res, next) => {
     const offset = (page - 1) * limit;
     const where = [], args = [];
 
-    if (req.user.role === 'sales')     { where.push('l.assigned_to = ?'); args.push(req.user.id); }
+    if (['sales', 'call_guy'].includes(req.user.role)) { where.push('l.assigned_to = ?'); args.push(req.user.id); }
     else if (req.user.role === 'marketing') { where.push('l.created_by = ?'); args.push(req.user.id); }
+    else if (req.user.role === 'sales_manager') { where.push('l.branch_id = ?'); args.push(req.user.branch_id); }
 
     if (tab === 'fresh') where.push(`l.status = 'open' AND l.fcount = 0`);
     else if (tab === 'today') { where.push(`l.status = 'open' AND l.fcount > 0 AND l.next_date <= ?`); args.push(today()); }
@@ -750,7 +772,7 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
 
 app.get('/api/leads/stats', auth(), async (req, res, next) => {
   try {
-    const isSales = req.user.role === 'sales';
+    const isSales = ['sales', 'call_guy'].includes(req.user.role);
     const isMkt   = req.user.role === 'marketing';
     const filt    = isSales ? 'AND l.assigned_to = ?' : isMkt ? 'AND l.created_by = ?' : '';
     const args    = (isSales || isMkt) ? [today(), req.user.id] : [today()];
@@ -771,10 +793,12 @@ app.get('/api/leads/:id', auth(), async (req, res, next) => {
   try {
     const lead = await get(`${LEAD_SELECT} WHERE l.id = ?`, Number(req.params.id));
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (req.user.role === 'sales' && lead.assigned_to !== req.user.id)
+    if (['sales', 'call_guy'].includes(req.user.role) && lead.assigned_to !== req.user.id)
       return res.status(403).json({ error: 'Not your lead' });
     if (req.user.role === 'marketing' && lead.created_by !== req.user.id)
       return res.status(403).json({ error: 'Not your lead' });
+    if (req.user.role === 'sales_manager' && lead.branch_id !== req.user.branch_id)
+      return res.status(403).json({ error: 'Not your branch' });
 
     lead.followups = await all(
       `SELECT f.*, m.name AS model, a.name AS activity, u.name AS by_name
@@ -793,11 +817,11 @@ app.get('/api/leads/:id', auth(), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, next) => {
+app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (req, res, next) => {
   try {
     const lead = await get(`SELECT * FROM leads WHERE id = ?`, Number(req.params.id));
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (req.user.role === 'sales' && lead.assigned_to !== req.user.id)
+    if (['sales', 'call_guy'].includes(req.user.role) && lead.assigned_to !== req.user.id)
       return res.status(403).json({ error: 'Not your lead' });
     if (lead.status !== 'open') return bad(res, 'This lead is already closed');
 
@@ -843,12 +867,12 @@ app.post('/api/leads/:id/followup', auth('sales', 'admin'), async (req, res, nex
   } catch (e) { next(e); }
 });
 
-app.post('/api/leads/:id/flag', auth('sales', 'admin'), async (req, res, next) => {
+app.post('/api/leads/:id/flag', auth('sales', 'call_guy', 'admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const lead = await get(`SELECT assigned_to, is_flagged FROM leads WHERE id = ?`, id);
     if (!lead) return res.status(404).json({ error: 'Not found' });
-    if (req.user.role === 'sales' && lead.assigned_to !== req.user.id)
+    if (['sales', 'call_guy'].includes(req.user.role) && lead.assigned_to !== req.user.id)
       return res.status(403).json({ error: 'Not your lead' });
     const newFlag = lead.is_flagged ? 0 : 1;
     await run(`UPDATE leads SET is_flagged = ? WHERE id = ?`, newFlag, id);
@@ -856,7 +880,7 @@ app.post('/api/leads/:id/flag', auth('sales', 'admin'), async (req, res, next) =
   } catch (e) { next(e); }
 });
 
-app.post('/api/leads/:id/close-flag', auth('manager', 'admin'), async (req, res, next) => {
+app.post('/api/leads/:id/close-flag', auth('manager', 'call_center_manager', 'admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { remarks } = req.body || {};
@@ -865,11 +889,85 @@ app.post('/api/leads/:id/close-flag', auth('manager', 'admin'), async (req, res,
   } catch (e) { next(e); }
 });
 
+/* -------------------------------------------------------- repurposed dashboards */
+
+app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), async (req, res, next) => {
+  try {
+    const day = today();
+    const [kpi, byCallGuy, outcomes, byBranch, overdue, flagged] = await Promise.all([
+      get(`SELECT COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE fcount = 0 AND status = 'open')::int AS untouched,
+          COUNT(*) FILTER (WHERE fcount > 0 AND status = 'open')::int AS followup,
+          COUNT(*) FILTER (WHERE next_date < ? AND status = 'open')::int AS overdue,
+          COUNT(*) FILTER (WHERE stage = 'Booking Done' AND status = 'closed')::int AS booked,
+          COUNT(*) FILTER (WHERE stage = 'Retail Done' AND status = 'closed')::int AS retailed,
+          COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
+        FROM leads WHERE assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`, day),
+      all(`SELECT u.id, u.name AS call_guy, COUNT(l.id)::int AS total,
+          COUNT(l.id) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
+          COUNT(l.id) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+          COUNT(l.id) FILTER (WHERE l.next_date <= ? AND l.status = 'open')::int AS due,
+          COUNT(l.id) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+          COUNT(l.id) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
+          COUNT(l.id) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost
+        FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
+        WHERE u.role = 'call_guy' AND u.active = 1
+        GROUP BY u.id, u.name ORDER BY u.name`, day),
+      all(`SELECT f.call_status, f.outcome, COUNT(*)::int AS count
+        FROM followups f JOIN leads l ON l.id = f.lead_id
+        WHERE l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
+        GROUP BY f.call_status, f.outcome ORDER BY count DESC`),
+      all(`SELECT b.name AS branch, COUNT(l.id)::int AS total,
+          COUNT(l.id) FILTER (WHERE l.status = 'open')::int AS open,
+          COUNT(l.id) FILTER (WHERE l.stage IN ('Booking Done','Retail Done'))::int AS won
+        FROM branches b LEFT JOIN leads l ON l.branch_id = b.id
+          AND l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
+        GROUP BY b.id, b.name ORDER BY total DESC, b.name`),
+      all(`SELECT u.name AS call_guy, COUNT(l.id)::int AS overdue
+        FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
+          AND l.status = 'open' AND l.next_date < ?
+        WHERE u.role = 'call_guy' AND u.active = 1
+        GROUP BY u.id, u.name ORDER BY overdue DESC, u.name`, day),
+      all(`SELECT l.id, l.customer_name, l.mobile, l.branch_id, l.original_so_name,
+          l.fcount, l.stage, l.status, u.name AS call_guy
+        FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
+        WHERE l.is_flagged = 1 AND l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
+        ORDER BY l.id DESC LIMIT 200`),
+    ]);
+    res.json({ kpi, byCallGuy, outcomes, byBranch, overdue, flagged });
+  } catch (e) { next(e); }
+});
+
+app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (req, res, next) => {
+  try {
+    const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
+    if (!branchId) return bad(res, 'Select a branch');
+    const rows = await all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
+        COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+        COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+        COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
+        COUNT(*) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
+        COUNT(*) FILTER (WHERE l.status = 'open' AND l.next_date <= ?)::int AS due
+      FROM leads l WHERE l.branch_id = ? GROUP BY COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
+      ORDER BY total DESC, sales_officer`, today(), branchId);
+    const summary = await get(`SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE fcount = 0 AND status = 'open')::int AS untouched,
+        COUNT(*) FILTER (WHERE fcount > 0 AND status = 'open')::int AS followup,
+        COUNT(*) FILTER (WHERE stage = 'Booking Done' AND status = 'closed')::int AS booked,
+        COUNT(*) FILTER (WHERE stage = 'Retail Done' AND status = 'closed')::int AS retailed,
+        COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
+      FROM leads WHERE branch_id = ?`, branchId);
+    res.json({ branchId, summary, bySalesOfficer: rows });
+  } catch (e) { next(e); }
+});
+
 /* ------------------------------------------------------------- dashboards */
 
 app.get('/api/counts', auth(), async (req, res, next) => {
   try {
-    const isSales = req.user.role === 'sales';
+    const isSales = ['sales', 'call_guy'].includes(req.user.role);
     const extra = isSales ? ' AND assigned_to = ?' : '';
     const args  = isSales ? [req.user.id] : [];
     const [fr, du] = await Promise.all([

@@ -96,7 +96,7 @@ const DDL = [
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_flagged INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS flag_remarks TEXT`,
   `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
-  `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager'))`,
+  `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager'))`,
   `CREATE TABLE IF NOT EXISTS salesforce_calls (
     id SERIAL PRIMARY KEY,
     mobile TEXT NOT NULL UNIQUE,
@@ -108,6 +108,10 @@ const DDL = [
   `ALTER TABLE salesforce_calls ADD COLUMN IF NOT EXISTS so_mobile TEXT`,
   `ALTER TABLE salesforce_calls DROP CONSTRAINT IF EXISTS salesforce_calls_mobile_so_name_status_key`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_salesforce_calls_mobile ON salesforce_calls(mobile)`,
+  `ALTER TABLE leads ADD COLUMN IF NOT EXISTS original_so_name TEXT`,
+  `ALTER TABLE leads ADD COLUMN IF NOT EXISTS original_so_mobile TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_leads_original_so ON leads(original_so_name, branch_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_leads_call_guy ON leads(assigned_to, status, next_date)`,
 ];
 
 export async function initDb() {

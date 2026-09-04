@@ -4,3 +4,4 @@ crm.db-shm
 crm.db-wal
 .secret
 .env
+.env.demo
