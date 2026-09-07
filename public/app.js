@@ -1451,7 +1451,7 @@ async function showBulkReviewSheet(duplicates = 0) {
           ${l.err_missing ? `<div class="msg err" style="margin-top:0; margin-bottom:12px; padding:6px 10px; font-size:12px;">Missing required fields (Name, Mobile, Branch, or Source)</div>` : ''}
           <div class="kpi-row" style="grid-template-columns: 1fr 1fr; margin-bottom:0; text-align:left;">
             <div><label style="margin-top:0">Branch ${l.err_branch ? '<span class="req" style="font-size:11px"><br>(Unknown: '+esc(l.original_branch || l.branch)+')</span>' : ''}</label>
-                 <select class="fix-br" ${l.err_branch ? 'style="border-color:var(--bad)"' : ''}>${options(masters.branches, l.branch_id)}</select></div>
+                 <select class="fix-br" data-kind="branches" data-typo="${esc(l.branch || l.original_branch || '')}" ${l.err_branch ? 'style="border-color:var(--bad)"' : ''}>${options(masters.branches, l.branch_id, '+ Add new branch…')}</select></div>
             <div><label style="margin-top:0">Source ${l.err_source ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.source)+')</span>' : ''}</label>
                  <select class="fix-so" data-kind="sources" data-typo="${esc(l.source || '')}" ${l.err_source ? 'style="border-color:var(--bad)"' : ''}>${options(masters.sources, l.source_id, '+ Add new source…')}</select></div>
             <div><label>Model ${l.err_model ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.model)+')</span>' : ''}</label>
@@ -1473,8 +1473,8 @@ async function showBulkReviewSheet(duplicates = 0) {
   const close = () => { sheet.remove(); bulkValid = []; bulkInvalid = []; };
   sheet.querySelector('#x').onclick = close;
 
-  const masterTypeSingular = { sources: 'source', models: 'model', activities: 'activity' };
-  sheet.querySelectorAll('.fix-so, .fix-mo, .fix-ac').forEach(sel => {
+  const masterTypeSingular = { branches: 'branch', sources: 'source', models: 'model', activities: 'activity' };
+  sheet.querySelectorAll('.fix-br, .fix-so, .fix-mo, .fix-ac').forEach(sel => {
     sel.addEventListener('change', () => {
       if (sel.value !== '__add__') return;
       const kind = sel.dataset.kind;
