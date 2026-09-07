@@ -1475,20 +1475,44 @@ async function showBulkReviewSheet(duplicates = 0) {
 
   const masterTypeSingular = { sources: 'source', models: 'model', activities: 'activity' };
   sheet.querySelectorAll('.fix-so, .fix-mo, .fix-ac').forEach(sel => {
-    sel.addEventListener('change', async () => {
+    sel.addEventListener('change', () => {
       if (sel.value !== '__add__') return;
       const kind = sel.dataset.kind;
-      const name = (prompt(`New ${masterTypeSingular[kind]} name:`, sel.dataset.typo || '') || '').trim();
-      if (!name) { sel.value = ''; return; }
-      try {
-        const created = await api(`/masters/${kind}`, 'POST', { name });
-        masters[kind].push(created);
-        masters[kind].sort((a, b) => a.name.localeCompare(b.name));
-        sel.innerHTML = options(masters[kind], created.id, `+ Add new ${masterTypeSingular[kind]}…`);
-      } catch (err) {
-        alert(err.message);
-        sel.value = '';
-      }
+      const label = masterTypeSingular[kind];
+
+      const form = el(`<div style="display:flex;gap:6px;margin-top:6px">
+        <input type="text" placeholder="New ${esc(label)} name" style="margin:0" value="${esc(sel.dataset.typo || '')}">
+        <button type="button" class="btn row" style="width:auto;padding:0 12px">Add</button>
+        <button type="button" class="btn ghost row" style="width:auto;padding:0 12px">Cancel</button>
+      </div>`);
+      const [input, addBtn, cancelBtn] = form.children;
+      sel.style.display = 'none';
+      sel.after(form);
+      input.focus();
+      input.select();
+
+      const revert = () => { form.remove(); sel.style.display = ''; sel.value = ''; };
+      cancelBtn.onclick = revert;
+      const submit = async () => {
+        const name = input.value.trim();
+        if (!name) return input.focus();
+        addBtn.disabled = true;
+        addBtn.textContent = 'Adding…';
+        try {
+          const created = await api(`/masters/${kind}`, 'POST', { name });
+          masters[kind].push(created);
+          masters[kind].sort((a, b) => a.name.localeCompare(b.name));
+          sel.innerHTML = options(masters[kind], created.id, `+ Add new ${label}…`);
+          form.remove();
+          sel.style.display = '';
+        } catch (err) {
+          addBtn.disabled = false;
+          addBtn.textContent = 'Add';
+          form.insertAdjacentHTML('afterend', `<div class="msg err" style="margin-top:4px">${esc(err.message)}</div>`);
+        }
+      };
+      addBtn.onclick = submit;
+      input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } if (e.key === 'Escape') revert(); };
     });
   });
 
