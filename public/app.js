@@ -1404,6 +1404,43 @@ async function handleBulkUpload(e) {
   }
 }
 
+const MASTER_LABEL = { branches: 'branch', sources: 'source', models: 'model', activities: 'activity' };
+const GROUP_FIELDS = [
+  { kind: 'branches', errField: 'err_branch', idField: 'branch_id', title: 'Branch', valueOf: l => l.branch, subOf: l => l.original_branch && l.original_branch !== l.branch ? l.original_branch : null },
+  { kind: 'sources', errField: 'err_source', idField: 'source_id', title: 'Source', valueOf: l => l.source },
+  { kind: 'models', errField: 'err_model', idField: 'model_id', title: 'Model', valueOf: l => l.model },
+  { kind: 'activities', errField: 'err_activity', idField: 'activity_id', title: 'Activity', valueOf: l => l.activity },
+];
+const isRowReady = l => !l.err_branch && !l.err_source && !l.err_model && !l.err_activity && !l.err_missing;
+
+// Collapse potentially thousands of error rows into one entry per distinct
+// unrecognized value, so fixing "Kalamassery" once resolves every row that used it.
+function buildInvalidGroups(rows) {
+  const groups = {};
+  for (const f of GROUP_FIELDS) groups[f.kind] = new Map();
+  const blocked = [];
+  for (const l of rows) {
+    if (l.err_missing) blocked.push(l);
+    for (const f of GROUP_FIELDS) {
+      if (!l[f.errField]) continue;
+      const value = f.valueOf(l);
+      if (!value) continue;
+      if (!groups[f.kind].has(value)) groups[f.kind].set(value, { rows: [], sub: f.subOf ? f.subOf(l) : null });
+      groups[f.kind].get(value).rows.push(l);
+    }
+  }
+  return { groups, blocked };
+}
+
+function missingFieldNames(l) {
+  const out = [];
+  if (!l.branch) out.push('Branch');
+  if (!l.source) out.push('Source');
+  if (!l.customer_name) out.push('Name');
+  if (!l.mobile || l.mobile.length !== 10) out.push('Mobile');
+  return out.join(', ') || 'Required data';
+}
+
 async function showBulkReviewSheet(duplicates = 0) {
   // Fetch the shared Call Executive pool. Branch does not limit assignment.
   let callGuys = [];
@@ -1412,58 +1449,74 @@ async function showBulkReviewSheet(duplicates = 0) {
     callGuys = parsePage(data, 'users', 1, 100).items;
   } catch { /* non-fatal */ }
 
-  // Group valid leads by branch to show one selector per branch
-  const branchMap = {};
-  for (const l of bulkValid) {
-    if (!branchMap[l.branch_id]) {
-      const branchName = masters.branches.find(b => b.id === l.branch_id)?.name || `Branch ${l.branch_id}`;
-      branchMap[l.branch_id] = { name: branchName, count: 0 };
-    }
-    branchMap[l.branch_id].count++;
-  }
-
-  const assignHtml = `<p style="color:var(--muted);font-size:13px">${Object.values(branchMap).reduce((n, b) => n + b.count, 0)} leads from ${Object.keys(branchMap).length} branch${Object.keys(branchMap).length !== 1 ? 'es' : ''} will be distributed across the shared Call Executive pool.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
+  const assignHtml = `<div style="display:flex;flex-wrap:wrap;gap:8px">
       ${callGuys.map(u => `<label style="display:flex;align-items:center;gap:6px;font-size:14px;background:var(--bg);border:1.5px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer">
         <input type="checkbox" class="assign-cb" value="${u.id}" style="accent-color:var(--brand);width:15px;height:15px">
         ${esc(u.name)}
       </label>`).join('')}
     </div>`;
 
+  const { groups, blocked } = buildInvalidGroups(bulkInvalid);
+
+  const groupSectionHtml = f => {
+    const entries = [...groups[f.kind].entries()].sort((a, b) => b[1].rows.length - a[1].rows.length);
+    if (!entries.length) return '';
+    return `<div class="resolve-section" data-kind="${f.kind}">
+      <h3 class="resolve-section-title">${f.title} <span>${entries.length} unrecognized value${entries.length !== 1 ? 's' : ''}</span></h3>
+      ${entries.map(([value, g]) => `
+        <div class="resolve-row" data-kind="${f.kind}" data-value="${esc(value)}">
+          <div class="resolve-row-main">
+            <div class="resolve-row-label">${esc(value)}</div>
+            ${g.sub ? `<div class="resolve-row-sub">as uploaded: ${esc(g.sub)}</div>` : ''}
+          </div>
+          <span class="resolve-row-count">${g.rows.length} lead${g.rows.length !== 1 ? 's' : ''}</span>
+          <div class="resolve-row-action">
+            <select class="resolve-select">${options(masters[f.kind], null, `+ Add “${value}” as new ${MASTER_LABEL[f.kind]}`)}</select>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+  };
+
+  const groupsHtml = GROUP_FIELDS.map(groupSectionHtml).join('');
+  const readyCount = () => bulkValid.length + bulkInvalid.filter(isRowReady).length;
+  const issueCount = () => GROUP_FIELDS.reduce((n, f) => n + groups[f.kind].size, 0);
+
   const sheet = el(`<div class="sheet"><div>
-    <div class="close"><button class="btn ghost" id="x">Cancel</button></div>
+    <div class="close bulk-toolbar">
+      <div class="bulk-toolbar-stats">
+        <span class="is-ready"><b id="bulkReadyStat">${readyCount()}</b> ready</span>
+        ${issueCount() ? `<span class="is-issue"><b id="bulkIssueStat">${issueCount()}</b> value${issueCount() !== 1 ? 's' : ''} to resolve</span>` : ''}
+        ${duplicates ? `<span>${duplicates} duplicate${duplicates !== 1 ? 's' : ''} skipped</span>` : ''}
+      </div>
+      <button class="btn ghost" id="x">Cancel</button>
+    </div>
+
     <div class="card">
       <h2>Bulk Upload Review</h2>
-      <p><b>${bulkValid.length}</b> leads are ready to import.</p>
-      ${duplicates ? `<p style="color:var(--text-light)"><b>${duplicates}</b> duplicate leads were automatically skipped.</p>` : ''}
-      ${bulkInvalid.length ? `<p style="color:var(--bad)"><b>${bulkInvalid.length}</b> leads have errors (typos or missing data). Please fix them below or they will be skipped.</p>` : ''}
+      <p style="color:var(--muted);font-size:13px;margin:0">${bulkValid.length + bulkInvalid.length} lead${bulkValid.length + bulkInvalid.length !== 1 ? 's' : ''} parsed.
+        ${groupsHtml ? 'Resolve each unrecognized value below once — every matching row updates automatically.' : 'Everything matched existing branches, sources, models and activities.'}</p>
     </div>
 
     ${bulkValid.length ? `<div class="card">
       <h2>Assign to five Call Executives</h2>
+      <p style="color:var(--muted);font-size:13px">Ready leads will be distributed across the shared Call Executive pool.</p>
       ${assignHtml}
     </div>` : ''}
 
-    ${bulkInvalid.length ? `<div id="invalidList">
-      ${bulkInvalid.map((l, i) => `
-        <div class="card" data-idx="${i}" style="border-left: 3px solid var(--bad)">
-          <div style="font-size:14px; font-weight:600; margin-bottom:4px;">${esc(l.customer_name || '(No name)')} <span style="font-weight:400; color:var(--muted); font-size:13px">· ${esc(l.mobile || '(No mobile)')}</span></div>
-          ${l.err_missing ? `<div class="msg err" style="margin-top:0; margin-bottom:12px; padding:6px 10px; font-size:12px;">Missing required fields (Name, Mobile, Branch, or Source)</div>` : ''}
-          <div class="kpi-row" style="grid-template-columns: 1fr 1fr; margin-bottom:0; text-align:left;">
-            <div><label style="margin-top:0">Branch ${l.err_branch ? '<span class="req" style="font-size:11px"><br>(Unknown: '+esc(l.original_branch || l.branch)+')</span>' : ''}</label>
-                 <select class="fix-br" data-kind="branches" data-typo="${esc(l.branch || l.original_branch || '')}" ${l.err_branch ? 'style="border-color:var(--bad)"' : ''}>${options(masters.branches, l.branch_id, '+ Add new branch…')}</select></div>
-            <div><label style="margin-top:0">Source ${l.err_source ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.source)+')</span>' : ''}</label>
-                 <select class="fix-so" data-kind="sources" data-typo="${esc(l.source || '')}" ${l.err_source ? 'style="border-color:var(--bad)"' : ''}>${options(masters.sources, l.source_id, '+ Add new source…')}</select></div>
-            <div><label>Model ${l.err_model ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.model)+')</span>' : ''}</label>
-                 <select class="fix-mo" data-kind="models" data-typo="${esc(l.model || '')}" ${l.err_model ? 'style="border-color:var(--bad)"' : ''}>${options(masters.models, l.model_id, '+ Add new model…')}</select></div>
-            <div><label>Activity ${l.err_activity ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.activity)+')</span>' : ''}</label>
-                 <select class="fix-ac" data-kind="activities" data-typo="${esc(l.activity || '')}" ${l.err_activity ? 'style="border-color:var(--bad)"' : ''}>${options(masters.activities, l.activity_id, '+ Add new activity…')}</select></div>
-          </div>
-        </div>
-      `).join('')}
+    ${groupsHtml ? `<div class="card" id="resolveGroups">${groupsHtml}</div>` : ''}
+
+    ${blocked.length ? `<div class="card">
+      <details class="bulk-blocked">
+        <summary>${blocked.length} lead${blocked.length !== 1 ? 's' : ''} missing required data — will be skipped</summary>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Customer</th><th>Mobile</th><th>Missing</th></tr></thead>
+          <tbody>${blocked.map(l => `<tr><td>${esc(l.customer_name || '—')}</td><td>${esc(l.mobile || '—')}</td><td>${esc(missingFieldNames(l))}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </details>
     </div>` : ''}
 
-    <div class="card">
+    <div class="bulk-footer">
       <button class="btn" id="confirmBulk">Confirm & Assign</button>
       <div id="msg"></div>
     </div>
@@ -1473,46 +1526,70 @@ async function showBulkReviewSheet(duplicates = 0) {
   const close = () => { sheet.remove(); bulkValid = []; bulkInvalid = []; };
   sheet.querySelector('#x').onclick = close;
 
-  const masterTypeSingular = { branches: 'branch', sources: 'source', models: 'model', activities: 'activity' };
-  sheet.querySelectorAll('.fix-br, .fix-so, .fix-mo, .fix-ac').forEach(sel => {
+  const refreshStats = () => {
+    const ready = sheet.querySelector('#bulkReadyStat');
+    if (ready) ready.textContent = readyCount();
+    const issue = sheet.querySelector('#bulkIssueStat');
+    if (issue) issue.textContent = sheet.querySelectorAll('.resolve-row').length;
+  };
+
+  sheet.querySelectorAll('.resolve-row').forEach(row => {
+    const kind = row.dataset.kind;
+    const value = row.dataset.value;
+    const f = GROUP_FIELDS.find(x => x.kind === kind);
+    const g = groups[kind].get(value);
+    const sel = row.querySelector('.resolve-select');
+    const actionBox = row.querySelector('.resolve-row-action');
+
+    const applyToGroup = id => {
+      for (const l of g.rows) { l[f.idField] = id; l[f.errField] = false; }
+      row.classList.add('is-done');
+      setTimeout(() => {
+        row.remove();
+        const section = sheet.querySelector(`.resolve-section[data-kind="${kind}"]`);
+        if (section && !section.querySelector('.resolve-row')) section.remove();
+        const container = sheet.querySelector('#resolveGroups');
+        if (container && !container.querySelector('.resolve-section')) container.remove();
+        refreshStats();
+      }, 180);
+    };
+
     sel.addEventListener('change', () => {
-      if (sel.value !== '__add__') return;
-      const kind = sel.dataset.kind;
-      const label = masterTypeSingular[kind];
+      if (sel.value === '__add__') {
+        const label = MASTER_LABEL[kind];
+        const form = el(`<div class="resolve-add-form">
+          <input type="text" placeholder="New ${esc(label)} name" value="${esc(value)}">
+          <button type="button" class="btn">Add</button>
+          <button type="button" class="btn ghost">Cancel</button>
+        </div>`);
+        const [input, addBtn, cancelBtn] = form.children;
+        actionBox.replaceChildren(form);
+        input.focus();
+        input.select();
 
-      const form = el(`<div style="display:flex;gap:6px;margin-top:6px">
-        <input type="text" placeholder="New ${esc(label)} name" style="margin:0" value="${esc(sel.dataset.typo || '')}">
-        <button type="button" class="btn row" style="width:auto;padding:0 12px">Add</button>
-        <button type="button" class="btn ghost row" style="width:auto;padding:0 12px">Cancel</button>
-      </div>`);
-      const [input, addBtn, cancelBtn] = form.children;
-      sel.style.display = 'none';
-      sel.after(form);
-      input.focus();
-      input.select();
-
-      const revert = () => { form.remove(); sel.style.display = ''; sel.value = ''; };
-      cancelBtn.onclick = revert;
-      const submit = async () => {
-        const name = input.value.trim();
-        if (!name) return input.focus();
-        addBtn.disabled = true;
-        addBtn.textContent = 'Adding…';
-        try {
-          const created = await api(`/masters/${kind}`, 'POST', { name });
-          masters[kind].push(created);
-          masters[kind].sort((a, b) => a.name.localeCompare(b.name));
-          sel.innerHTML = options(masters[kind], created.id, `+ Add new ${label}…`);
-          form.remove();
-          sel.style.display = '';
-        } catch (err) {
-          addBtn.disabled = false;
-          addBtn.textContent = 'Add';
-          form.insertAdjacentHTML('afterend', `<div class="msg err" style="margin-top:4px">${esc(err.message)}</div>`);
-        }
-      };
-      addBtn.onclick = submit;
-      input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } if (e.key === 'Escape') revert(); };
+        const revert = () => { actionBox.replaceChildren(sel); sel.value = ''; };
+        cancelBtn.onclick = revert;
+        const submit = async () => {
+          const name = input.value.trim();
+          if (!name) return input.focus();
+          addBtn.disabled = true;
+          addBtn.textContent = 'Adding…';
+          try {
+            const created = await api(`/masters/${kind}`, 'POST', { name });
+            masters[kind].push(created);
+            masters[kind].sort((a, b) => a.name.localeCompare(b.name));
+            applyToGroup(created.id);
+          } catch (err) {
+            addBtn.disabled = false;
+            addBtn.textContent = 'Add';
+            form.insertAdjacentHTML('afterend', `<div class="msg err" style="margin-top:4px">${esc(err.message)}</div>`);
+          }
+        };
+        addBtn.onclick = submit;
+        input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } if (e.key === 'Escape') revert(); };
+      } else if (sel.value) {
+        applyToGroup(Number(sel.value));
+      }
     });
   });
 
@@ -1524,29 +1601,7 @@ async function showBulkReviewSheet(duplicates = 0) {
       return;
     }
 
-    const fixed = [];
-    sheet.querySelectorAll('#invalidList .card').forEach(card => {
-      const idx = card.dataset.idx;
-      const original = bulkInvalid[idx];
-      const br = card.querySelector('.fix-br').value;
-      const so = card.querySelector('.fix-so').value;
-      const mo = card.querySelector('.fix-mo').value;
-      const ac = card.querySelector('.fix-ac').value;
-      if (br && so && original.customer_name && original.mobile && original.mobile.length === 10) {
-        fixed.push({
-          ...original,
-          branch_id: Number(br),
-          source_id: Number(so),
-          model_id: mo ? Number(mo) : null,
-          activity_id: ac ? Number(ac) : null,
-        });
-      }
-    });
-
-    const totalToAssign = [
-      ...bulkValid,
-      ...fixed,
-    ];
+    const totalToAssign = [...bulkValid, ...bulkInvalid.filter(isRowReady)];
     if (!totalToAssign.length) {
       const msgEl = sheet.querySelector('#msg');
       if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'No valid leads to assign.'; }

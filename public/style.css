@@ -339,6 +339,38 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .sheet .close .btn { padding: 8px 12px; border-radius: 999px; background: rgba(0,0,0,0.05); color: var(--text); border: none; width: auto; margin:0;}
 .sheet .close .btn:hover { background: rgba(0,0,0,0.1); }
 
+/* ------------------------------------------------------- bulk import review */
+
+.bulk-toolbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--bg); margin: -16px -16px 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.bulk-toolbar-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.bulk-toolbar-stats b { color: var(--text); font-size: 15px; }
+.bulk-toolbar-stats .is-ready b { color: var(--ok); }
+.bulk-toolbar-stats .is-issue b { color: var(--bad); }
+.bulk-toolbar .close { position: static; margin: 0; }
+
+.resolve-section { margin-bottom: 20px; }
+.resolve-section:last-child { margin-bottom: 0; }
+.resolve-section-title { display: flex; align-items: baseline; gap: 8px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 10px; }
+.resolve-section-title span { font-weight: 500; text-transform: none; letter-spacing: 0; }
+
+.resolve-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: var(--card); transition: opacity .18s ease, transform .18s ease; }
+.resolve-row:last-child { margin-bottom: 0; }
+.resolve-row.is-done { opacity: 0; transform: translateX(6px); }
+.resolve-row-main { flex: 1; min-width: 0; }
+.resolve-row-label { font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.resolve-row-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.resolve-row-count { flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--brand-dark); background: var(--brand-light); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.resolve-row-action { flex-shrink: 0; width: 220px; }
+.resolve-row-action select { margin: 0; }
+.resolve-add-form { display: flex; gap: 6px; width: 220px; }
+.resolve-add-form input { margin: 0; }
+.resolve-add-form .btn { width: auto; padding: 0 12px; margin: 0; }
+
+.bulk-blocked summary { cursor: pointer; font-weight: 600; color: var(--bad); font-size: 14px; }
+.bulk-blocked[open] summary { margin-bottom: 10px; }
+
+.bulk-footer { position: sticky; bottom: -16px; z-index: 10; background: var(--bg); margin: 16px -16px -16px; padding: 14px 16px; border-top: 1px solid var(--line); }
+
 .kv { display: flex; gap: 12px; font-size: 14px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
 .kv:last-child { border-bottom: none; }
 .kv b { min-width: 100px; color: var(--muted); font-weight: 500; font-size: 13px; padding-top: 1px; }
