@@ -17,6 +17,7 @@
     "payslip:snapshot": "node scripts/snapshot-payslip-sales.js",
     "demo:workbook": "node scripts/generate-demo-workbook.js",
     "demo:smoke": "node scripts/demo-smoke.js",
+    "demo:activity": "node --env-file=.env.demo scripts/seed-demo-activity.js",
     "test-leads:seed": "node --env-file=.env scripts/test-leads.js seed",
     "test-leads:cleanup": "node --env-file=.env scripts/test-leads.js cleanup",
     "test-leads:teardown": "node --env-file=.env scripts/test-leads.js teardown",

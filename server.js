@@ -897,10 +897,15 @@ app.post('/api/leads/:id/flag', auth('sales', 'call_guy', 'admin'), async (req, 
   } catch (e) { next(e); }
 });
 
-app.post('/api/leads/:id/close-flag', auth('manager', 'call_center_manager', 'admin'), async (req, res, next) => {
+app.post('/api/leads/:id/close-flag', auth('manager', 'call_center_manager', 'sales_manager', 'admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { remarks } = req.body || {};
+    if (req.user.role === 'sales_manager') {
+      const lead = await get(`SELECT branch_id FROM leads WHERE id = ?`, id);
+      if (!lead) return res.status(404).json({ error: 'Not found' });
+      if (lead.branch_id !== req.user.branch_id) return res.status(403).json({ error: 'Not your branch' });
+    }
     await run(`UPDATE leads SET is_flagged = 0, flag_remarks = ? WHERE id = ?`, remarks?.trim() || null, id);
     res.json({ ok: true });
   } catch (e) { next(e); }
@@ -945,9 +950,13 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
           AND l.status = 'open' AND l.next_date < ?
         WHERE u.role = 'call_guy' AND u.active = 1
         GROUP BY u.id, u.name ORDER BY overdue DESC, u.name`, day),
-      all(`SELECT l.id, l.customer_name, l.mobile, l.branch_id, l.original_so_name,
-          l.fcount, l.stage, l.status, u.name AS call_guy
-        FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
+      all(`SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch, l.original_so_name,
+          l.fcount, l.stage, l.status, u.name AS call_guy,
+          (SELECT sm.name FROM users sm WHERE sm.role = 'sales_manager' AND sm.branch_id = l.branch_id AND sm.active = 1
+           ORDER BY sm.id LIMIT 1) AS sales_manager
+        FROM leads l
+        LEFT JOIN users u ON u.id = l.assigned_to
+        LEFT JOIN branches b ON b.id = l.branch_id
         WHERE l.is_flagged = 1 AND l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
         ORDER BY l.id DESC LIMIT 200`),
     ]);
@@ -976,7 +985,44 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
         COUNT(*) FILTER (WHERE stage = 'Retail Done' AND status = 'closed')::int AS retailed,
         COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
       FROM leads WHERE branch_id = ?`, branchId);
-    res.json({ branchId, summary, bySalesOfficer: rows });
+    const flagged = await all(`SELECT l.id, l.customer_name, l.mobile,
+        COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+        l.fcount, l.stage, l.status, u.name AS call_guy, l.flag_remarks
+      FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
+      WHERE l.branch_id = ? AND l.is_flagged = 1
+      ORDER BY l.id DESC`, branchId);
+    res.json({ branchId, summary, bySalesOfficer: rows, flagged });
+  } catch (e) { next(e); }
+});
+
+const SO_BUCKET_FILTERS = {
+  untouched: 'l.fcount = 0 AND l.status = \'open\'',
+  followup:  'l.fcount > 0 AND l.status = \'open\'',
+  due:       'l.status = \'open\' AND l.next_date <= ?',
+  booked:    'l.stage = \'Booking Done\' AND l.status = \'closed\'',
+  retailed:  'l.stage = \'Retail Done\' AND l.status = \'closed\'',
+  lost:      'l.stage = \'Lost Lead\' AND l.status = \'closed\'',
+};
+
+app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'admin'), async (req, res, next) => {
+  try {
+    const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
+    if (!branchId) return bad(res, 'Select a branch');
+    const officer = String(req.query.officer || '').trim();
+    const bucket = String(req.query.bucket || '');
+    if (!officer || !SO_BUCKET_FILTERS[bucket]) return bad(res, 'officer and a valid bucket are required');
+    const args = [branchId, officer];
+    if (bucket === 'due') args.push(today());
+    const leads = await all(
+      `SELECT l.id, l.customer_name, l.mobile, l.stage, l.status, l.fcount, l.next_date
+       FROM leads l
+       WHERE l.branch_id = ?
+         AND COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') = ?
+         AND ${SO_BUCKET_FILTERS[bucket]}
+       ORDER BY l.id DESC LIMIT 200`,
+      ...args,
+    );
+    res.json(leads);
   } catch (e) { next(e); }
 });
 
@@ -992,6 +1038,21 @@ app.get('/api/counts', auth(), async (req, res, next) => {
       get(`SELECT COUNT(*)::int AS c FROM leads WHERE status='open' AND fcount>0 AND next_date<=?${extra}`, today(), ...args),
     ]);
     res.json({ fresh: fr.c, due: du.c });
+  } catch (e) { next(e); }
+});
+
+app.get('/api/admin/call-guy-load', auth('admin'), async (req, res, next) => {
+  try {
+    const rows = await all(
+      `SELECT u.id, u.name,
+              SUM(CASE WHEN l.status = 'open' THEN 1 ELSE 0 END)::int AS open_count,
+              SUM(CASE WHEN l.status = 'open' AND l.fcount = 0 THEN 1 ELSE 0 END)::int AS untouched_count
+       FROM users u
+       LEFT JOIN leads l ON l.assigned_to = u.id
+       WHERE u.role = 'call_guy' AND u.active = 1
+       GROUP BY u.id, u.name ORDER BY u.name`,
+    );
+    res.json({ items: rows });
   } catch (e) { next(e); }
 });
 

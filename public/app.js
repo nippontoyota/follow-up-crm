@@ -15,6 +15,7 @@ const USERS_PER_PAGE = 25;
 const LISTS_PER_PAGE = 25;
 const PAGINATED_LISTS = new Set(['branches', 'sources']);
 let listsPage = { branches: 1, sources: 1 };
+let listsTab = 'branches';
 let leadsGen = 0;
 let leadsCtrl = null;
 let leadsStatsCache = null;
@@ -195,8 +196,8 @@ const TABS = {
   sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   call_guy: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   manager: [['dashboard', 'Dashboard', '📊']],
-  call_center_manager: [['callCenter', 'Call Center', '☎️']],
-  sales_manager: [['salesPerf', 'Sales Officers', '👥']],
+  call_center_manager: [['callCenter', 'Call Center', '☎️'], ['flagged', 'Flagged Leads', '🚩']],
+  sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['flagged', 'Flagged Leads', '🚩']],
 };
 
 async function boot() {
@@ -228,11 +229,12 @@ function go(t) {
   tab = t;
   if (['fresh', 'today', 'leads'].includes(t)) { leadsPage = 1; leadsQ = ''; invalidateLeadsStats(); }
   if (t === 'users') usersPage = 1;
-  if (t === 'lists') listsPage = { branches: 1, sources: 1 };
+  if (t === 'lists') { listsPage = { branches: 1, sources: 1 }; listsTab = 'branches'; }
+  if (t === 'salesPerf') location.hash = 'salesPerf';
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -295,119 +297,142 @@ async function usersView() {
 }
 
 async function reassignView() {
-  const officersData = await api('/users?role=sales&active=1&limit=100');
-  const { items: officers } = parsePage(officersData, 'users', 1, 100);
-  const officerOpts = officers.map(u => `<option value="${u.id}">${esc(u.name)}${u.branch ? ' - ' + esc(u.branch) : ''}</option>`).join('');
+  const { items: officers } = await api('/admin/call-guy-load');
+
+  if (!officers.length) {
+    view.innerHTML = `<div class="card"><p class="empty" style="padding:24px 16px">No active call guys to reassign between.</p></div>`;
+    return;
+  }
+
+  const initials = name => name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || '?';
+  const maxCount = Math.max(1, ...officers.map(o => o.open_count));
+  const byId = Object.fromEntries(officers.map(o => [String(o.id), o]));
+
+  const rowHtml = u => `
+    <button type="button" class="reload-row" data-id="${u.id}">
+      <span class="reload-row-badge">${esc(initials(u.name))}</span>
+      <span class="reload-row-main">
+        <span class="reload-row-top">
+          <span class="reload-row-name">${esc(u.name)}</span>
+          <span class="reload-row-count">${u.open_count} open<span class="reload-row-sub">${u.untouched_count} untouched</span></span>
+        </span>
+        <span class="reload-row-bar"><span class="reload-row-fill" style="transform:scaleX(${(u.open_count / maxCount).toFixed(3)})"></span></span>
+      </span>
+      <span class="reload-row-state">
+        <span class="reload-row-source-tag">Source</span>
+        <span class="reload-row-dot"></span>
+      </span>
+    </button>`;
 
   view.innerHTML = `
-    <div class="card reassign-card">
-      <div class="reassign-head">
+    <div class="card reload-card">
+      <div class="reload-head">
         <h2>Reassign Leads</h2>
-        <p class="reassign-desc">Move open leads from one sales officer to others. Selected leads are split evenly across the officers you pick.</p>
+        <p class="reload-desc">Tap a call guy to mark them the source, then tap others to receive their open leads. The split previews before it moves anything.</p>
       </div>
-      ${officers.length ? `
-      <div class="reassign-grid">
-        <div class="reassign-field">
-          <label for="raFrom">From officer</label>
-          <select id="raFrom"><option value="">Select officer…</option>${officerOpts}</select>
+      <div class="reload-roster" id="rlRoster">${officers.map(rowHtml).join('')}</div>
+      <div class="reload-scope">
+        <div class="reload-scope-toggle" id="rlScope">
+          <button type="button" class="reload-scope-opt on" data-mode="untouched">Untouched only</button>
+          <button type="button" class="reload-scope-opt" data-mode="open">All open</button>
         </div>
-        <div class="reassign-field">
-          <label for="raMode">Which leads</label>
-          <select id="raMode">
-            <option value="untouched">Untouched only (no follow-ups yet)</option>
-            <option value="open">All open leads</option>
-          </select>
-          <p class="reassign-hint" id="raModeHint">Only open leads with zero follow-ups (fcount = 0).</p>
-        </div>
+        <p class="reload-scope-hint" id="rlScopeHint">Leads with zero follow-ups yet.</p>
       </div>
-      <div class="reassign-field">
-        <div class="reassign-targets-head">
-          <label>To officers</label>
-          <div class="reassign-targets-tools">
-            <button type="button" class="ra-tool" id="raAll">Select all</button>
-            <button type="button" class="ra-tool" id="raNone">Clear</button>
-          </div>
-        </div>
-        <p class="reassign-hint">Choose one or more officers. Leads are distributed equally among them.</p>
-        <div class="reassign-targets" id="raTo">
-          ${officers.map(u => `
-            <label class="reassign-target" data-id="${u.id}">
-              <input type="checkbox" value="${u.id}">
-              <span class="reassign-target-body">
-                <span class="reassign-target-name">${esc(u.name)}</span>
-                ${u.branch ? `<span class="reassign-target-branch">${esc(u.branch)}</span>` : ''}
-                <span class="reassign-target-tag hide">Source</span>
-              </span>
-            </label>`).join('')}
-        </div>
-        <p class="reassign-summary warn" id="raSummary">Select at least one target officer</p>
+      <div class="reload-preview" id="rlPreview">
+        <p class="reload-preview-empty">Select a call guy above to begin.</p>
       </div>
-      <div class="reassign-actions">
-        <button class="btn" id="raBtn">Reassign leads</button>
+      <div class="reload-actions">
+        <button class="btn" id="rlBtn" disabled>Reassign leads</button>
       </div>
-      <div id="raMsg"></div>
-      ` : `<p class="empty" style="padding:24px 16px">No active sales officers to reassign between.</p>`}
+      <div id="rlMsg"></div>
     </div>`;
 
-  if (!officers.length) return;
+  const state = { source: null, targets: new Set(), mode: 'untouched' };
+  const roster  = document.getElementById('rlRoster');
+  const preview = document.getElementById('rlPreview');
+  const btn     = document.getElementById('rlBtn');
+  const msgEl   = document.getElementById('rlMsg');
 
-  const modeHints = {
-    untouched: 'Only open leads with zero follow-ups (fcount = 0).',
-    open: 'Every open lead currently assigned to the source officer.',
-  };
+  const countFor = u => state.mode === 'untouched' ? u.untouched_count : u.open_count;
 
-  const updateRaSummary = () => {
-    const n = document.querySelectorAll('#raTo input:checked:not(:disabled)').length;
-    const summaryEl = document.getElementById('raSummary');
-    summaryEl.textContent = n
-      ? `${n} officer${n !== 1 ? 's' : ''} selected`
-      : 'Select at least one target officer';
-    summaryEl.classList.toggle('warn', n === 0);
-  };
-
-  const syncRaFrom = () => {
-    const fromId = val('raFrom');
-    document.querySelectorAll('#raTo .reassign-target').forEach(label => {
-      const isSource = label.dataset.id === fromId;
-      label.classList.toggle('is-source', isSource);
-      label.querySelector('.reassign-target-tag')?.classList.toggle('hide', !isSource);
-      const cb = label.querySelector('input');
-      if (isSource) { cb.checked = false; cb.disabled = true; }
-      else { cb.disabled = false; }
+  function render() {
+    roster.querySelectorAll('.reload-row').forEach(row => {
+      const id = row.dataset.id;
+      row.classList.toggle('is-source', id === state.source);
+      row.classList.toggle('is-target', state.targets.has(id));
     });
-    updateRaSummary();
-  };
 
-  document.getElementById('raFrom').onchange = syncRaFrom;
-  document.getElementById('raMode').onchange = (e) => {
-    document.getElementById('raModeHint').textContent = modeHints[e.target.value];
-  };
-  document.getElementById('raAll').onclick = () => {
-    document.querySelectorAll('#raTo input:not(:disabled)').forEach(c => { c.checked = true; });
-    updateRaSummary();
-  };
-  document.getElementById('raNone').onclick = () => {
-    document.querySelectorAll('#raTo input').forEach(c => { c.checked = false; });
-    updateRaSummary();
-  };
-  document.querySelectorAll('#raTo input').forEach(c => { c.onchange = updateRaSummary; });
+    if (!state.source) {
+      preview.innerHTML = '<p class="reload-preview-empty">Select a call guy above to begin.</p>';
+      btn.disabled = true;
+      return;
+    }
 
-  document.getElementById('raBtn').onclick = async () => {
-    const fromId = val('raFrom');
-    const toIds = [...document.querySelectorAll('#raTo input:checked')].map(c => Number(c.value));
-    const mode  = val('raMode');
-    const msgEl = document.getElementById('raMsg');
-    if (!fromId) { msgEl.className='msg err'; msgEl.textContent='Select the source officer.'; return; }
-    if (!toIds.length) { msgEl.className='msg err'; msgEl.textContent='Tick at least one target officer.'; return; }
-    if (toIds.includes(Number(fromId))) { msgEl.className='msg err'; msgEl.textContent='Source cannot also be a target.'; return; }
-    document.getElementById('raBtn').disabled = true;
+    const src = byId[state.source];
+    const total = countFor(src);
+    const n = state.targets.size;
+
+    if (!total) {
+      preview.innerHTML = `<p class="reload-preview-empty">${esc(src.name)} has no matching leads right now.</p>`;
+      btn.disabled = true;
+      return;
+    }
+    if (!n) {
+      preview.innerHTML = `<p class="reload-preview-empty"><b>${esc(src.name)}</b> has <b>${total}</b> lead${total !== 1 ? 's' : ''} to move. Tap who should receive them.</p>`;
+      btn.disabled = true;
+      return;
+    }
+
+    const base = Math.floor(total / n), extra = total % n;
+    const split = extra ? `${base + 1} lead${base + 1 !== 1 ? 's' : ''} to ${extra}, ${base} to the rest` : `${base} each`;
+    preview.innerHTML = `<p class="reload-preview-line"><b>${total}</b> lead${total !== 1 ? 's' : ''} from <b>${esc(src.name)}</b> split across <b>${n}</b> call gu${n !== 1 ? 'ys' : 'y'} — ${split}.</p>`;
+    btn.disabled = false;
+  }
+
+  roster.addEventListener('click', (e) => {
+    const row = e.target.closest('.reload-row');
+    if (!row) return;
+    const id = row.dataset.id;
+    if (state.source === id) { state.source = null; state.targets.clear(); }
+    else if (state.source === null) { state.source = id; }
+    else if (state.targets.has(id)) { state.targets.delete(id); }
+    else { state.targets.add(id); }
+    render();
+  });
+
+  document.getElementById('rlScope').addEventListener('click', (e) => {
+    const opt = e.target.closest('.reload-scope-opt');
+    if (!opt) return;
+    state.mode = opt.dataset.mode;
+    document.querySelectorAll('.reload-scope-opt').forEach(o => o.classList.toggle('on', o === opt));
+    document.getElementById('rlScopeHint').textContent = state.mode === 'untouched'
+      ? 'Leads with zero follow-ups yet.'
+      : 'Every open lead currently assigned to the source.';
+    render();
+  });
+
+  btn.onclick = async () => {
+    const toIds = [...state.targets].map(Number);
+    btn.disabled = true;
+    msgEl.textContent = '';
     try {
-      const r = await api('/admin/reassign-leads', 'POST', { from_id: Number(fromId), to_ids: toIds, mode });
+      const r = await api('/admin/reassign-leads', 'POST', { from_id: Number(state.source), to_ids: toIds, mode: state.mode });
+      const fresh = await api('/admin/call-guy-load');
+      fresh.items.forEach(u => { if (byId[u.id]) Object.assign(byId[u.id], u); });
+      roster.querySelectorAll('.reload-row').forEach(row => {
+        const u = byId[row.dataset.id];
+        row.querySelector('.reload-row-count').innerHTML = `${u.open_count} open<span class="reload-row-sub">${u.untouched_count} untouched</span>`;
+        row.querySelector('.reload-row-fill').style.transform = `scaleX(${(u.open_count / maxCount).toFixed(3)})`;
+      });
+      state.source = null; state.targets.clear();
       msgEl.className = 'msg ok';
-      msgEl.textContent = `Done - ${r.moved} lead${r.moved !== 1 ? 's' : ''} reassigned equally across ${toIds.length} officer${toIds.length !== 1 ? 's' : ''}.`;
-    } catch (e) { msgEl.className='msg err'; msgEl.textContent=e.message; }
-    document.getElementById('raBtn').disabled = false;
+      msgEl.textContent = `Done — ${r.moved} lead${r.moved !== 1 ? 's' : ''} reassigned.`;
+      render();
+    } catch (e) { msgEl.className = 'msg err'; msgEl.textContent = e.message; }
+    btn.disabled = false;
   };
+
+  render();
 }
 
 /* ------------------------------------------------------------- admin: lists */
@@ -422,42 +447,57 @@ async function listsView() {
     branches: parsePage(masters.branches, 'items', listsPage.branches, LISTS_PER_PAGE),
     sources: parsePage(masters.sources, 'items', listsPage.sources, LISTS_PER_PAGE),
   };
+  const countOf = key => PAGINATED_LISTS.has(key) ? paged[key].total : masters[key].length;
 
-  view.innerHTML = Object.entries(LIST_LABELS).map(([key, label]) => {
-    const pg = PAGINATED_LISTS.has(key) ? paged[key] : null;
-    const items = pg ? pg.items : masters[key];
-    const total = pg ? pg.total : items.length;
-    const pager = pg ? renderPager(pg.page, pg.pages, pg.total) : '';
-    return `
-    <div class="card" data-list="${key}">
-      <h2>${label} (${total})</h2>
+  const key = listsTab;
+  const pg = PAGINATED_LISTS.has(key) ? paged[key] : null;
+  const items = pg ? pg.items : masters[key];
+  const pager = pg ? renderPager(pg.page, pg.pages, pg.total) : '';
+
+  view.innerHTML = `
+    <div class="card mst-card">
+      <div class="mst-tabs" id="mstTabs">${Object.entries(LIST_LABELS).map(([k, label]) => `
+        <button type="button" class="mst-tab${k === key ? ' on' : ''}" data-tab="${k}">${esc(label)}<span class="mst-tab-count">${countOf(k)}</span></button>
+      `).join('')}</div>
       <div class="grid2">
-        <input id="in-${key}" placeholder="Add ${LIST_PLACEHOLDER[key]}">
-        <button class="btn" data-add="${key}">Add</button>
+        <input id="mstAddInput" placeholder="Add ${esc(LIST_PLACEHOLDER[key])}">
+        <button class="btn" id="mstAddBtn">Add</button>
       </div>
+      <input id="mstFilter" class="mst-filter" placeholder="Filter ${esc(LIST_LABELS[key].toLowerCase())}…"${items.length ? '' : ' disabled'}>
+      <div class="mst-rows" id="mstRows">${items.length ? items.map(m => `
+        <div class="mst-row" data-name="${esc(m.name.toLowerCase())}">
+          <span>${esc(m.name)}</span>
+          <button class="mst-remove" data-id="${m.id}">Remove</button>
+        </div>`).join('') : '<div class="empty">No entries yet.</div>'}</div>
       ${pager}
-      <div class="rows">${items.length ? items.map(m => `
-        <div class="row"><span>${esc(m.name)}</span>
-          <button data-del="${key}" data-id="${m.id}">Remove</button></div>`).join('') : '<div class="empty">No entries on this page.</div>'}</div>
-    </div>`;
-  }).join('') + '<div id="msg"></div>';
+    </div>
+    <div id="msg"></div>`;
 
-  for (const key of PAGINATED_LISTS) {
-    const card = view.querySelector(`[data-list="${key}"]`);
-    if (card) bindPager(p => { listsPage[key] = p; listsView(); }, card);
-  }
+  view.querySelectorAll('.mst-tab').forEach(b => b.onclick = () => { listsTab = b.dataset.tab; listsView(); });
 
-  view.querySelectorAll('[data-add]').forEach(b => b.onclick = async () => {
-    const name = val('in-' + b.dataset.add);
+  const card = view.querySelector('.mst-card');
+  if (PAGINATED_LISTS.has(key)) bindPager(p => { listsPage[key] = p; listsView(); }, card);
+
+  document.getElementById('mstAddBtn').onclick = async () => {
+    const name = val('mstAddInput');
     if (!name) return;
-    try { await api('/masters/' + b.dataset.add, 'POST', { name }); listsView(); }
+    try { await api('/masters/' + key, 'POST', { name }); listsView(); }
     catch (e) { say(e.message); }
-  });
-  view.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+  };
+
+  view.querySelectorAll('.mst-remove').forEach(b => b.onclick = async () => {
     if (!confirm('Remove this entry?')) return;
-    try { await api(`/masters/${b.dataset.del}/${b.dataset.id}`, 'DELETE'); listsView(); }
+    try { await api(`/masters/${key}/${b.dataset.id}`, 'DELETE'); listsView(); }
     catch (e) { say(e.message); }
   });
+
+  const filterInput = document.getElementById('mstFilter');
+  filterInput.oninput = () => {
+    const q = filterInput.value.trim().toLowerCase();
+    document.querySelectorAll('#mstRows .mst-row').forEach(row => {
+      row.classList.toggle('hide', !!q && !row.dataset.name.includes(q));
+    });
+  };
 }
 
 /* -------------------------------------------------------- marketing: capture */
@@ -618,7 +658,7 @@ async function openFlaggedLeads(officerId, officerName) {
   try {
     const leads = await api(`/manager/leads?officer_id=${officerId}&flagged=1`);
     const card = sheet.querySelector('#flCard');
-    card.innerHTML = `<h2 style="color:#f57c00">⚑ Flagged Leads — ${esc(officerName)} · ${leads.length}</h2>
+    card.innerHTML = `<h2 style="color:#B91C1C">⚑ Flagged Leads — ${esc(officerName)} · ${leads.length}</h2>
       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Customer</th><th>Mobile</th><th>Stage</th><th>F#</th></tr></thead>
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
@@ -790,17 +830,17 @@ async function managerView() {
         )}` : '<p style="color:var(--muted);padding:8px 0">No lost leads yet.</p>'}
     </div>
 
-    ${flagged.length ? `<div class="card" style="border-color:#f57c00">
-      <h2 style="color:#f57c00">⚑ Flagged Leads by Officer</h2>
+    ${flagged.length ? `<div class="card" style="border-color:#B91C1C">
+      <h2 style="color:#B91C1C">⚑ Flagged Leads by Officer</h2>
       ${tblHtml(
         ['Officer','Flagged Leads'],
         flagged.map(r => [esc(r.officer), `<button class="tbl-link flag-drill" data-oid="${r.officer_id}" data-oname="${esc(r.officer)}">${r.flagged}</button>`]),
       )}
     </div>` : ''}
 
-    ${flagHistory.length ? `<div class="card" style="border-color:#f57c00">
+    ${flagHistory.length ? `<div class="card" style="border-color:#B91C1C">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <h2 style="color:#f57c00;margin:0">⚑ Flag History (All Flagged Leads)</h2>
+        <h2 style="color:#B91C1C;margin:0">⚑ Flag History (All Flagged Leads)</h2>
         <button id="flagExportBtn" class="btn" style="width:auto;padding:6px 14px;font-size:13px" onclick="downloadFlagHistoryExcel()">⬇ Download Excel</button>
       </div>
       <div class="tbl-wrap"><table class="tbl">
@@ -815,7 +855,7 @@ async function managerView() {
           <td>${esc(r.so_name || '—')}</td>
           <td>${r.fcount}</td>
           <td>${esc(r.stage || '—')}</td>
-          <td><span style="color:${r.is_flagged ? '#f57c00' : 'var(--ok)'}">
+          <td><span style="color:${r.is_flagged ? '#B91C1C' : 'var(--ok)'}">
             ${r.is_flagged ? '⚑ Active' : '✓ Resolved'}
           </span></td>
           <td style="color:var(--muted)">${esc(r.flag_remarks || '—')}</td>
@@ -889,6 +929,7 @@ async function callCenterView() {
       { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
       { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
       { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
+      { num: (d.flagged || []).length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" },
     ])}
     <div class="card"><h2>Call Guy Performance</h2>${tblHtml(
       ['Call Guy','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
@@ -907,6 +948,16 @@ async function callCenterView() {
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
 
+const SO_BUCKETS = [
+  { key: 'untouched', label: 'Untouched' },
+  { key: 'followup',  label: 'Follow-up' },
+  { key: 'booked',    label: 'Booked' },
+  { key: 'retailed',  label: 'Retail' },
+  { key: 'lost',      label: 'Lost' },
+];
+
+let salesPerfSort = 'total';
+
 async function salesPerformanceView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
   try {
@@ -916,15 +967,56 @@ async function salesPerformanceView() {
     else if (me.role === 'admin') {
       const hashQuery = location.hash.includes('?') ? location.hash.slice(location.hash.indexOf('?') + 1) : '';
       branchId = new URLSearchParams(hashQuery).get('branch_id') || '';
-      branchName = masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     }
+
     if (!branchId && me.role === 'admin') {
-      view.innerHTML = `<div class="card"><h2>Sales Officer Performance</h2><label>Branch</label><select id="salesBranch">${options(masters.branches)}</select><button class="btn" id="loadSales">View performance</button></div>`;
-      document.getElementById('loadSales').onclick = () => { const id = document.getElementById('salesBranch').value; if (id) { location.hash = 'salesPerf?branch_id=' + id; salesPerformanceView(); } };
+      const branches = await api('/analytics');
+      view.innerHTML = `
+        <div class="card sop-pick-card">
+          <h2>Sales Officer Performance</h2>
+          <p class="sop-pick-desc">Pick a branch to see how its imported sales officers are performing.</p>
+          <div class="sop-pick-list">${branches.map(b => `
+            <button type="button" class="sop-pick-row" data-id="${b.id}">
+              <span class="sop-pick-name">${esc(b.name)}</span>
+              <span class="sop-pick-stats">
+                <span>${b.total} total</span><span>${b.open} open</span><span class="sop-pick-won">${b.won} won</span>
+              </span>
+            </button>`).join('')}
+          </div>
+        </div>`;
+      view.querySelectorAll('.sop-pick-row').forEach(row => {
+        row.onclick = () => { location.hash = 'salesPerf?branch_id=' + row.dataset.id; salesPerformanceView(); };
+      });
       return;
     }
+
+    branchName = masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     const d = await api(`/sales-manager/analytics?branch_id=${encodeURIComponent(branchId)}`);
     const s = d.summary || {};
+    const flagged = d.flagged || [];
+    const officers = d.bySalesOfficer || [];
+
+    const sorters = {
+      total: (a, b) => b.total - a.total,
+      untouched: (a, b) => b.untouched - a.untouched,
+      due: (a, b) => b.due - a.due,
+    };
+    const sorted = [...officers].sort(sorters[salesPerfSort] || sorters.total);
+
+    const rowHtml = o => `
+      <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}">
+        <div class="sop-row-top">
+          <span class="sop-row-name">${esc(o.sales_officer)}</span>
+          <span class="sop-row-total">${o.total} lead${o.total !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="sop-row-bar">${SO_BUCKETS.map(b => o[b.key] ? `<span class="sop-seg sop-seg-${b.key}" style="flex:${o[b.key]}" title="${esc(b.label)}: ${o[b.key]}"></span>` : '').join('')}</div>
+        <div class="sop-row-pills">
+          <button type="button" class="sop-pill sop-pill-warn" data-officer="${esc(o.sales_officer)}" data-bucket="untouched">${o.untouched} untouched</button>
+          <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button>
+          <span class="sop-row-outcome">${o.booked}B · ${o.retailed}R · ${o.lost}L</span>
+        </div>
+      </div>`;
+
     view.innerHTML = `${kpiRow([
       { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
       { num: s.untouched || 0, lbl: 'Untouched', col: 'warn' },
@@ -932,18 +1024,121 @@ async function salesPerformanceView() {
       { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
       { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
       { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
+      { num: flagged.length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" },
     ])}
-    <div class="card"><h2>Sales Officer Performance${branchName ? ` · ${esc(branchName)}` : ''}</h2>${tblHtml(
-      ['Original Sales Officer','Total Leads','Untouched','Follow-up','Due','Booked','Retail','Lost'],
-      d.bySalesOfficer.map(r => [esc(r.sales_officer), r.total, r.untouched, r.followup, r.due, r.booked, r.retailed, r.lost]),
-      'No imported Sales Officer data found'
-    )}</div>`;
+    <div class="card sop-card">
+      <div class="sop-head">
+        <h2>Sales Officer Performance${branchName ? ` · ${esc(branchName)}` : ''}</h2>
+        ${me.role === 'admin' ? `<div class="sop-head-actions">
+          <button type="button" class="btn ghost sop-back" id="salesBranchBack">← All branches</button>
+          <label class="sop-switch-wrap">Branch<select id="salesBranchSwitch" class="sop-switch">${options(masters.branches, Number(branchId))}</select></label>
+        </div>` : ''}
+      </div>
+      ${officers.length ? `
+      <div class="sop-controls">
+        <div class="sop-sort" id="sopSort">
+          <button type="button" class="sop-sort-opt${salesPerfSort === 'total' ? ' on' : ''}" data-sort="total">Total</button>
+          <button type="button" class="sop-sort-opt${salesPerfSort === 'untouched' ? ' on' : ''}" data-sort="untouched">Untouched</button>
+          <button type="button" class="sop-sort-opt${salesPerfSort === 'due' ? ' on' : ''}" data-sort="due">Due</button>
+        </div>
+        <input id="sopFilter" class="sop-filter" placeholder="Filter officers…">
+      </div>
+      <div class="sop-rows" id="sopRows">${sorted.map(rowHtml).join('')}</div>
+      ` : '<div class="empty">No imported Sales Officer data found</div>'}
+    </div>`;
+
+    if (me.role === 'admin') {
+      document.getElementById('salesBranchSwitch').onchange = (e) => {
+        const id = e.target.value;
+        if (!id) return;
+        location.hash = 'salesPerf?branch_id=' + id;
+        salesPerformanceView();
+      };
+      document.getElementById('salesBranchBack').onclick = () => {
+        location.hash = 'salesPerf';
+        salesPerformanceView();
+      };
+    }
+
+    if (officers.length) {
+      document.getElementById('sopSort').querySelectorAll('.sop-sort-opt').forEach(b => b.onclick = () => {
+        salesPerfSort = b.dataset.sort;
+        salesPerformanceView();
+      });
+      document.getElementById('sopFilter').oninput = (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        document.querySelectorAll('#sopRows .sop-row').forEach(row => {
+          row.classList.toggle('hide', !!q && !row.dataset.name.includes(q));
+        });
+      };
+      view.querySelectorAll('.sop-pill').forEach(b => b.onclick = () => openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket));
+    }
+  } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+}
+
+async function openOfficerLeads(branchId, officer, bucket) {
+  const label = { untouched: 'Untouched', due: 'Due' }[bucket] || bucket;
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="solx">← Back</button></div>
+    <div class="card" id="solCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#solx').onclick = () => sheet.remove();
+
+  try {
+    const leads = await api(`/sales-manager/officer-leads?branch_id=${encodeURIComponent(branchId)}&officer=${encodeURIComponent(officer)}&bucket=${bucket}`);
+    const card = sheet.querySelector('#solCard');
+    card.innerHTML = `<h2>${esc(label)} — ${esc(officer)} · ${leads.length}</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.next_date || '—')}</td>
+          <td>F${l.fcount}</td>
+          <td>${esc(l.stage || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
+  } catch (e) {
+    sheet.querySelector('#solCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
+  }
+}
+
+async function flaggedLeadsView() {
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    let flagged = [], cols, rows;
+    if (me.role === 'sales_manager') {
+      const d = await api(`/sales-manager/analytics?branch_id=${encodeURIComponent(me.branch_id)}`);
+      flagged = d.flagged || [];
+      cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Guy', 'Stage'];
+      rows = flagged.map(r => [esc(r.customer_name), esc(r.mobile), esc(r.sales_officer), esc(r.call_guy || '—'), esc(r.stage || '—')]);
+    } else {
+      const d = await api('/call-center/analytics');
+      flagged = d.flagged || [];
+      cols = ['Customer', 'Branch', 'Sales Officer', 'Call Guy', 'Sales Manager'];
+      rows = flagged.map(r => [esc(r.customer_name), esc(r.branch || '—'), esc(r.original_so_name || '—'), esc(r.call_guy || '—'), esc(r.sales_manager || 'Unassigned')]);
+    }
+    const ids = flagged.map(r => r.id);
+    view.innerHTML = `<div class="card flag-card">
+      <h2 class="flag-card-h2">🚩 Flagged Leads · ${flagged.length}</h2>
+      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by call guys, routed to the sales manager of the flagged lead\'s branch.'}</p>` : ''}
+      <div class="tbl-wrap"><table class="tbl tbl-flag">
+        <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((r, i) => `<tr class="lead-row" data-id="${ids[i]}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>
+      ${!flagged.length ? '<div class="empty">Nothing flagged right now.</div>' : ''}
+    </div>`;
+    view.querySelectorAll('.lead-row').forEach(row => {
+      row.onclick = () => openLead(Number(row.dataset.id));
+    });
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
 
 function kpiRow(cards) {
   return `<div class="kpi-row">${cards.map(c =>
-    `<div class="kpi-card kpi-${c.col}"><div class="kpi-num">${c.num}</div><div class="kpi-lbl">${c.lbl}</div></div>`
+    `<div class="kpi-card kpi-${c.col}${c.onClick ? ' kpi-click' : ''}"${c.onClick ? ` onclick="${c.onClick}" role="button" tabindex="0"` : ''}><div class="kpi-num">${c.num}</div><div class="kpi-lbl">${c.lbl}</div></div>`
   ).join('')}</div>`;
 }
 
@@ -1108,7 +1303,7 @@ async function leadsView() {
           <div class="top"><b>${esc(l.customer_name)}</b>${dueLabel(l)}</div>
           <div class="meta">${esc(l.mobile)} · ${esc(l.branch || '—')}${l.location ? ' · ' + esc(l.location) : ''}</div>
           <div class="meta">${esc(l.source || 'No source')} · ${l.fcount ? 'F' + l.fcount + ' done — ' + esc(l.stage) : 'Not contacted'}${me.role !== 'sales' && l.officer ? ' · ' + esc(l.officer) : ''}</div>
-          ${['sales', 'call_guy'].includes(me.role) ? `<div style="margin-top:10px"><button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to manager'}">⚑ Flag to manager</button></div>` : ''}
+          ${['sales', 'call_guy'].includes(me.role) ? `<div style="margin-top:10px"><button class="flag-btn${l.is_flagged ? ' flagged' : ''}" data-id="${l.id}" title="${l.is_flagged ? 'Remove flag' : 'Flag to Sales Manager'}">⚑ Flag to Sales Manager</button></div>` : ''}
         </div>
       </div>`;
       }).join('')}</div>`;
@@ -1143,7 +1338,7 @@ async function leadsView() {
       try {
         const data = await api(`/leads/${btn.dataset.id}/flag`, 'POST');
         btn.classList.toggle('flagged', !!data.is_flagged);
-        btn.title = data.is_flagged ? 'Remove flag' : 'Flag to SM/TL';
+        btn.title = data.is_flagged ? 'Remove flag' : 'Flag to Sales Manager';
       } catch (err) { say(err.message, 'err'); }
       btn.disabled = false;
     };
@@ -1356,7 +1551,7 @@ async function openLead(id) {
 
     ${l.salesforce_history && l.salesforce_history.length ? `
       <div class="card" style="background:#fff3e0; border-color:#ffb74d">
-        <h2 style="color:#e65100; margin-bottom:8px">⚠️ Sales consultant info</h2>
+        <h2 style="color:#9A3412; margin-bottom:8px">⚠️ Sales consultant info</h2>
         <div class="tl">${l.salesforce_history.map(sh => `
           <div style="margin-bottom:8px">
             <div><b>Consultant:</b> ${esc(sh.so_name)}</div>
@@ -1375,13 +1570,16 @@ async function openLead(id) {
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
-    ${l.is_flagged && ['manager', 'call_center_manager', 'admin'].includes(me.role) ? `<div class="card" style="border-color:#f57c00">
-      <h2 style="color:#f57c00">⚑ Flagged by Call Guy</h2>
+    ${l.is_flagged && ['manager', 'call_center_manager', 'sales_manager', 'admin'].includes(me.role) ? `<div class="card" style="border-color:#B91C1C">
+      <h2 style="color:#B91C1C">⚑ Flagged for Sales Manager</h2>
+      ${l.original_so_name ? `<div style="margin-bottom:12px"><b>Sales Officer:</b> ${esc(l.original_so_name)}</div>` : ''}
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}
-      <label>Close Flag with Remarks</label>
-      <textarea id="flagRemarks" placeholder="Enter remarks…"></textarea>
-      <button class="btn" id="closeFlagBtn" style="background:#f57c00">Close Flag</button>
-      <div id="flagMsg"></div>
+      ${me.role === 'sales_manager' || me.role === 'admin' ? `
+        <label>Close Flag with Remarks</label>
+        <textarea id="flagRemarks" placeholder="Enter remarks…"></textarea>
+        <button class="btn" id="closeFlagBtn" style="background:#B91C1C">Close Flag</button>
+        <div id="flagMsg"></div>
+      ` : `<div style="color:var(--muted);font-size:13px">Awaiting resolution by the Sales Manager.</div>`}
     </div>` : ''}
 
     ${canAct ? `<div class="card">
@@ -1444,7 +1642,7 @@ async function openLead(id) {
       try {
         await api(`/leads/${l.id}/close-flag`, 'POST', { remarks });
         document.querySelectorAll('.sheet').forEach(s => s.remove());
-        managerView();
+        go(tab);
       } catch (err) {
         const m = sheet.querySelector('#flagMsg');
         if (m) { m.className = 'msg err'; m.textContent = err.message; }
@@ -1542,17 +1740,21 @@ async function analyticsView(branchId = null, branchName = null) {
         <h2 style="margin:0">${branchId ? `Sales Officers: ${esc(branchName)}` : 'Branch Analytics'}</h2>
         ${branchId ? `<button class="btn ghost" style="margin:0; padding:4px 8px" onclick="analyticsView()">← Back</button>` : ''}
       </div>
-      ${stats.length ? `<div class="charts">${stats.map(s => `
+      ${stats.length ? `<div class="charts">${stats.map(s => s.total ? `
         <div class="ch-row" ${!branchId ? `style="cursor:pointer" onclick="analyticsView(${s.id}, '${esc(s.name)}')" title="Click for details"` : ''}>
           <div class="ch-lbl"><b>${esc(s.name)}</b><span>${s.total} leads</span></div>
           <div class="ch-bar-wrap">
-            <div class="ch-bar won" style="width:${s.total ? (s.won / s.total * 100) : 0}%"></div>
-            <div class="ch-bar open" style="width:${s.total ? (s.open / s.total * 100) : 0}%"></div>
+            <div class="ch-bar won" style="width:${(s.won / s.total * 100)}%"></div>
+            <div class="ch-bar open" style="width:${(s.open / s.total * 100)}%"></div>
           </div>
           <div class="ch-stats">
             <span class="c-won">${s.won} won</span>
             <span class="c-open">${s.open} open</span>
           </div>
+        </div>` : `
+        <div class="ch-row ch-row-empty" ${!branchId ? `style="cursor:pointer" onclick="analyticsView(${s.id}, '${esc(s.name)}')" title="Click for details"` : ''}>
+          <span class="ch-empty-name">${esc(s.name)}</span>
+          <span class="ch-empty-tag">No leads</span>
         </div>`).join('')}</div>` : '<div class="empty">No data</div>'}
     </div>
 
