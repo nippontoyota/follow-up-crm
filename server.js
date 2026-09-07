@@ -358,6 +358,9 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
         }
         seen.add(m);
         r.mobile = m;
+      } else {
+        // No usable mobile (e.g. an SO-only walk-in lead) — allowed through with a blank mobile.
+        r.mobile = '';
       }
 
       const uploadedBranch = String(r.branch || '').trim();
@@ -383,7 +386,7 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
         err_source: !!sName && !sId,
         err_model: !!mName && !mId,
         err_activity: !!aName && !aId,
-        err_missing: !bName || !sName || !r.customer_name || !r.mobile
+        err_missing: !bName || !sName || !r.customer_name
       };
 
       if (mapped.err_branch || mapped.err_source || mapped.err_model || mapped.err_activity || mapped.err_missing) {
@@ -433,7 +436,8 @@ app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
           l.so_name?.trim() || l.original_so_name?.trim() || null,
           l.so_mobile?.trim() || l.original_so_mobile?.trim() || null,
         ]);
-        if (l.so_name?.trim()) sfRows.push([mobile, l.so_name.trim(), l.so_mobile?.trim() || null, l.so_status?.trim() || null]);
+        // mobile is unique in salesforce_calls — blank mobiles (SO-only leads) would collide with each other, so skip.
+        if (mobile && l.so_name?.trim()) sfRows.push([mobile, l.so_name.trim(), l.so_mobile?.trim() || null, l.so_status?.trim() || null]);
       }
     }
     const client = await pool.connect();

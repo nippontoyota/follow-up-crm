@@ -1437,7 +1437,6 @@ function missingFieldNames(l) {
   if (!l.branch) out.push('Branch');
   if (!l.source) out.push('Source');
   if (!l.customer_name) out.push('Name');
-  if (!l.mobile || l.mobile.length !== 10) out.push('Mobile');
   return out.join(', ') || 'Required data';
 }
 
