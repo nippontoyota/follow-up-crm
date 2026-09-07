@@ -29,6 +29,7 @@ function invalidateLeadsStats() { leadsStatsCache = null; }
 const el = (html) => Object.assign(document.createElement('div'), { innerHTML: html }).firstElementChild;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const val = (id) => document.getElementById(id).value.trim();
+const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager' };
 
 async function api(path, method = 'GET', body, { signal } = {}) {
   const key = `${method}:${path}:${body ? JSON.stringify(body) : ''}`;
@@ -207,7 +208,6 @@ async function boot() {
 
   hdr.classList.remove('hide');
   nav.classList.remove('hide');
-  const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager' };
   document.getElementById('hdrUser').textContent = roleLabel[me.role]
     ? `${me.name} · ${roleLabel[me.role]}` : '';
 
@@ -271,7 +271,7 @@ async function usersView() {
       ${pg}
       <div class="rows">${users.length ? users.map(u => `
         <div class="row">
-          <span><b>${esc(u.name)}</b><br><em>@${esc(u.username)} · ${u.role}${u.branch ? ' · ' + esc(u.branch) : ''}${u.active ? '' : ' · disabled'}</em></span>
+          <span><b>${esc(u.name)}</b><br><em>@${esc(u.username)} · ${esc(roleLabel[u.role] || u.role)}${u.branch ? ' · ' + esc(u.branch) : ''}${u.active ? '' : ' · disabled'}</em></span>
           <button data-id="${u.id}">${u.active ? 'Disable' : 'Enable'}</button>
         </div>`).join('') : '<div class="empty">No users on this page.</div>'}</div>
     </div>`;
