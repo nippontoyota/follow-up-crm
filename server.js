@@ -404,12 +404,12 @@ app.post('/api/leads/bulk-assign', auth('admin'), async (req, res, next) => {
 
     const callGuyIds = [...new Set((selectedCallGuys.length ? selectedCallGuys : leads.map(l => l.assigned_to))
       .map(Number).filter(Number.isInteger))];
-    if (callGuyIds.length !== 5) return bad(res, 'Select exactly five Call Guys');
+    if (callGuyIds.length !== 5) return bad(res, 'Select exactly five Call Executives');
     const validCallGuys = await all(
       `SELECT id FROM users WHERE id = ANY(?) AND role = 'call_guy' AND active = 1`,
       callGuyIds,
     );
-    if (validCallGuys.length !== 5) return bad(res, 'All selected users must be active Call Guys');
+    if (validCallGuys.length !== 5) return bad(res, 'All selected users must be active Call Executives');
 
     const byBranch = {};
     for (const l of leads) {

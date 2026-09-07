@@ -112,8 +112,9 @@ function say(msg, kind = 'err') {
   box.scrollIntoView({ block: 'nearest' });
 }
 
-const options = (list, sel) => '<option value="">Select…</option>' +
-  list.map(o => `<option value="${o.id}"${o.id === sel ? ' selected' : ''}>${esc(o.name)}</option>`).join('');
+const options = (list, sel, addNewLabel) => '<option value="">Select…</option>' +
+  list.map(o => `<option value="${o.id}"${o.id === sel ? ' selected' : ''}>${esc(o.name)}</option>`).join('') +
+  (addNewLabel ? `<option value="__add__">${esc(addNewLabel)}</option>` : '');
 
 function dueLabel(lead) {
   if (lead.status === 'closed') return `<span class="pill">${esc(lead.stage)}</span>`;
@@ -206,7 +207,7 @@ async function boot() {
 
   hdr.classList.remove('hide');
   nav.classList.remove('hide');
-  const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Guy', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager' };
+  const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager' };
   document.getElementById('hdrUser').textContent = roleLabel[me.role]
     ? `${me.name} · ${roleLabel[me.role]}` : '';
 
@@ -254,7 +255,7 @@ async function usersView() {
       <select id="role">
         <option value="">Select…</option>
         <option value="admin">Admin</option>
-        <option value="call_guy">Call Guy</option>
+        <option value="call_guy">Call Executive</option>
         <option value="call_center_manager">Call Center Manager</option>
         <option value="sales_manager">Branch Sales Manager</option>
       </select>
@@ -300,7 +301,7 @@ async function reassignView() {
   const { items: officers } = await api('/admin/call-guy-load');
 
   if (!officers.length) {
-    view.innerHTML = `<div class="card"><p class="empty" style="padding:24px 16px">No active call guys to reassign between.</p></div>`;
+    view.innerHTML = `<div class="card"><p class="empty" style="padding:24px 16px">No active call executives to reassign between.</p></div>`;
     return;
   }
 
@@ -328,7 +329,7 @@ async function reassignView() {
     <div class="card reload-card">
       <div class="reload-head">
         <h2>Reassign Leads</h2>
-        <p class="reload-desc">Tap a call guy to mark them the source, then tap others to receive their open leads. The split previews before it moves anything.</p>
+        <p class="reload-desc">Tap a call executive to mark them the source, then tap others to receive their open leads. The split previews before it moves anything.</p>
       </div>
       <div class="reload-roster" id="rlRoster">${officers.map(rowHtml).join('')}</div>
       <div class="reload-scope">
@@ -339,7 +340,7 @@ async function reassignView() {
         <p class="reload-scope-hint" id="rlScopeHint">Leads with zero follow-ups yet.</p>
       </div>
       <div class="reload-preview" id="rlPreview">
-        <p class="reload-preview-empty">Select a call guy above to begin.</p>
+        <p class="reload-preview-empty">Select a call executive above to begin.</p>
       </div>
       <div class="reload-actions">
         <button class="btn" id="rlBtn" disabled>Reassign leads</button>
@@ -931,10 +932,10 @@ async function callCenterView() {
       { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
       { num: (d.flagged || []).length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" },
     ])}
-    <div class="card"><h2>Call Guy Performance</h2>${tblHtml(
-      ['Call Guy','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
+    <div class="card"><h2>Call Executive Performance</h2>${tblHtml(
+      ['Call Executive','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
       d.byCallGuy.map(r => [esc(r.call_guy), r.total, r.untouched, r.followup, r.due, r.booked, r.retailed, r.lost]),
-      'No Call Guys found'
+      'No Call Executives found'
     )}</div>
     <div class="card"><h2>Performance by Branch</h2>${tblHtml(
       ['Branch','Total','Open','Won'], d.byBranch.map(r => [esc(r.branch), r.total, r.open, r.won]), 'No branch data'
@@ -943,7 +944,7 @@ async function callCenterView() {
       ['Call Status','Outcome','Count'], d.outcomes.map(r => [esc(r.call_status), esc(r.outcome), r.count]), 'No calls logged'
     )}</div>
     <div class="card"><h2>Overdue Work</h2>${tblHtml(
-      ['Call Guy','Overdue Leads'], d.overdue.map(r => [esc(r.call_guy), r.overdue]), 'No overdue follow-ups'
+      ['Call Executive','Overdue Leads'], d.overdue.map(r => [esc(r.call_guy), r.overdue]), 'No overdue follow-ups'
     )}</div>`;
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
@@ -1112,18 +1113,18 @@ async function flaggedLeadsView() {
     if (me.role === 'sales_manager') {
       const d = await api(`/sales-manager/analytics?branch_id=${encodeURIComponent(me.branch_id)}`);
       flagged = d.flagged || [];
-      cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Guy', 'Stage'];
+      cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Executive', 'Stage'];
       rows = flagged.map(r => [esc(r.customer_name), esc(r.mobile), esc(r.sales_officer), esc(r.call_guy || '—'), esc(r.stage || '—')]);
     } else {
       const d = await api('/call-center/analytics');
       flagged = d.flagged || [];
-      cols = ['Customer', 'Branch', 'Sales Officer', 'Call Guy', 'Sales Manager'];
+      cols = ['Customer', 'Branch', 'Sales Officer', 'Call Executive', 'Sales Manager'];
       rows = flagged.map(r => [esc(r.customer_name), esc(r.branch || '—'), esc(r.original_so_name || '—'), esc(r.call_guy || '—'), esc(r.sales_manager || 'Unassigned')]);
     }
     const ids = flagged.map(r => r.id);
     view.innerHTML = `<div class="card flag-card">
       <h2 class="flag-card-h2">🚩 Flagged Leads · ${flagged.length}</h2>
-      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by call guys, routed to the sales manager of the flagged lead\'s branch.'}</p>` : ''}
+      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by call executives, routed to the sales manager of the flagged lead\'s branch.'}</p>` : ''}
       <div class="tbl-wrap"><table class="tbl tbl-flag">
         <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((r, i) => `<tr class="lead-row" data-id="${ids[i]}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -1404,7 +1405,7 @@ async function handleBulkUpload(e) {
 }
 
 async function showBulkReviewSheet(duplicates = 0) {
-  // Fetch the shared Call Guy pool. Branch does not limit assignment.
+  // Fetch the shared Call Executive pool. Branch does not limit assignment.
   let callGuys = [];
   try {
     const data = await api('/users?role=call_guy&active=1&limit=100');
@@ -1421,7 +1422,7 @@ async function showBulkReviewSheet(duplicates = 0) {
     branchMap[l.branch_id].count++;
   }
 
-  const assignHtml = `<p style="color:var(--muted);font-size:13px">${Object.values(branchMap).reduce((n, b) => n + b.count, 0)} leads from ${Object.keys(branchMap).length} branch${Object.keys(branchMap).length !== 1 ? 'es' : ''} will be distributed across the shared Call Guy pool.</p>
+  const assignHtml = `<p style="color:var(--muted);font-size:13px">${Object.values(branchMap).reduce((n, b) => n + b.count, 0)} leads from ${Object.keys(branchMap).length} branch${Object.keys(branchMap).length !== 1 ? 'es' : ''} will be distributed across the shared Call Executive pool.</p>
     <div style="display:flex;flex-wrap:wrap;gap:8px">
       ${callGuys.map(u => `<label style="display:flex;align-items:center;gap:6px;font-size:14px;background:var(--bg);border:1.5px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer">
         <input type="checkbox" class="assign-cb" value="${u.id}" style="accent-color:var(--brand);width:15px;height:15px">
@@ -1439,7 +1440,7 @@ async function showBulkReviewSheet(duplicates = 0) {
     </div>
 
     ${bulkValid.length ? `<div class="card">
-      <h2>Assign to five Call Guys</h2>
+      <h2>Assign to five Call Executives</h2>
       ${assignHtml}
     </div>` : ''}
 
@@ -1452,11 +1453,11 @@ async function showBulkReviewSheet(duplicates = 0) {
             <div><label style="margin-top:0">Branch ${l.err_branch ? '<span class="req" style="font-size:11px"><br>(Unknown: '+esc(l.original_branch || l.branch)+')</span>' : ''}</label>
                  <select class="fix-br" ${l.err_branch ? 'style="border-color:var(--bad)"' : ''}>${options(masters.branches, l.branch_id)}</select></div>
             <div><label style="margin-top:0">Source ${l.err_source ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.source)+')</span>' : ''}</label>
-                 <select class="fix-so" ${l.err_source ? 'style="border-color:var(--bad)"' : ''}>${options(masters.sources, l.source_id)}</select></div>
+                 <select class="fix-so" data-kind="sources" data-typo="${esc(l.source || '')}" ${l.err_source ? 'style="border-color:var(--bad)"' : ''}>${options(masters.sources, l.source_id, '+ Add new source…')}</select></div>
             <div><label>Model ${l.err_model ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.model)+')</span>' : ''}</label>
-                 <select class="fix-mo" ${l.err_model ? 'style="border-color:var(--bad)"' : ''}>${options(masters.models, l.model_id)}</select></div>
+                 <select class="fix-mo" data-kind="models" data-typo="${esc(l.model || '')}" ${l.err_model ? 'style="border-color:var(--bad)"' : ''}>${options(masters.models, l.model_id, '+ Add new model…')}</select></div>
             <div><label>Activity ${l.err_activity ? '<span class="req" style="font-size:11px"><br>(Typo: '+esc(l.activity)+')</span>' : ''}</label>
-                 <select class="fix-ac" ${l.err_activity ? 'style="border-color:var(--bad)"' : ''}>${options(masters.activities, l.activity_id)}</select></div>
+                 <select class="fix-ac" data-kind="activities" data-typo="${esc(l.activity || '')}" ${l.err_activity ? 'style="border-color:var(--bad)"' : ''}>${options(masters.activities, l.activity_id, '+ Add new activity…')}</select></div>
           </div>
         </div>
       `).join('')}
@@ -1472,11 +1473,30 @@ async function showBulkReviewSheet(duplicates = 0) {
   const close = () => { sheet.remove(); bulkValid = []; bulkInvalid = []; };
   sheet.querySelector('#x').onclick = close;
 
+  const masterTypeSingular = { sources: 'source', models: 'model', activities: 'activity' };
+  sheet.querySelectorAll('.fix-so, .fix-mo, .fix-ac').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      if (sel.value !== '__add__') return;
+      const kind = sel.dataset.kind;
+      const name = (prompt(`New ${masterTypeSingular[kind]} name:`, sel.dataset.typo || '') || '').trim();
+      if (!name) { sel.value = ''; return; }
+      try {
+        const created = await api(`/masters/${kind}`, 'POST', { name });
+        masters[kind].push(created);
+        masters[kind].sort((a, b) => a.name.localeCompare(b.name));
+        sel.innerHTML = options(masters[kind], created.id, `+ Add new ${masterTypeSingular[kind]}…`);
+      } catch (err) {
+        alert(err.message);
+        sel.value = '';
+      }
+    });
+  });
+
   sheet.querySelector('#confirmBulk').onclick = async (e) => {
     const selectedCallGuys = [...sheet.querySelectorAll('.assign-cb:checked')].map(cb => Number(cb.value));
     if (selectedCallGuys.length !== 5) {
       const msgEl = sheet.querySelector('#msg');
-      if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'Select exactly five Call Guys.'; }
+      if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'Select exactly five Call Executives.'; }
       return;
     }
 
@@ -1546,7 +1566,7 @@ async function openLead(id) {
       <div class="kv"><b>Model</b><span>${esc(l.model || '—')}</span></div>
       <div class="kv"><b>Activity</b><span>${esc(l.activity || '—')}</span></div>
       <div class="kv"><b>Original Sales Officer</b><span>${esc(l.original_so_name || 'Not provided')}</span></div>
-      <div class="kv"><b>Assigned Call Guy</b><span>${esc(l.officer || 'Unassigned')}</span></div>
+      <div class="kv"><b>Assigned Call Executive</b><span>${esc(l.officer || 'Unassigned')}</span></div>
     </div>
 
     ${l.salesforce_history && l.salesforce_history.length ? `
