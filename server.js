@@ -920,7 +920,6 @@ app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (r
     if (!OUTCOMES[call_status]) return bad(res, 'Select Connected or Not Connected');
     if (!OUTCOMES[call_status].includes(outcome)) return bad(res, 'Select a valid outcome');
 
-    if (outcome === 'Booking Done' && !String(order_id || '').trim()) return bad(res, 'Order ID is required');
     if (outcome === 'Retail Done' && !String(tally_receipt || '').trim()) return bad(res, 'Tally Receipt No. is required');
     if (outcome === 'Need Test Drive' && !String(test_drive_date || '').trim()) return bad(res, 'Test drive date is required');
     if (outcome === 'Exchange Issue' && !String(exchange_expected_price || '').trim()) return bad(res, 'Expected price is required');
@@ -955,6 +954,27 @@ app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (r
       seq, stage, nd, closing ? 'closed' : 'open', lead.id,
     );
     res.json({ ok: true, seq, closed: closing });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/leads/:id/order-id', auth('sales', 'call_guy', 'admin'), async (req, res, next) => {
+  try {
+    const lead = await get(`SELECT * FROM leads WHERE id = ?`, Number(req.params.id));
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (['sales', 'call_guy'].includes(req.user.role) && lead.assigned_to !== req.user.id)
+      return res.status(403).json({ error: 'Not your lead' });
+
+    const order_id = String(req.body?.order_id || '').trim();
+    if (!order_id) return bad(res, 'Order ID is required');
+
+    const fu = await get(
+      `SELECT id FROM followups WHERE lead_id = ? AND outcome = 'Booking Done' ORDER BY seq DESC LIMIT 1`,
+      lead.id,
+    );
+    if (!fu) return bad(res, 'No Booking Done follow-up found for this lead');
+
+    await run(`UPDATE followups SET order_id = ? WHERE id = ?`, order_id, fu.id);
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 

@@ -1867,6 +1867,7 @@ async function showBulkReviewSheet(duplicates = 0) {
 async function openLead(id) {
   const l = await api('/leads/' + id);
   const canAct = (['sales', 'call_guy'].includes(me.role) || me.role === 'admin') && l.status === 'open';
+  const canFillOrderId = me.role === 'admin' || (['sales', 'call_guy'].includes(me.role) && l.assigned_to === me.id);
   const nextSeq = l.fcount + 1;
 
   const sheet = el(`<div class="sheet"><div>
@@ -1902,6 +1903,12 @@ async function openLead(id) {
         <em>${esc(displayDateTime(f.created_at))} · ${esc(f.by_name)}${f.next_date ? ' · next ' + displayDate(f.next_date) : ''}
         ${f.model ? ' · ' + esc(f.model) : ''}${f.activity ? ' · ' + esc(f.activity) : ''}</em>
         ${f.other_so_called ? `<div><b>Other SO called:</b> ${esc(f.other_so_called)}</div>` : ''}
+        ${f.outcome === 'Booking Done' ? (f.order_id
+          ? `<div><b>Order ID:</b> ${esc(f.order_id)}</div>`
+          : `<div class="order-id-missing" data-seq="${f.seq}">
+               <b style="color:#B91C1C">Order ID not filled</b>
+               ${canFillOrderId ? `<button type="button" class="btn ghost fill-order-id" data-seq="${f.seq}" style="margin-left:8px;padding:2px 8px">Add now</button>` : ''}
+             </div>`) : ''}
         ${f.test_drive_date ? `<div><b>Test Drive Date:</b> ${esc(displayDate(f.test_drive_date))}</div>` : ''}
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
@@ -1930,7 +1937,7 @@ async function openLead(id) {
         <div class="chips" id="out"></div>
       </div>
       <div id="orderWrap" class="hide">
-        <label>Order ID <span class="req">*</span></label>
+        <label>Order ID <span style="color:var(--muted)">(optional — can be added later)</span></label>
         <input id="orderId" placeholder="Enter order ID">
       </div>
       <div id="tallyWrap" class="hide">
@@ -1971,6 +1978,31 @@ async function openLead(id) {
   sheet.querySelector('#x').onclick = close;
   sheet.querySelectorAll('.copy-contact').forEach(button => {
     button.onclick = () => copyContactPhone(button.dataset.phone, button);
+  });
+
+  sheet.querySelectorAll('.fill-order-id').forEach(button => {
+    button.onclick = () => {
+      const row = sheet.querySelector(`.order-id-missing[data-seq="${button.dataset.seq}"]`);
+      row.innerHTML = `
+        <input type="text" class="order-id-input" placeholder="Enter order ID" style="width:60%;display:inline-block">
+        <button type="button" class="btn save-order-id" style="margin-left:8px;padding:2px 8px">Save</button>
+        <div class="msg" style="margin-top:4px"></div>`;
+      const input = row.querySelector('.order-id-input');
+      input.focus();
+      row.querySelector('.save-order-id').onclick = async (e) => {
+        const order_id = input.value.trim();
+        const msg = row.querySelector('.msg');
+        if (!order_id) { msg.className = 'msg err'; msg.textContent = 'Order ID is required'; return; }
+        e.target.disabled = true;
+        try {
+          await api(`/leads/${l.id}/order-id`, 'POST', { order_id });
+          row.innerHTML = `<b>Order ID:</b> ${esc(order_id)}`;
+        } catch (err) {
+          msg.className = 'msg err'; msg.textContent = err.message;
+          e.target.disabled = false;
+        }
+      };
+    };
   });
 
   const closeFlagBtn = sheet.querySelector('#closeFlagBtn');
@@ -2037,7 +2069,6 @@ async function openLead(id) {
     const skipDate = NO_DATE.has(outcome);
     const nd = sheet.querySelector('#nd').value;
     if (!skipDate && !nd) return say('Next follow-up date is required');
-    if (outcome === 'Booking Done'   && !sheet.querySelector('#orderId').value.trim())     return say('Order ID is required');
     if (outcome === 'Retail Done'    && !sheet.querySelector('#tallyNo').value.trim())     return say('Tally Receipt No. is required');
     if (outcome === 'Need Test Drive'&& !sheet.querySelector('#testDriveDate').value)      return say('Test drive date is required');
     if (outcome === 'Exchange Issue' && !sheet.querySelector('#exExpected').value.trim())  return say('Expected price is required');
