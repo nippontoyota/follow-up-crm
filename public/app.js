@@ -1376,7 +1376,6 @@ async function leadsView() {
         ${isBulkAdmin ? `
           <input type="file" id="bulkFile" accept=".xlsx,.xls" style="display:none">
           <button class="btn ghost" style="width:auto;margin:0;padding:6px 14px;font-size:13px;white-space:nowrap" onclick="document.getElementById('bulkFile').click()">Bulk Upload</button>
-          <button class="mst-remove" id="clearAllLeads" style="width:auto;padding:6px 12px;white-space:nowrap">Clear all leads</button>
         ` : ''}
       </div>
     </div>`;
@@ -1443,21 +1442,6 @@ async function leadsView() {
   if (isBulkAdmin) {
     const fb = document.getElementById('bulkFile');
     if (fb) fb.onchange = handleBulkUpload;
-    const clearButton = document.getElementById('clearAllLeads');
-    if (clearButton) clearButton.onclick = async () => {
-      if (!confirm('Delete all leads, follow-ups, and imported SalesForce records?')) return;
-      clearButton.disabled = true;
-      try {
-        await api('/leads/clear-all', 'POST');
-        leadsPage = 1;
-        leadsQ = '';
-        invalidateLeadsStats();
-        leadsView();
-      } catch (err) {
-        clearButton.disabled = false;
-        say(err.message, 'err');
-      }
-    };
   }
 }
 

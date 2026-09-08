@@ -215,35 +215,6 @@ app.delete('/api/sales-officer-contacts/:id', auth('admin'), async (req, res, ne
   }
 });
 
-app.post('/api/leads/clear-all', auth('admin'), async (req, res, next) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const [leadCount, followupCount, salesforceCount] = await Promise.all([
-      client.query('SELECT COUNT(*)::int AS count FROM leads'),
-      client.query('SELECT COUNT(*)::int AS count FROM followups'),
-      client.query('SELECT COUNT(*)::int AS count FROM salesforce_calls'),
-    ]);
-    await client.query('DELETE FROM followups');
-    await client.query('DELETE FROM leads');
-    await client.query('DELETE FROM salesforce_calls');
-    await client.query('COMMIT');
-    res.json({
-      ok: true,
-      deleted: {
-        leads: leadCount.rows[0].count,
-        followups: followupCount.rows[0].count,
-        salesforceCalls: salesforceCount.rows[0].count,
-      },
-    });
-  } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
-    next(e);
-  } finally {
-    client.release();
-  }
-});
-
 app.post('/api/salesforce-validate', auth('admin'), async (req, res, next) => {
   try {
     const records = req.body || [];
