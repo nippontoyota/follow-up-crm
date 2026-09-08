@@ -1549,7 +1549,7 @@ function parseGenericWorkbook(ws) {
       else if (k.includes('remark')) remarks = v;
       else if (k === 'status' || k.includes('salesforce status')) so_status = String(v || '').trim() || null;
     }
-    return { branch, source, mobile, customer_name, model, activity, location, remarks, so_name, so_mobile, so_status };
+    return { branch, source, mobile, customer_name, model, activity, location, remarks, so_name, so_mobile, so_status, requires_so_contact: true };
   }).filter(r => r.mobile || r.customer_name);
 }
 
