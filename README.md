@@ -93,4 +93,4 @@ For Sales Officer phones, configure the payslip portal PostgreSQL connection in 
 PAYSLIP_DATABASE_URL=postgresql://...
 ```
 
-The uploader uses the current payslip employee phone first, then a saved Sales Officer contact mapping, then any phone supplied by the workbook. If no phone is available, the Admin can resolve the Sales Officer once in the upload review; the saved mapping is reused for future uploads. Admins can edit saved mappings in Lists → Sales Officer Contacts. Existing leads retain their stored Sales Officer phone snapshot after a mapping edit.
+The uploader matches the Sales Officer against the payslip employee directory by normalized name and branch first. It then uses a saved Sales Officer contact mapping, followed by any phone supplied by the workbook. If the payslip name is ambiguous or no phone is available, the Admin can resolve the branch-specific Sales Officer group once in the upload review; the saved mapping is reused for future uploads. Admins can edit saved mappings in Lists → Sales Officer Contacts. Existing leads retain their stored Sales Officer phone snapshot after a mapping edit.

@@ -14,6 +14,20 @@ export function normalizeOfficerName(value) {
     .trim();
 }
 
+export function normalizeOfficerBranch(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^nippon\s+toyota\s*[-:]?\s*/i, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function officerContactKey(name, branch) {
+  return `${normalizeOfficerName(name)}|${normalizeOfficerBranch(branch)}`;
+}
+
 export function normalizeOfficerPhone(value) {
   const digits = String(value || '').replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : null;
@@ -33,28 +47,38 @@ function getPayslipPool() {
   return payslipPool;
 }
 
-async function readPayslipContacts(keys) {
+async function readPayslipContacts(entries) {
   const pool = getPayslipPool();
-  if (!pool || !keys.length) return new Map();
+  if (!pool || !entries.length) return { exact: new Map(), byName: new Map() };
+
+  const requestedKeys = new Set(entries.map(entry => officerContactKey(entry.name, entry.branch)));
+  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(entry.name)));
 
   try {
     const result = await pool.query(`
-      SELECT name, mobile_number
+      SELECT name, mobile_number, branch
       FROM employees
       WHERE name IS NOT NULL AND mobile_number IS NOT NULL AND BTRIM(mobile_number) <> ''
     `);
-    const contacts = new Map();
+    const exact = new Map();
+    const byName = new Map();
     for (const row of result.rows) {
-      const key = normalizeOfficerName(row.name);
+      const nameKey = normalizeOfficerName(row.name);
+      if (!requestedNames.has(nameKey)) continue;
       const phone = normalizeOfficerPhone(row.mobile_number);
-      if (keys.includes(key) && phone && !contacts.has(key)) {
-        contacts.set(key, { display_name: String(row.name).trim(), phone });
+      if (!phone) continue;
+      const contact = { display_name: String(row.name).trim(), phone, branch: String(row.branch || '').trim() };
+      if (!byName.has(nameKey)) byName.set(nameKey, []);
+      byName.get(nameKey).push(contact);
+      const key = officerContactKey(row.name, row.branch);
+      if (requestedKeys.has(key) && !exact.has(key)) {
+        exact.set(key, contact);
       }
     }
-    return contacts;
+    return { exact, byName };
   } catch (err) {
     console.warn('Payslip Sales Officer lookup unavailable; using saved/workbook contacts.', err.message);
-    return new Map();
+    return { exact: new Map(), byName: new Map() };
   }
 }
 
@@ -74,29 +98,41 @@ async function saveResolvedContact(displayName, phone) {
   `, nameKey, name, normalizedPhone);
 }
 
-export async function resolveOfficerContacts(names, workbookPhones = new Map()) {
+export async function resolveOfficerContacts(entries, workbookPhones = new Map()) {
   const requested = new Map();
-  for (const name of names || []) {
-    const displayName = String(name || '').trim();
-    const key = normalizeOfficerName(displayName);
-    if (key && !requested.has(key)) requested.set(key, displayName);
+  for (const entry of entries || []) {
+    const displayName = String(entry?.name || '').trim();
+    const branch = String(entry?.branch || '').trim();
+    const key = officerContactKey(displayName, branch);
+    if (normalizeOfficerName(displayName) && !requested.has(key)) requested.set(key, { displayName, branch });
   }
   if (!requested.size) return new Map();
 
   const keys = [...requested.keys()];
+  const nameKeys = [...new Set([...requested.values()].map(entry => normalizeOfficerName(entry.displayName)))];
   const savedRows = await all(
     `SELECT name_key, display_name, phone FROM sales_officer_contacts WHERE name_key = ANY(?)`,
-    keys,
+    nameKeys,
   );
   const saved = new Map(savedRows.map(row => [row.name_key, row]));
-  const payslip = await readPayslipContacts(keys);
+  const payslip = await readPayslipContacts([...requested.values()]);
+  const requestedKeysByName = new Map();
+  for (const key of keys) {
+    const nameKey = normalizeOfficerName(requested.get(key).displayName);
+    if (!requestedKeysByName.has(nameKey)) requestedKeysByName.set(nameKey, []);
+    requestedKeysByName.get(nameKey).push(key);
+  }
   const resolved = new Map();
 
   for (const key of keys) {
-    const displayName = requested.get(key);
-    const hr = payslip.get(key);
-    const local = saved.get(key);
-    const workbookPhone = normalizeOfficerPhone(workbookPhones.get(key));
+    const { displayName } = requested.get(key);
+    const nameKey = normalizeOfficerName(displayName);
+    const nameKeysForRequest = requestedKeysByName.get(nameKey) || [];
+    const hrExact = payslip.exact.get(key);
+    const hrNameMatches = payslip.byName.get(nameKey) || [];
+    const hr = hrExact || (hrNameMatches.length === 1 ? hrNameMatches[0] : null);
+    const local = nameKeysForRequest.length === 1 ? saved.get(nameKey) : null;
+    const workbookPhone = normalizeOfficerPhone(workbookPhones.get(key) || workbookPhones.get(nameKey));
     const source = hr ? 'payslip' : local ? 'saved' : workbookPhone ? 'workbook' : null;
     const phone = hr?.phone || normalizeOfficerPhone(local?.phone) || workbookPhone;
     if (!phone) continue;

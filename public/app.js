@@ -1570,6 +1570,8 @@ const GROUP_FIELDS = [
 const isRowReady = l => !l.err_branch && !l.err_source && !l.err_model && !l.err_activity && !l.err_missing && !l.err_so_name && !l.err_so_mobile;
 
 const officerKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+const officerBranchKey = value => String(value || '').toLowerCase().replace(/^nippon\s+toyota\s*[-:]?\s*/i, '').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+const contactGroupKey = (name, branch) => `${officerKey(name)}|${officerBranchKey(branch)}`;
 
 // Collapse potentially thousands of error rows into one entry per distinct
 // unrecognized value, so fixing "Kalamassery" once resolves every row that used it.
@@ -1581,8 +1583,8 @@ function buildInvalidGroups(rows) {
   for (const l of rows) {
     if (l.err_missing || l.err_so_name) blocked.push(l);
     if (l.err_so_mobile && l.so_name) {
-      const key = officerKey(l.so_name);
-      if (!contacts.has(key)) contacts.set(key, { name: l.so_name, rows: [] });
+      const key = contactGroupKey(l.so_name, l.branch || l.original_branch);
+      if (!contacts.has(key)) contacts.set(key, { name: l.so_name, branch: l.branch || l.original_branch || 'Unknown branch', rows: [] });
       contacts.get(key).rows.push(l);
     }
     for (const f of GROUP_FIELDS) {
@@ -1647,7 +1649,7 @@ async function showBulkReviewSheet(duplicates = 0) {
       <h3 class="resolve-section-title">Sales Officer phone <span>${contacts.size} contact${contacts.size !== 1 ? 's' : ''} to resolve</span></h3>
       ${[...contacts.entries()].map(([key, g]) => `
         <div class="contact-resolve-row" data-contact-key="${esc(key)}">
-          <div class="resolve-row-main"><div class="resolve-row-label">${esc(g.name)}</div></div>
+          <div class="resolve-row-main"><div class="resolve-row-sub">Branch: ${esc(g.branch)}</div><div class="resolve-row-label">Sales Officer: ${esc(g.name)}</div></div>
           <span class="resolve-row-count">${g.rows.length} lead${g.rows.length !== 1 ? 's' : ''}</span>
           <div class="contact-resolve-action">
             <input class="contact-phone-input" inputmode="numeric" maxlength="10" placeholder="10-digit phone">

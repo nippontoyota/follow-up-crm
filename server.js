@@ -7,6 +7,7 @@ import branchCodes from './demo-data/branch-codes.json' with { type: 'json' };
 import {
   listOfficerContacts,
   normalizeOfficerName,
+  officerContactKey,
   resolveOfficerContacts,
   saveOfficerContact,
   updateOfficerContact,
@@ -392,12 +393,15 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
     let duplicates = 0;
 
     const workbookPhones = new Map();
+    const officerEntries = [];
     for (const r of rows) {
-      const key = normalizeOfficerName(r.so_name);
-      if (key && r.so_mobile) workbookPhones.set(key, r.so_mobile);
+      const branch = canonicalBranchInput(r.branch);
+      const key = officerContactKey(r.so_name, branch);
+      if (normalizeOfficerName(r.so_name)) officerEntries.push({ name: r.so_name, branch });
+      if (normalizeOfficerName(r.so_name) && r.so_mobile) workbookPhones.set(key, r.so_mobile);
     }
     const officerContacts = await resolveOfficerContacts(
-      rows.map(r => r.so_name).filter(Boolean),
+      officerEntries,
       workbookPhones,
     );
 
@@ -422,7 +426,7 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
       const mName = String(r.model || '').trim();
       const aName = String(r.activity || '').trim();
       const soName = String(r.so_name || '').trim();
-      const soKey = normalizeOfficerName(soName);
+      const soKey = officerContactKey(soName, bName);
       const contact = officerContacts.get(soKey);
       if (contact) {
         r.so_name = contact.name;
