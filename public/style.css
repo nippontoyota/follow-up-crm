@@ -934,3 +934,7 @@ input, select, textarea {
   .ai-analysis-action:hover, .ai-analysis-action:active { transform: none; }
   .ai-loading::before { animation: none; }
 }
+@keyframes bulkProgress {
+  0% { transform: translateX(-140%); }
+  100% { transform: translateX(320%); }
+}

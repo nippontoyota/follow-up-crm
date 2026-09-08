@@ -132,6 +132,26 @@ function say(msg, kind = 'err') {
   box.scrollIntoView({ block: 'nearest' });
 }
 
+function showBulkValidationProgress() {
+  const sheet = el(`<div class="sheet" role="status" aria-live="polite"><div>
+    <div class="card" style="max-width:520px;margin:18vh auto;text-align:center;padding:32px 28px">
+      <div style="font-size:30px;margin-bottom:12px">⏳</div>
+      <h2 style="margin:0 0 8px">Checking employee directory…</h2>
+      <p style="margin:0;color:var(--muted)">Matching Sales Officers and preparing the upload.</p>
+      <div style="height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin:22px 0 10px"><div style="height:100%;width:35%;background:var(--brand);border-radius:99px;animation:bulkProgress 1.2s ease-in-out infinite"></div></div>
+      <div class="bulk-validation-elapsed" style="font-size:12px;color:var(--muted)">Usually takes a few seconds</div>
+    </div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  let elapsed = 0;
+  const timer = setInterval(() => {
+    elapsed += 1;
+    const label = sheet.querySelector('.bulk-validation-elapsed');
+    if (label) label.textContent = `Still working… ${elapsed}s`;
+  }, 1000);
+  return () => { clearInterval(timer); sheet.remove(); };
+}
+
 const options = (list, sel, addNewLabel) => '<option value="">Select…</option>' +
   list.map(o => `<option value="${o.id}"${o.id === sel ? ' selected' : ''}>${esc(o.name)}</option>`).join('') +
   (addNewLabel ? `<option value="__add__">${esc(addNewLabel)}</option>` : '');
@@ -1548,14 +1568,16 @@ async function handleBulkUpload(e) {
 
     if (!records.length) throw new Error('No valid rows found in sheet');
 
-    say('Validating leads...', 'ok');
+    const closeProgress = showBulkValidationProgress();
     const res = await api('/leads/bulk-validate', 'POST', records);
+    closeProgress();
     bulkValid = res.valid || [];
     bulkInvalid = res.invalid || [];
     const bulkDuplicates = res.duplicates || 0;
     
     showBulkReviewSheet(bulkDuplicates);
   } catch(err) {
+    document.querySelectorAll('.sheet[role="status"]').forEach(node => node.remove());
     say(err.message, 'err');
   }
 }

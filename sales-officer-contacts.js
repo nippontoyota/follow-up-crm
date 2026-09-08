@@ -29,6 +29,8 @@ export function normalizeOfficerBranch(value) {
     enchakkal: 'enjakkal',
     'kollam 3s': 'kollam',
     thrissur: 'trichur',
+    cochin: 'nettoor',
+    pala: 'kottayam',
   }[branch] || branch;
 }
 
@@ -94,38 +96,65 @@ async function readPayslipContactsFromRest(entries) {
   if (!config || !entries.length) return emptyPayslipContacts();
 
   const requestedKeys = new Set(entries.map(entry => officerContactKey(payslipEntryName(entry), entry.branch)));
-  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(payslipEntryName(entry))));
-  const rows = [];
-  const pageSize = 1000;
+  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(payslipEntryName(entry))).filter(Boolean));
   const timeoutMs = 8000;
 
-  try {
-    for (let offset = 0; offset < 50000; offset += pageSize) {
-      const url = new URL(`${config.url}/rest/v1/employees`);
-      url.searchParams.set('select', 'name,mobile_number,branch');
-      url.searchParams.set('limit', String(pageSize));
-      url.searchParams.set('offset', String(offset));
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      let response;
-      try {
-        response = await fetch(url, {
-          headers: {
-            apikey: config.key,
-            Authorization: `Bearer ${config.key}`,
-          },
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
+  const fetchRows = async names => {
+    const url = new URL(`${config.url}/rest/v1/employees`);
+    url.searchParams.set('select', 'name,mobile_number,branch');
+    url.searchParams.set('name', `in.(${names.map(name => `"${String(name).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`).join(',')})`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+        },
+        signal: controller.signal,
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const page = await response.json();
       if (!Array.isArray(page)) throw new Error('unexpected response');
-      rows.push(...page);
-      if (page.length < pageSize) break;
+      return page;
+    } finally {
+      clearTimeout(timeout);
     }
-    return indexPayslipRows(rows, requestedKeys, requestedNames);
+  };
+
+  const fetchRowsCaseInsensitive = async name => {
+    const url = new URL(`${config.url}/rest/v1/employees`);
+    url.searchParams.set('select', 'name,mobile_number,branch');
+    url.searchParams.set('name', `ilike.${String(name).replaceAll('%', '\\%').replaceAll('_', '\\_')}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${config.key}`,
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const page = await response.json();
+      if (!Array.isArray(page)) throw new Error('unexpected response');
+      return page;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  try {
+    const names = [...new Set(entries.map(payslipEntryName).map(name => String(name || '').trim()).filter(Boolean))];
+    const chunks = [];
+    for (let i = 0; i < names.length; i += 50) chunks.push(names.slice(i, i + 50));
+    const rows = (await Promise.all(chunks.map(fetchRows))).flat();
+    const initial = indexPayslipRows(rows, requestedKeys, requestedNames);
+    const unmatched = names.filter(name => !initial.byName.has(normalizeOfficerName(name)));
+    if (!unmatched.length) return initial;
+    const fallbackRows = (await Promise.all(unmatched.map(fetchRowsCaseInsensitive))).flat();
+    return indexPayslipRows([...rows, ...fallbackRows], requestedKeys, requestedNames);
   } catch (err) {
     console.warn('Payslip Sales Officer REST lookup unavailable; using saved/workbook contacts.', err.message);
     return emptyPayslipContacts();
@@ -162,20 +191,29 @@ export async function readPayslipContacts(entries) {
   return emptyPayslipContacts();
 }
 
-async function saveResolvedContact(displayName, phone) {
-  const name = String(displayName || '').trim();
-  const nameKey = normalizeOfficerName(name);
-  const normalizedPhone = normalizeOfficerPhone(phone);
-  if (!nameKey || !normalizedPhone) return;
+async function saveResolvedContacts(contacts) {
+  const rows = contacts
+    .map(contact => {
+      const name = String(contact?.name || '').trim();
+      const nameKey = normalizeOfficerName(name);
+      const phone = normalizeOfficerPhone(contact?.phone);
+      return nameKey && phone ? { name, nameKey, phone } : null;
+    })
+    .filter(Boolean);
+  if (!rows.length) return;
+  const values = [];
+  const placeholders = rows.map(row => {
+    values.push(row.nameKey, row.name, row.phone);
+    return '(?, ?, ?, TO_CHAR(NOW(), \'YYYY-MM-DD HH24:MI:SS\'))';
+  });
   await all(`
     INSERT INTO sales_officer_contacts (name_key, display_name, phone, updated_at)
-    VALUES (?, ?, ?, TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'))
+    VALUES ${placeholders.join(', ')}
     ON CONFLICT (name_key) DO UPDATE SET
       display_name = EXCLUDED.display_name,
       phone = EXCLUDED.phone,
       updated_at = EXCLUDED.updated_at
-    RETURNING id
-  `, nameKey, name, normalizedPhone);
+  `, ...values);
 }
 
 export async function resolveOfficerContacts(entries, workbookPhones = new Map()) {
@@ -203,6 +241,7 @@ export async function resolveOfficerContacts(entries, workbookPhones = new Map()
     requestedKeysByName.get(nameKey).push(key);
   }
   const resolved = new Map();
+  const contactsToSave = new Map();
 
   for (const key of keys) {
     const { displayName } = requested.get(key);
@@ -220,9 +259,10 @@ export async function resolveOfficerContacts(entries, workbookPhones = new Map()
     const resolvedName = hr?.display_name || local?.display_name || displayName;
     resolved.set(key, { name: resolvedName, phone, source });
     if (source === 'payslip' || !local || source === 'workbook') {
-      await saveResolvedContact(resolvedName, phone);
+      contactsToSave.set(normalizeOfficerName(resolvedName), { name: resolvedName, phone });
     }
   }
+  await saveResolvedContacts([...contactsToSave.values()]);
   return resolved;
 }
 
