@@ -17,13 +17,19 @@ export function normalizeOfficerName(value) {
 }
 
 export function normalizeOfficerBranch(value) {
-  return String(value || '')
+  const branch = String(value || '')
     .trim()
     .toLowerCase()
     .replace(/^nippon\s+toyota\s*[-:]?\s*/i, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  return {
+    trivandrum: 'kazhakoottam',
+    enchakkal: 'enjakkal',
+    'kollam 3s': 'kollam',
+    thrissur: 'trichur',
+  }[branch] || branch;
 }
 
 export function officerContactKey(name, branch) {
