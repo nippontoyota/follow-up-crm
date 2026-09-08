@@ -136,12 +136,25 @@ const options = (list, sel, addNewLabel) => '<option value="">Select…</option>
   list.map(o => `<option value="${o.id}"${o.id === sel ? ' selected' : ''}>${esc(o.name)}</option>`).join('') +
   (addNewLabel ? `<option value="__add__">${esc(addNewLabel)}</option>` : '');
 
+function displayDate(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(.*)$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : raw;
+}
+
+function displayDateTime(value) {
+  const raw = String(value || '').trim();
+  const date = displayDate(raw);
+  const time = raw.match(/[ T](\d{2}:\d{2})(?::\d{2})?/);
+  return time ? `${date} ${time[1]}` : date;
+}
+
 function dueLabel(lead) {
   if (lead.status === 'closed') return `<span class="pill">${esc(lead.stage)}</span>`;
   if (!lead.fcount) return '<span class="pill new">Fresh</span>';
-  if (lead.next_date < me.today) return `<span class="pill late">Overdue · ${lead.next_date}</span>`;
+  if (lead.next_date < me.today) return `<span class="pill late">Overdue · ${displayDate(lead.next_date)}</span>`;
   if (lead.next_date === me.today) return '<span class="pill due">Due today</span>';
-  return `<span class="pill">${lead.next_date}</span>`;
+  return `<span class="pill">${displayDate(lead.next_date)}</span>`;
 }
 
 /* ------------------------------------------------------------------- login */
@@ -475,7 +488,7 @@ async function salesOfficerContactsView() {
       <input id="mstFilter" class="mst-filter" placeholder="Filter Sales Officer contacts…"${contacts.length ? '' : ' disabled'}>
       <div class="mst-rows" id="mstRows">${contacts.length ? contacts.map(c => `
         <div class="mst-row soc-contact-row" data-search="${esc(`${c.display_name} ${c.phone}`.toLowerCase())}">
-          <div class="soc-contact-copy"><b>${esc(c.display_name)}</b><span>${esc(c.phone)} · updated ${esc(c.updated_at || '—')}</span></div>
+          <div class="soc-contact-copy"><b>${esc(c.display_name)}</b><span>${esc(c.phone)} · updated ${esc(displayDateTime(c.updated_at || '—'))}</span></div>
           <button class="mst-edit" data-id="${c.id}" data-name="${esc(c.display_name)}" data-phone="${esc(c.phone)}">Edit</button>
         </div>`).join('') : '<div class="empty">No Sales Officer contacts saved yet.</div>'}</div>
     </div>
@@ -646,7 +659,7 @@ async function openOutcomeLeads(callStatus, outcome, label) {
           <td>${esc(l.customer_name)}</td>
           <td>${esc(l.mobile)}</td>
           <td>${esc(l.officer || '—')}</td>
-          <td>${esc(l.next_date || '—')}</td>
+          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
           <td>${esc(l.stage || '—')}</td>
         </tr>`).join('')}</tbody>
       </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
@@ -706,7 +719,7 @@ async function openStageLeads(officerId, stage) {
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
           <td>${esc(l.customer_name)}</td>
           <td>${esc(l.mobile)}</td>
-          <td>${esc(l.next_date || '—')}</td>
+          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
           <td>F${l.fcount}</td>
           <td>${esc(l.source || '—')}</td>
         </tr>`).join('')}</tbody>
@@ -801,14 +814,14 @@ async function downloadLeadsExcel() {
       'Follow-up Count':     l.fcount,
       'Stage':               l.stage || '',
       'Status':              l.status || '',
-      'Next Follow-up Date': l.next_date || '',
+      'Next Follow-up Date': l.next_date ? displayDate(l.next_date) : '',
       'Location':            l.location || '',
       'Lead Remarks':        l.lead_remarks || '',
       'Latest Call Status':  l.latest_call_status || '',
       'Latest Outcome':      l.latest_outcome || '',
       'Latest Call Remarks': l.latest_remarks || '',
-      'Latest Call Date':    l.latest_call_date || '',
-      'Lead Created':        l.created_at ? l.created_at.slice(0, 10) : '',
+      'Latest Call Date':    l.latest_call_date ? displayDateTime(l.latest_call_date) : '',
+      'Lead Created':        l.created_at ? displayDateTime(l.created_at) : '',
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1166,7 +1179,7 @@ async function openOfficerLeads(branchId, officer, bucket) {
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
           <td>${esc(l.customer_name)}</td>
           <td>${esc(l.mobile)}</td>
-          <td>${esc(l.next_date || '—')}</td>
+          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
           <td>F${l.fcount}</td>
           <td>${esc(l.stage || '—')}</td>
         </tr>`).join('')}</tbody>
@@ -1840,10 +1853,10 @@ async function openLead(id) {
 
     ${l.followups.length ? `<div class="card"><h2>History</h2><div class="tl">${l.followups.map(f => `
       <div><b>F${f.seq} · ${esc(f.call_status)} → ${esc(f.outcome)}</b>
-        <em>${esc(f.created_at)} · ${esc(f.by_name)}${f.next_date ? ' · next ' + f.next_date : ''}
+        <em>${esc(displayDateTime(f.created_at))} · ${esc(f.by_name)}${f.next_date ? ' · next ' + displayDate(f.next_date) : ''}
         ${f.model ? ' · ' + esc(f.model) : ''}${f.activity ? ' · ' + esc(f.activity) : ''}</em>
         ${f.other_so_called ? `<div><b>Other SO called:</b> ${esc(f.other_so_called)}</div>` : ''}
-        ${f.test_drive_date ? `<div><b>Test Drive Date:</b> ${esc(f.test_drive_date)}</div>` : ''}
+        ${f.test_drive_date ? `<div><b>Test Drive Date:</b> ${esc(displayDate(f.test_drive_date))}</div>` : ''}
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
