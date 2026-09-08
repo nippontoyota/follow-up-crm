@@ -31,6 +31,25 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<':
 const val = (id) => document.getElementById(id).value.trim();
 const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager' };
 
+async function copyContactPhone(phone, button) {
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(phone);
+    else {
+      const input = document.createElement('textarea');
+      input.value = phone;
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    const old = button.textContent;
+    button.textContent = 'Copied';
+    setTimeout(() => { button.textContent = old; }, 1400);
+  } catch { say('Could not copy the phone number', 'err'); }
+}
+
 async function api(path, method = 'GET', body, { signal } = {}) {
   const key = `${method}:${path}:${body ? JSON.stringify(body) : ''}`;
   if (method === 'GET' && !signal && inflightGets.has(key)) return inflightGets.get(key);
@@ -438,17 +457,69 @@ async function reassignView() {
 
 /* ------------------------------------------------------------- admin: lists */
 
-const LIST_LABELS = { branches: 'Branches', sources: 'Sources', activities: 'Activities', models: 'Model names' };
+const LIST_LABELS = { branches: 'Branches', sources: 'Sources', activities: 'Activities', models: 'Model names', salesOfficerContacts: 'Sales Officer Contacts' };
 const LIST_PLACEHOLDER = { branches: 'branch', sources: 'source', activities: 'activity', models: 'model name' };
 
+async function salesOfficerContactsView() {
+  const [contactData, masterData] = await Promise.all([api('/sales-officer-contacts'), api('/masters')]);
+  masters = masterData;
+  const contacts = contactData.contacts || [];
+  const tabs = Object.entries(LIST_LABELS).map(([k, label]) => `
+    <button type="button" class="mst-tab${k === listsTab ? ' on' : ''}" data-tab="${k}">${esc(label)}<span class="mst-tab-count">${k === 'salesOfficerContacts' ? contacts.length : (masters[k] || []).length}</span></button>
+  `).join('');
+
+  view.innerHTML = `
+    <div class="card mst-card">
+      <div class="mst-tabs" id="mstTabs">${tabs}</div>
+      <p class="contact-list-note">Saved Sales Officer numbers are used for future uploads. Existing leads keep their stored phone snapshot.</p>
+      <input id="mstFilter" class="mst-filter" placeholder="Filter Sales Officer contacts…"${contacts.length ? '' : ' disabled'}>
+      <div class="mst-rows" id="mstRows">${contacts.length ? contacts.map(c => `
+        <div class="mst-row soc-contact-row" data-search="${esc(`${c.display_name} ${c.phone}`.toLowerCase())}">
+          <div class="soc-contact-copy"><b>${esc(c.display_name)}</b><span>${esc(c.phone)} · updated ${esc(c.updated_at || '—')}</span></div>
+          <button class="mst-edit" data-id="${c.id}" data-name="${esc(c.display_name)}" data-phone="${esc(c.phone)}">Edit</button>
+        </div>`).join('') : '<div class="empty">No Sales Officer contacts saved yet.</div>'}</div>
+    </div>
+    <div id="msg"></div>`;
+
+  view.querySelectorAll('.mst-tab').forEach(b => b.onclick = () => { listsTab = b.dataset.tab; listsView(); });
+  const filterInput = document.getElementById('mstFilter');
+  filterInput.oninput = () => {
+    const q = filterInput.value.trim().toLowerCase();
+    document.querySelectorAll('#mstRows .soc-contact-row').forEach(row => row.classList.toggle('hide', !!q && !row.dataset.search.includes(q)));
+  };
+
+  view.querySelectorAll('.mst-edit').forEach(button => {
+    button.onclick = () => {
+      const row = button.closest('.soc-contact-row');
+      row.innerHTML = `<div class="soc-contact-edit"><b>${esc(button.dataset.name)}</b><input class="soc-contact-phone" inputmode="numeric" maxlength="10" value="${esc(button.dataset.phone)}"></div>
+        <div class="soc-contact-actions"><button class="mst-save">Save</button><button class="mst-cancel">Cancel</button></div>`;
+      const input = row.querySelector('.soc-contact-phone');
+      row.querySelector('.mst-cancel').onclick = () => salesOfficerContactsView();
+      row.querySelector('.mst-save').onclick = async () => {
+        const phone = input.value.replace(/\D/g, '').slice(-10);
+        if (phone.length !== 10) { input.focus(); return; }
+        try {
+          await api(`/sales-officer-contacts/${button.dataset.id}`, 'PATCH', { phone });
+          salesOfficerContactsView();
+        } catch (err) { say(err.message, 'err'); }
+      };
+      input.focus();
+      input.select();
+    };
+  });
+}
+
 async function listsView() {
-  masters = await api('/masters');
+  if (listsTab === 'salesOfficerContacts') return salesOfficerContactsView();
+  const [masterData, contactData] = await Promise.all([api('/masters'), api('/sales-officer-contacts')]);
+  masters = masterData;
+  const contactCount = (contactData.contacts || []).length;
 
   const paged = {
     branches: parsePage(masters.branches, 'items', listsPage.branches, LISTS_PER_PAGE),
     sources: parsePage(masters.sources, 'items', listsPage.sources, LISTS_PER_PAGE),
   };
-  const countOf = key => PAGINATED_LISTS.has(key) ? paged[key].total : masters[key].length;
+  const countOf = key => key === 'salesOfficerContacts' ? contactCount : (PAGINATED_LISTS.has(key) ? paged[key].total : masters[key].length);
 
   const key = listsTab;
   const pg = PAGINATED_LISTS.has(key) ? paged[key] : null;
@@ -1354,6 +1425,91 @@ async function leadsView() {
 let bulkValid = [];
 let bulkInvalid = [];
 
+function workbookHeader(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function reportColumn(headers, matcher) {
+  return headers.findIndex(h => matcher(workbookHeader(h)));
+}
+
+function parseAssignmentReport(ws) {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  let headerIndex = -1;
+  let columns = null;
+  for (let i = 0; i < rows.length; i++) {
+    const headers = rows[i].map(workbookHeader);
+    const leadName = reportColumn(headers, h => h.includes('lead name'));
+    const mobile = reportColumn(headers, h => h === 'mobile');
+    const quality = reportColumn(headers, h => h.includes('lead quality'));
+    const gem = reportColumn(headers, h => h === 'gem');
+    const dealership = reportColumn(headers, h => h === 'dealership');
+    if ([leadName, mobile, quality, gem, dealership].every(n => n >= 0)) {
+      headerIndex = i;
+      columns = {
+        leadName, mobile, quality, gem, dealership,
+        source: reportColumn(headers, h => h === 'source'),
+        model: reportColumn(headers, h => h === 'model'),
+        qualityType: reportColumn(headers, h => h === 'quality type'),
+        soMobile: reportColumn(headers, h => (
+          h !== 'mobile' && ((h.includes('sales officer') || h.startsWith('so ') || h.startsWith('gem ')) && (h.includes('phone') || h.includes('mobile')))
+        )),
+      };
+      break;
+    }
+  }
+  if (headerIndex < 0) return null;
+
+  const cell = (row, index) => index >= 0 ? row[index] : '';
+  return rows.slice(headerIndex + 1).map(row => {
+    const quality = String(cell(row, columns.quality) || '').trim();
+    if (!/\b(?:hot|warm|cold)\b/i.test(quality)) return null;
+    const customer_name = String(cell(row, columns.leadName) || '').trim();
+    const mobile = String(cell(row, columns.mobile) || '').trim();
+    const so_name = String(cell(row, columns.gem) || '').trim();
+    if (!customer_name && !mobile) return null;
+    return {
+      customer_name,
+      mobile,
+      branch: cell(row, columns.dealership),
+      source: cell(row, columns.source),
+      model: cell(row, columns.model),
+      activity: null,
+      location: null,
+      remarks: cell(row, columns.qualityType),
+      so_name,
+      so_mobile: columns.soMobile >= 0 ? String(cell(row, columns.soMobile) || '').trim() : null,
+      so_status: null,
+      requires_so_contact: true,
+    };
+  }).filter(Boolean);
+}
+
+function parseGenericWorkbook(ws) {
+  const data = XLSX.utils.sheet_to_json(ws);
+  return data.map(r => {
+    let branch = null, source = null, mobile = null, customer_name = null;
+    let model = null, activity = null, location = null, remarks = null;
+    let so_name = null, so_mobile = null, so_status = null;
+    for (const key of Object.keys(r)) {
+      const k = key.toLowerCase().trim();
+      const v = r[key];
+      if (k === 'so name' || k === 'so_name' || k === 'soname' || k.includes('sales officer name') || k.includes('consultant name')) so_name = String(v || '').trim() || null;
+      else if (k === 'so phone' || k === 'so phone no' || k === 'so_phone' || k === 'so_mobile' || k === 'so mobile' || k.includes('sales officer phone') || k.includes('consultant phone')) so_mobile = String(v || '').replace(/\D/g, '').slice(-10) || null;
+      else if (k.includes('branch')) branch = v;
+      else if (k.includes('source')) source = v;
+      else if (k.includes('mobile') || k.includes('phone') || k === 'uid' || k === 'contact') mobile = String(v).replace(/\D/g, '').slice(-10);
+      else if (k.includes('customer') || k.includes('name')) customer_name = v;
+      else if (k.includes('model')) model = v;
+      else if (k.includes('activity')) activity = v;
+      else if (k.includes('location')) location = v;
+      else if (k.includes('remark')) remarks = v;
+      else if (k === 'status' || k.includes('salesforce status')) so_status = String(v || '').trim() || null;
+    }
+    return { branch, source, mobile, customer_name, model, activity, location, remarks, so_name, so_mobile, so_status };
+  }).filter(r => r.mobile || r.customer_name);
+}
+
 async function handleBulkUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -1365,30 +1521,7 @@ async function handleBulkUpload(e) {
     if (typeof XLSX === 'undefined') throw new Error('SheetJS library failed to load');
     const wb = XLSX.read(buf);
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(ws);
-
-    const records = data.map(r => {
-      let branch = null, source = null, mobile = null, customer_name = null;
-      let model = null, activity = null, location = null, remarks = null;
-      let so_name = null, so_mobile = null, so_status = null;
-      for (const key of Object.keys(r)) {
-        const k = key.toLowerCase().trim();
-        const v = r[key];
-        // SO columns must be checked before generic name/phone checks
-        if (k === 'so name' || k === 'so_name' || k === 'soname' || k.includes('sales officer name') || k.includes('consultant name')) so_name = String(v || '').trim() || null;
-        else if (k === 'so phone' || k === 'so phone no' || k === 'so_phone' || k === 'so_mobile' || k === 'so mobile' || k.includes('sales officer phone') || k.includes('consultant phone')) so_mobile = String(v || '').replace(/\D/g, '').slice(-10) || null;
-        else if (k.includes('branch')) branch = v;
-        else if (k.includes('source')) source = v;
-        else if (k.includes('mobile') || k.includes('phone') || k === 'uid' || k === 'contact') mobile = String(v).replace(/\D/g, '').slice(-10);
-        else if (k.includes('customer') || k.includes('name')) customer_name = v;
-        else if (k.includes('model')) model = v;
-        else if (k.includes('activity')) activity = v;
-        else if (k.includes('location')) location = v;
-        else if (k.includes('remark')) remarks = v;
-        else if (k === 'status' || k.includes('salesforce status')) so_status = String(v || '').trim() || null;
-      }
-      return { branch, source, mobile, customer_name, model, activity, location, remarks, so_name, so_mobile, so_status };
-    }).filter(r => r.mobile || r.customer_name);
+    const records = parseAssignmentReport(ws) || parseGenericWorkbook(ws);
 
     if (!records.length) throw new Error('No valid rows found in sheet');
 
@@ -1411,7 +1544,9 @@ const GROUP_FIELDS = [
   { kind: 'models', errField: 'err_model', idField: 'model_id', title: 'Model', valueOf: l => l.model },
   { kind: 'activities', errField: 'err_activity', idField: 'activity_id', title: 'Activity', valueOf: l => l.activity },
 ];
-const isRowReady = l => !l.err_branch && !l.err_source && !l.err_model && !l.err_activity && !l.err_missing;
+const isRowReady = l => !l.err_branch && !l.err_source && !l.err_model && !l.err_activity && !l.err_missing && !l.err_so_name && !l.err_so_mobile;
+
+const officerKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 // Collapse potentially thousands of error rows into one entry per distinct
 // unrecognized value, so fixing "Kalamassery" once resolves every row that used it.
@@ -1419,8 +1554,14 @@ function buildInvalidGroups(rows) {
   const groups = {};
   for (const f of GROUP_FIELDS) groups[f.kind] = new Map();
   const blocked = [];
+  const contacts = new Map();
   for (const l of rows) {
-    if (l.err_missing) blocked.push(l);
+    if (l.err_missing || l.err_so_name) blocked.push(l);
+    if (l.err_so_mobile && l.so_name) {
+      const key = officerKey(l.so_name);
+      if (!contacts.has(key)) contacts.set(key, { name: l.so_name, rows: [] });
+      contacts.get(key).rows.push(l);
+    }
     for (const f of GROUP_FIELDS) {
       if (!l[f.errField]) continue;
       const value = f.valueOf(l);
@@ -1429,7 +1570,7 @@ function buildInvalidGroups(rows) {
       groups[f.kind].get(value).rows.push(l);
     }
   }
-  return { groups, blocked };
+  return { groups, blocked, contacts };
 }
 
 function missingFieldNames(l) {
@@ -1437,6 +1578,7 @@ function missingFieldNames(l) {
   if (!l.branch) out.push('Branch');
   if (!l.source) out.push('Source');
   if (!l.customer_name) out.push('Name');
+  if (l.err_so_name) out.push('Sales Officer');
   return out.join(', ') || 'Required data';
 }
 
@@ -1455,7 +1597,7 @@ async function showBulkReviewSheet(duplicates = 0) {
       </label>`).join('')}
     </div>`;
 
-  const { groups, blocked } = buildInvalidGroups(bulkInvalid);
+  const { groups, blocked, contacts } = buildInvalidGroups(bulkInvalid);
 
   const groupSectionHtml = f => {
     const entries = [...groups[f.kind].entries()].sort((a, b) => b[1].rows.length - a[1].rows.length);
@@ -1478,8 +1620,21 @@ async function showBulkReviewSheet(duplicates = 0) {
   };
 
   const groupsHtml = GROUP_FIELDS.map(groupSectionHtml).join('');
+  const contactsHtml = contacts.size ? `<div class="resolve-section" data-kind="contacts">
+      <h3 class="resolve-section-title">Sales Officer phone <span>${contacts.size} contact${contacts.size !== 1 ? 's' : ''} to resolve</span></h3>
+      ${[...contacts.entries()].map(([key, g]) => `
+        <div class="contact-resolve-row" data-contact-key="${esc(key)}">
+          <div class="resolve-row-main"><div class="resolve-row-label">${esc(g.name)}</div></div>
+          <span class="resolve-row-count">${g.rows.length} lead${g.rows.length !== 1 ? 's' : ''}</span>
+          <div class="contact-resolve-action">
+            <input class="contact-phone-input" inputmode="numeric" maxlength="10" placeholder="10-digit phone">
+            <button type="button" class="btn contact-resolve-btn">Resolve</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>` : '';
   const readyCount = () => bulkValid.length + bulkInvalid.filter(isRowReady).length;
-  const issueCount = () => GROUP_FIELDS.reduce((n, f) => n + groups[f.kind].size, 0);
+  const issueCount = () => GROUP_FIELDS.reduce((n, f) => n + groups[f.kind].size, 0) + contacts.size;
 
   const sheet = el(`<div class="sheet"><div>
     <div class="close bulk-toolbar">
@@ -1494,16 +1649,17 @@ async function showBulkReviewSheet(duplicates = 0) {
     <div class="card">
       <h2>Bulk Upload Review</h2>
       <p style="color:var(--muted);font-size:13px;margin:0">${bulkValid.length + bulkInvalid.length} lead${bulkValid.length + bulkInvalid.length !== 1 ? 's' : ''} parsed.
-        ${groupsHtml ? 'Resolve each unrecognized value below once — every matching row updates automatically.' : 'Everything matched existing branches, sources, models and activities.'}</p>
+        ${groupsHtml || contactsHtml ? 'Resolve each issue below once — every matching row updates automatically.' : 'Everything matched existing branches, sources, models and activities.'}</p>
     </div>
 
-    ${bulkValid.length ? `<div class="card">
+    ${bulkValid.length + bulkInvalid.length ? `<div class="card">
       <h2>Assign to Call Executives</h2>
       <p style="color:var(--muted);font-size:13px">Select one or more Call Executives. Ready leads will be distributed across the shared pool.</p>
       ${assignHtml}
     </div>` : ''}
 
     ${groupsHtml ? `<div class="card" id="resolveGroups">${groupsHtml}</div>` : ''}
+    ${contactsHtml ? `<div class="card" id="resolveContacts">${contactsHtml}</div>` : ''}
 
     ${blocked.length ? `<div class="card">
       <details class="bulk-blocked">
@@ -1529,8 +1685,30 @@ async function showBulkReviewSheet(duplicates = 0) {
     const ready = sheet.querySelector('#bulkReadyStat');
     if (ready) ready.textContent = readyCount();
     const issue = sheet.querySelector('#bulkIssueStat');
-    if (issue) issue.textContent = sheet.querySelectorAll('.resolve-row').length;
+    if (issue) issue.textContent = issueCount();
   };
+
+  sheet.querySelectorAll('.contact-resolve-row').forEach(row => {
+    const key = row.dataset.contactKey;
+    const group = contacts.get(key);
+    const input = row.querySelector('.contact-phone-input');
+    const button = row.querySelector('.contact-resolve-btn');
+    button.onclick = async () => {
+      const phone = input.value.replace(/\D/g, '').slice(-10);
+      if (phone.length !== 10) { input.focus(); return; }
+      button.disabled = true;
+      try {
+        const contact = await api('/sales-officer-contacts/resolve', 'POST', { name: group.name, phone });
+        for (const l of group.rows) { l.so_name = contact.display_name; l.so_mobile = contact.phone; l.err_so_mobile = false; }
+        row.remove();
+        contacts.delete(key);
+        refreshStats();
+      } catch (err) {
+        say(err.message, 'err');
+        button.disabled = false;
+      }
+    };
+  });
 
   sheet.querySelectorAll('.resolve-row').forEach(row => {
     const kind = row.dataset.kind;
@@ -1644,6 +1822,7 @@ async function openLead(id) {
       <div class="kv"><b>Model</b><span>${esc(l.model || '—')}</span></div>
       <div class="kv"><b>Activity</b><span>${esc(l.activity || '—')}</span></div>
       <div class="kv"><b>Original Sales Officer</b><span>${esc(l.original_so_name || 'Not provided')}</span></div>
+      <div class="kv"><b>Sales Officer phone</b><span class="lead-contact-phone">${l.original_so_mobile ? `<a href="tel:${esc(l.original_so_mobile)}">${esc(l.original_so_mobile)}</a><button type="button" class="copy-contact" data-phone="${esc(l.original_so_mobile)}">Copy</button>` : 'Not provided'}</span></div>
       <div class="kv"><b>Assigned Call Executive</b><span>${esc(l.officer || 'Unassigned')}</span></div>
     </div>
 
@@ -1731,6 +1910,9 @@ async function openLead(id) {
   const close = () => sheet.remove();
   sheet.onclick = (e) => { if (e.target === sheet) close(); };
   sheet.querySelector('#x').onclick = close;
+  sheet.querySelectorAll('.copy-contact').forEach(button => {
+    button.onclick = () => copyContactPhone(button.dataset.phone, button);
+  });
 
   const closeFlagBtn = sheet.querySelector('#closeFlagBtn');
   if (closeFlagBtn) {

@@ -4,6 +4,13 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pool, get, all, run, ins, hash, verify, initDb } from './db.js';
 import branchCodes from './demo-data/branch-codes.json' with { type: 'json' };
+import {
+  listOfficerContacts,
+  normalizeOfficerName,
+  resolveOfficerContacts,
+  saveOfficerContact,
+  updateOfficerContact,
+} from './sales-officer-contacts.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -168,6 +175,31 @@ app.delete('/api/masters/:type/:id', auth('admin'), async (req, res, next) => {
     res.json({ ok: true });
   } catch (e) {
     if (e.code === '23503') return bad(res, 'Already in use — cannot delete');
+    next(e);
+  }
+});
+
+app.get('/api/sales-officer-contacts', auth('admin'), async (req, res, next) => {
+  try {
+    res.json({ contacts: await listOfficerContacts(req.query.q) });
+  } catch (e) { next(e); }
+});
+
+app.post('/api/sales-officer-contacts/resolve', auth('admin'), async (req, res, next) => {
+  try {
+    const contact = await saveOfficerContact(req.body?.name, req.body?.phone);
+    res.json(contact);
+  } catch (e) {
+    if (e.message === 'Sales Officer name is required' || e.message === 'Phone must contain 10 digits') return bad(res, e.message);
+    next(e);
+  }
+});
+
+app.patch('/api/sales-officer-contacts/:id', auth('admin'), async (req, res, next) => {
+  try {
+    res.json(await updateOfficerContact(req.params.id, req.body?.phone));
+  } catch (e) {
+    if (e.message === 'Phone must contain 10 digits' || e.message === 'Sales Officer contact not found') return bad(res, e.message);
     next(e);
   }
 });
@@ -348,6 +380,16 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
     const invalid = [];
     let duplicates = 0;
 
+    const workbookPhones = new Map();
+    for (const r of rows) {
+      const key = normalizeOfficerName(r.so_name);
+      if (key && r.so_mobile) workbookPhones.set(key, r.so_mobile);
+    }
+    const officerContacts = await resolveOfficerContacts(
+      rows.map(r => r.so_name).filter(Boolean),
+      workbookPhones,
+    );
+
     for (const r of rows) {
       const rawMobile = String(r.mobile || '').trim();
       const m = rawMobile.replace(/\D/g, '').slice(-10);
@@ -368,6 +410,16 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
       const sName = String(r.source || '').trim();
       const mName = String(r.model || '').trim();
       const aName = String(r.activity || '').trim();
+      const soName = String(r.so_name || '').trim();
+      const soKey = normalizeOfficerName(soName);
+      const contact = officerContacts.get(soKey);
+      if (contact) {
+        r.so_name = contact.name;
+        r.so_mobile = contact.phone;
+      } else if (r.so_mobile) {
+        r.so_mobile = String(r.so_mobile).replace(/\D/g, '').slice(-10);
+        if (r.so_mobile.length !== 10) r.so_mobile = null;
+      }
       
       const bId = bMap.get(bName.toLowerCase());
       const sId = sMap.get(sName.toLowerCase());
@@ -386,10 +438,12 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
         err_source: !!sName && !sId,
         err_model: !!mName && !mId,
         err_activity: !!aName && !aId,
-        err_missing: !bName || !sName || !r.customer_name
+        err_missing: !bName || !sName || !r.customer_name,
+        err_so_name: !!r.requires_so_contact && !soName,
+        err_so_mobile: !!r.requires_so_contact && !!soName && !r.so_mobile,
       };
 
-      if (mapped.err_branch || mapped.err_source || mapped.err_model || mapped.err_activity || mapped.err_missing) {
+      if (mapped.err_branch || mapped.err_source || mapped.err_model || mapped.err_activity || mapped.err_missing || mapped.err_so_name || mapped.err_so_mobile) {
         invalid.push(mapped);
       } else {
         valid.push(mapped);

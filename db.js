@@ -112,6 +112,15 @@ const DDL = [
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS original_so_mobile TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_leads_original_so ON leads(original_so_name, branch_id)`,
   `CREATE INDEX IF NOT EXISTS idx_leads_call_guy ON leads(assigned_to, status, next_date)`,
+  `CREATE TABLE IF NOT EXISTS sales_officer_contacts (
+    id           SERIAL PRIMARY KEY,
+    name_key     TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    phone        TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+    updated_at   TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_sales_officer_contacts_name ON sales_officer_contacts(name_key)`,
 ];
 
 export async function initDb() {

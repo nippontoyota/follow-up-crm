@@ -23,7 +23,7 @@ Data lives in PostgreSQL. `.secret` holds the cookie signing key — keep it out
 
 ## Roles
 
-**Admin** — creates users and manages the master lists: Branches, Sources, Activities, and Model names. In the local call-center demo, Admin imports leads and distributes them among five Call Guys.
+**Admin** — creates users and manages the master lists: Branches, Sources, Activities, Model names, and Sales Officer Contacts. In the local call-center demo, Admin imports leads and distributes them among five Call Guys.
 
 **Marketing** — legacy lead-entry role retained for compatibility.
 
@@ -82,3 +82,15 @@ All demo accounts use the password `demo123`:
 - `sales-manager-thiruvalla`
 
 The upload workbook contains `Name`, `Mobile`, `Source`, `Branch`, `Location`, `Model`, `SO Name`, `SO Mobile`, and `Status`. The imported Sales Officer is reporting data. The Call Guys are the platform users who receive and process the leads.
+
+## Lead Assignment workbook
+
+The Admin bulk uploader also accepts the Lead Assignment report format. It detects the report header row, keeps only rows whose `Lead Quality` is Hot, Warm, or Cold, maps `Dealership` codes to CRM branches, uses `GEM` as the Sales Officer, and stores `Quality Type` as lead remarks. `TL`, `Lead Stage`, report dates, and `District` are ignored for this format.
+
+For Sales Officer phones, configure the payslip portal PostgreSQL connection in the server environment without committing credentials:
+
+```dotenv
+PAYSLIP_DATABASE_URL=postgresql://...
+```
+
+The uploader uses the current payslip employee phone first, then a saved Sales Officer contact mapping, then any phone supplied by the workbook. If no phone is available, the Admin can resolve the Sales Officer once in the upload review; the saved mapping is reused for future uploads. Admins can edit saved mappings in Lists → Sales Officer Contacts. Existing leads retain their stored Sales Officer phone snapshot after a mapping edit.
