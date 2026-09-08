@@ -1601,9 +1601,11 @@ function buildInvalidGroups(rows) {
   const groups = {};
   for (const f of GROUP_FIELDS) groups[f.kind] = new Map();
   const blocked = [];
+  const noSalesOfficer = [];
   const contacts = new Map();
   for (const l of rows) {
-    if (l.err_missing || l.err_so_name) blocked.push(l);
+    if (l.err_missing) blocked.push(l);
+    if (l.warning_no_so) noSalesOfficer.push(l);
     if (l.err_so_mobile && l.so_name) {
       const key = contactGroupKey(l.so_name, l.branch || l.original_branch);
       if (!contacts.has(key)) contacts.set(key, { name: l.so_name, branch: l.branch || l.original_branch || 'Unknown branch', rows: [] });
@@ -1617,7 +1619,7 @@ function buildInvalidGroups(rows) {
       groups[f.kind].get(value).rows.push(l);
     }
   }
-  return { groups, blocked, contacts };
+  return { groups, blocked, contacts, noSalesOfficer };
 }
 
 function missingFieldNames(l) {
@@ -1625,7 +1627,6 @@ function missingFieldNames(l) {
   if (!l.branch) out.push('Branch');
   if (!l.source) out.push('Source');
   if (!l.customer_name) out.push('Name');
-  if (l.err_so_name) out.push('Sales Officer');
   return out.join(', ') || 'Required data';
 }
 
@@ -1644,7 +1645,7 @@ async function showBulkReviewSheet(duplicates = 0) {
       </label>`).join('')}
     </div>`;
 
-  const { groups, blocked, contacts } = buildInvalidGroups(bulkInvalid);
+  const { groups, blocked, contacts, noSalesOfficer } = buildInvalidGroups(bulkInvalid);
 
   const groupSectionHtml = f => {
     const entries = [...groups[f.kind].entries()].sort((a, b) => b[1].rows.length - a[1].rows.length);
@@ -1697,6 +1698,7 @@ async function showBulkReviewSheet(duplicates = 0) {
       <h2>Bulk Upload Review</h2>
       <p style="color:var(--muted);font-size:13px;margin:0">${bulkValid.length + bulkInvalid.length} lead${bulkValid.length + bulkInvalid.length !== 1 ? 's' : ''} parsed.
         ${groupsHtml || contactsHtml ? 'Resolve each issue below once — every matching row updates automatically.' : 'Everything matched existing branches, sources, models and activities.'}</p>
+      ${noSalesOfficer.length ? `<p class="bulk-no-so-note">${noSalesOfficer.length} lead${noSalesOfficer.length !== 1 ? 's have' : ' has'} no Sales Officer name attached — they will be imported without one.</p>` : ''}
     </div>
 
     ${bulkValid.length + bulkInvalid.length ? `<div class="card">
@@ -1714,6 +1716,16 @@ async function showBulkReviewSheet(duplicates = 0) {
         <div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Customer</th><th>Mobile</th><th>Missing</th></tr></thead>
           <tbody>${blocked.map(l => `<tr><td>${esc(l.customer_name || '—')}</td><td>${esc(l.mobile || '—')}</td><td>${esc(missingFieldNames(l))}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </details>
+    </div>` : ''}
+
+    ${noSalesOfficer.length ? `<div class="card">
+      <details class="bulk-no-so">
+        <summary>${noSalesOfficer.length} lead${noSalesOfficer.length !== 1 ? 's have' : ' has'} no Sales Officer name attached — will be imported without one</summary>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Customer</th><th>Mobile</th><th>Sales Officer</th></tr></thead>
+          <tbody>${noSalesOfficer.map(l => `<tr><td>${esc(l.customer_name || '—')}</td><td>${esc(l.mobile || '—')}</td><td>Not attached</td></tr>`).join('')}</tbody>
         </table></div>
       </details>
     </div>` : ''}

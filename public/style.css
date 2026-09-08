@@ -938,3 +938,12 @@ input, select, textarea {
   0% { transform: translateX(-140%); }
   100% { transform: translateX(320%); }
 }
+
+.bulk-no-so-note {
+  color: #9a6700;
+  background: #fff8df;
+  border: 1px solid #f2d58a;
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin: 12px 0 0;
+}

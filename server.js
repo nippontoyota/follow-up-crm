@@ -454,7 +454,8 @@ app.post('/api/leads/bulk-validate', auth('admin'), async (req, res, next) => {
         err_model: !!mName && !mId,
         err_activity: !!aName && !aId,
         err_missing: !bName || !sName || !r.customer_name,
-        err_so_name: !!r.requires_so_contact && !soName,
+        err_so_name: false,
+        warning_no_so: !!r.requires_so_contact && !soName,
         err_so_mobile: !!r.requires_so_contact && !!soName && !r.so_mobile,
       };
 
