@@ -489,7 +489,7 @@ async function salesOfficerContactsView() {
       <div class="mst-rows" id="mstRows">${contacts.length ? contacts.map(c => `
         <div class="mst-row soc-contact-row" data-search="${esc(`${c.display_name} ${c.phone}`.toLowerCase())}">
           <div class="soc-contact-copy"><b>${esc(c.display_name)}</b><span>${esc(c.phone)} · updated ${esc(displayDateTime(c.updated_at || '—'))}</span></div>
-          <button class="mst-edit" data-id="${c.id}" data-name="${esc(c.display_name)}" data-phone="${esc(c.phone)}">Edit</button>
+          <div class="soc-contact-actions"><button class="mst-edit" data-id="${c.id}" data-name="${esc(c.display_name)}" data-phone="${esc(c.phone)}">Edit</button><button class="mst-remove" data-id="${c.id}" data-name="${esc(c.display_name)}">Remove</button></div>
         </div>`).join('') : '<div class="empty">No Sales Officer contacts saved yet.</div>'}</div>
     </div>
     <div id="msg"></div>`;
@@ -518,6 +518,16 @@ async function salesOfficerContactsView() {
       };
       input.focus();
       input.select();
+    };
+  });
+
+  view.querySelectorAll('.mst-remove').forEach(button => {
+    button.onclick = async () => {
+      if (!confirm(`Remove saved contact for ${button.dataset.name}?`)) return;
+      try {
+        await api(`/sales-officer-contacts/${button.dataset.id}`, 'DELETE');
+        salesOfficerContactsView();
+      } catch (err) { say(err.message, 'err'); }
     };
   });
 }

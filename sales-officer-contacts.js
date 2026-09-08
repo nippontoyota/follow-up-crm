@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { all, get } from './db.js';
+import { all, get, run } from './db.js';
 
 const { Pool } = pg;
 let payslipPool;
@@ -155,4 +155,12 @@ export async function updateOfficerContact(id, phone) {
   );
   if (!row) throw new Error('Sales Officer contact not found');
   return row;
+}
+
+export async function deleteOfficerContact(id) {
+  const result = await run(
+    `DELETE FROM sales_officer_contacts WHERE id = ?`,
+    Number(id),
+  );
+  if (!result.rowCount) throw new Error('Sales Officer contact not found');
 }

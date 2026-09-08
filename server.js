@@ -10,6 +10,7 @@ import {
   resolveOfficerContacts,
   saveOfficerContact,
   updateOfficerContact,
+  deleteOfficerContact,
 } from './sales-officer-contacts.js';
 
 const PORT = process.env.PORT || 3000;
@@ -200,6 +201,16 @@ app.patch('/api/sales-officer-contacts/:id', auth('admin'), async (req, res, nex
     res.json(await updateOfficerContact(req.params.id, req.body?.phone));
   } catch (e) {
     if (e.message === 'Phone must contain 10 digits' || e.message === 'Sales Officer contact not found') return bad(res, e.message);
+    next(e);
+  }
+});
+
+app.delete('/api/sales-officer-contacts/:id', auth('admin'), async (req, res, next) => {
+  try {
+    await deleteOfficerContact(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.message === 'Sales Officer contact not found') return bad(res, e.message);
     next(e);
   }
 });
