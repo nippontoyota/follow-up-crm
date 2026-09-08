@@ -62,6 +62,10 @@ function emptyPayslipContacts() {
   return { exact: new Map(), byName: new Map() };
 }
 
+function payslipEntryName(entry) {
+  return entry?.name ?? entry?.displayName ?? '';
+}
+
 function indexPayslipRows(rows, requestedKeys, requestedNames) {
   const exact = new Map();
   const byName = new Map();
@@ -83,8 +87,8 @@ async function readPayslipContactsFromRest(entries) {
   const config = getPayslipRestConfig();
   if (!config || !entries.length) return emptyPayslipContacts();
 
-  const requestedKeys = new Set(entries.map(entry => officerContactKey(entry.name, entry.branch)));
-  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(entry.name)));
+  const requestedKeys = new Set(entries.map(entry => officerContactKey(payslipEntryName(entry), entry.branch)));
+  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(payslipEntryName(entry))));
   const rows = [];
   const pageSize = 1000;
   const timeoutMs = 8000;
@@ -115,9 +119,7 @@ async function readPayslipContactsFromRest(entries) {
       rows.push(...page);
       if (page.length < pageSize) break;
     }
-    const contacts = indexPayslipRows(rows, requestedKeys, requestedNames);
-    console.log(`Payslip Sales Officer REST lookup: employees=${rows.length} requested_names=${requestedNames.size} matched_names=${contacts.byName.size}`);
-    return contacts;
+    return indexPayslipRows(rows, requestedKeys, requestedNames);
   } catch (err) {
     console.warn('Payslip Sales Officer REST lookup unavailable; using saved/workbook contacts.', err.message);
     return emptyPayslipContacts();
@@ -128,8 +130,8 @@ export async function readPayslipContacts(entries) {
   const pool = getPayslipPool();
   if (!entries.length) return emptyPayslipContacts();
 
-  const requestedKeys = new Set(entries.map(entry => officerContactKey(entry.name, entry.branch)));
-  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(entry.name)));
+  const requestedKeys = new Set(entries.map(entry => officerContactKey(payslipEntryName(entry), entry.branch)));
+  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(payslipEntryName(entry))));
 
   if (pool) {
     try {
