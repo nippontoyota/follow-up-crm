@@ -1498,8 +1498,8 @@ async function showBulkReviewSheet(duplicates = 0) {
     </div>
 
     ${bulkValid.length ? `<div class="card">
-      <h2>Assign to five Call Executives</h2>
-      <p style="color:var(--muted);font-size:13px">Ready leads will be distributed across the shared Call Executive pool.</p>
+      <h2>Assign to Call Executives</h2>
+      <p style="color:var(--muted);font-size:13px">Select one or more Call Executives. Ready leads will be distributed across the shared pool.</p>
       ${assignHtml}
     </div>` : ''}
 
@@ -1594,9 +1594,9 @@ async function showBulkReviewSheet(duplicates = 0) {
 
   sheet.querySelector('#confirmBulk').onclick = async (e) => {
     const selectedCallGuys = [...sheet.querySelectorAll('.assign-cb:checked')].map(cb => Number(cb.value));
-    if (selectedCallGuys.length !== 5) {
+    if (!selectedCallGuys.length) {
       const msgEl = sheet.querySelector('#msg');
-      if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'Select exactly five Call Executives.'; }
+      if (msgEl) { msgEl.className = 'msg err'; msgEl.textContent = 'Select at least one Call Executive.'; }
       return;
     }
 

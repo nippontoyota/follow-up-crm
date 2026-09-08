@@ -32,7 +32,7 @@ const [branches, callGuys] = await Promise.all([
   all('SELECT id, name FROM branches'),
   all("SELECT id FROM users WHERE role = 'call_guy' AND active = 1 ORDER BY username"),
 ]);
-if (callGuys.length !== 5) throw new Error(`Expected exactly five active Call Guys, found ${callGuys.length}`);
+if (!callGuys.length) throw new Error('Expected at least one active Call Guy');
 const branchMap = new Map(branches.flatMap(b => [[b.name.toLowerCase(), b.id], [b.name.replace(/^nippon\s+toyota\s*-\s*/i, '').toLowerCase(), b.id]]));
 
 const sourceNames = new Set();
@@ -76,5 +76,5 @@ for (let start = 0; start < rows.length; start += 400) {
   const placeholders = batch.map((_, i) => `(${Array.from({ length: 12 }, (_, j) => '$' + (i * 12 + j + 1)).join(',')})`).join(',');
   await pool.query(`INSERT INTO leads(customer_name,mobile,source_id,branch_id,location,remarks,created_by,assigned_to,model_id,activity_id,original_so_name,original_so_mobile) VALUES ${placeholders}`, values);
 }
-console.log(`Seeded ${rows.length} workbook leads from ${input} across five Call Guys`);
+console.log(`Seeded ${rows.length} workbook leads from ${input} across ${callGuys.length} Call Guys`);
 await pool.end();
