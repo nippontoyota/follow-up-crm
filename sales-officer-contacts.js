@@ -115,7 +115,9 @@ async function readPayslipContactsFromRest(entries) {
       rows.push(...page);
       if (page.length < pageSize) break;
     }
-    return indexPayslipRows(rows, requestedKeys, requestedNames);
+    const contacts = indexPayslipRows(rows, requestedKeys, requestedNames);
+    console.log(`Payslip Sales Officer REST lookup: employees=${rows.length} requested_names=${requestedNames.size} matched_names=${contacts.byName.size}`);
+    return contacts;
   } catch (err) {
     console.warn('Payslip Sales Officer REST lookup unavailable; using saved/workbook contacts.', err.message);
     return emptyPayslipContacts();
