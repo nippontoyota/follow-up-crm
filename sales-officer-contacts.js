@@ -3,6 +3,8 @@ import { all, get, run } from './db.js';
 
 const { Pool } = pg;
 let payslipPool;
+let payslipRestConfigChecked = false;
+let payslipRestConfig;
 
 export function normalizeOfficerName(value) {
   return String(value || '')
@@ -47,39 +49,107 @@ function getPayslipPool() {
   return payslipPool;
 }
 
-async function readPayslipContacts(entries) {
+function getPayslipRestConfig() {
+  if (payslipRestConfigChecked) return payslipRestConfig;
+  payslipRestConfigChecked = true;
+  const url = String(process.env.PAYSLIP_SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const key = String(process.env.PAYSLIP_SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  payslipRestConfig = url && key ? { url, key } : null;
+  return payslipRestConfig;
+}
+
+function emptyPayslipContacts() {
+  return { exact: new Map(), byName: new Map() };
+}
+
+function indexPayslipRows(rows, requestedKeys, requestedNames) {
+  const exact = new Map();
+  const byName = new Map();
+  for (const row of rows) {
+    const nameKey = normalizeOfficerName(row.name);
+    if (!requestedNames.has(nameKey)) continue;
+    const phone = normalizeOfficerPhone(row.mobile_number);
+    if (!phone) continue;
+    const contact = { display_name: String(row.name).trim(), phone, branch: String(row.branch || '').trim() };
+    if (!byName.has(nameKey)) byName.set(nameKey, []);
+    byName.get(nameKey).push(contact);
+    const key = officerContactKey(row.name, row.branch);
+    if (requestedKeys.has(key) && !exact.has(key)) exact.set(key, contact);
+  }
+  return { exact, byName };
+}
+
+async function readPayslipContactsFromRest(entries) {
+  const config = getPayslipRestConfig();
+  if (!config || !entries.length) return emptyPayslipContacts();
+
+  const requestedKeys = new Set(entries.map(entry => officerContactKey(entry.name, entry.branch)));
+  const requestedNames = new Set(entries.map(entry => normalizeOfficerName(entry.name)));
+  const rows = [];
+  const pageSize = 1000;
+  const timeoutMs = 8000;
+
+  try {
+    for (let offset = 0; offset < 50000; offset += pageSize) {
+      const url = new URL(`${config.url}/rest/v1/employees`);
+      url.searchParams.set('select', 'name,mobile_number,branch');
+      url.searchParams.set('limit', String(pageSize));
+      url.searchParams.set('offset', String(offset));
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      let response;
+      try {
+        response = await fetch(url, {
+          headers: {
+            apikey: config.key,
+            Authorization: `Bearer ${config.key}`,
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const page = await response.json();
+      if (!Array.isArray(page)) throw new Error('unexpected response');
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return indexPayslipRows(rows, requestedKeys, requestedNames);
+  } catch (err) {
+    console.warn('Payslip Sales Officer REST lookup unavailable; using saved/workbook contacts.', err.message);
+    return emptyPayslipContacts();
+  }
+}
+
+export async function readPayslipContacts(entries) {
   const pool = getPayslipPool();
-  if (!pool || !entries.length) return { exact: new Map(), byName: new Map() };
+  if (!entries.length) return emptyPayslipContacts();
 
   const requestedKeys = new Set(entries.map(entry => officerContactKey(entry.name, entry.branch)));
   const requestedNames = new Set(entries.map(entry => normalizeOfficerName(entry.name)));
 
-  try {
-    const result = await pool.query(`
-      SELECT name, mobile_number, branch
-      FROM employees
-      WHERE name IS NOT NULL AND mobile_number IS NOT NULL AND BTRIM(mobile_number) <> ''
-    `);
-    const exact = new Map();
-    const byName = new Map();
-    for (const row of result.rows) {
-      const nameKey = normalizeOfficerName(row.name);
-      if (!requestedNames.has(nameKey)) continue;
-      const phone = normalizeOfficerPhone(row.mobile_number);
-      if (!phone) continue;
-      const contact = { display_name: String(row.name).trim(), phone, branch: String(row.branch || '').trim() };
-      if (!byName.has(nameKey)) byName.set(nameKey, []);
-      byName.get(nameKey).push(contact);
-      const key = officerContactKey(row.name, row.branch);
-      if (requestedKeys.has(key) && !exact.has(key)) {
-        exact.set(key, contact);
-      }
+  if (pool) {
+    try {
+      const result = await pool.query(`
+        SELECT name, mobile_number, branch
+        FROM employees
+        WHERE name IS NOT NULL AND mobile_number IS NOT NULL AND BTRIM(mobile_number) <> ''
+      `);
+      const contacts = indexPayslipRows(result.rows, requestedKeys, requestedNames);
+      if (contacts.exact.size || contacts.byName.size) return contacts;
+    } catch (err) {
+      console.warn('Payslip Sales Officer database lookup unavailable; trying REST lookup.', err.message);
     }
-    return { exact, byName };
-  } catch (err) {
-    console.warn('Payslip Sales Officer lookup unavailable; using saved/workbook contacts.', err.message);
-    return { exact: new Map(), byName: new Map() };
   }
+
+  const restContacts = await readPayslipContactsFromRest(entries);
+  if (restContacts.exact.size || restContacts.byName.size) return restContacts;
+
+  if (!pool && !getPayslipRestConfig()) {
+    console.warn('Payslip Sales Officer lookup is not configured; using saved/workbook contacts.');
+  }
+  return emptyPayslipContacts();
 }
 
 async function saveResolvedContact(displayName, phone) {
