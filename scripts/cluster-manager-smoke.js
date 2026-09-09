@@ -63,13 +63,28 @@ for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
   assert.equal(me.data.role, 'cluster_manager');
 
   const expectedIds = manager.branches.flatMap(name => branchIds.has(name) ? [branchIds.get(name)] : []);
+  assert.deepEqual((me.data.cluster_scope?.assigned || []).map(branch => branch.id), expectedIds, `${manager.username} /me scope mismatch`);
+  assert.deepEqual(me.data.cluster_scope?.missing || [], manager.branches.filter(name => !branchIds.has(name)), `${manager.username} missing scope mismatch`);
   const analytics = await api('/api/sales-manager/analytics', cookie);
   assert.equal(analytics.status, 200, `${manager.username} analytics failed`);
   assert.deepEqual(analytics.data.branchIds, expectedIds, `${manager.username} scope mismatch`);
+  assert.equal(Object.prototype.hasOwnProperty.call(analytics.data, 'flagged'), false, `${manager.username} must not receive flag data`);
 
   const override = await api('/api/sales-manager/analytics?branch_id=1', cookie);
   assert.equal(override.status, 200, `${manager.username} override request failed`);
   assert.deepEqual(override.data.branchIds, expectedIds, `${manager.username} branch override escaped scope`);
+
+  const scopedLead = expectedIds.length
+    ? await get('SELECT id FROM leads WHERE branch_id = ANY(?) ORDER BY id LIMIT 1', expectedIds)
+    : null;
+  if (scopedLead) {
+    const lead = await api(`/api/leads/${scopedLead.id}`, cookie);
+    assert.equal(lead.status, 200, `${manager.username} lead detail failed`);
+    assert.equal(Object.prototype.hasOwnProperty.call(lead.data, 'is_flagged'), false, `${manager.username} must not see flag state`);
+    assert.equal(Object.prototype.hasOwnProperty.call(lead.data, 'flag_remarks'), false, `${manager.username} must not see flag remarks`);
+    const closeAttempt = await api(`/api/leads/${scopedLead.id}/close-flag`, cookie, 'POST', { remarks: 'must be rejected' });
+    assert.equal(closeAttempt.status, 403, `${manager.username} must not close flags`);
+  }
 
   if (manager.legacyUsername) {
     const oldLogin = await fetch(`${base}/api/login`, {
@@ -84,6 +99,15 @@ const users = await api('/api/users?limit=100', admin);
 assert.equal(users.status, 200);
 const clusterRows = (users.data.users || []).filter(user => user.role === 'cluster_manager');
 assert.deepEqual(clusterRows.map(user => user.username).sort(), CLUSTER_MANAGER_DEFINITIONS.map(m => m.username).sort());
+for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
+  const row = clusterRows.find(user => user.username === manager.username);
+  assert.deepEqual(row.cluster_scope?.configured || [], manager.branches, `${manager.username} Admin scope visibility mismatch`);
+}
+
+const appSource = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+const clusterTabLine = appSource.split('\n').find(line => line.includes("cluster_manager: [['salesPerf'")) || '';
+assert.match(clusterTabLine, /cluster_manager:\s*\[\['salesPerf', 'Sales Officers'.*'leadAnalysis'/, 'Cluster manager tabs must remain read-only');
+assert.equal(clusterTabLine.includes("'flagged'"), false, 'Cluster manager must not have a Flagged Leads tab');
 
 const createAttempt = await api('/api/users', admin, 'POST', {
   name: 'Should Not Exist', username: 'should-not-exist', password: 'NeverCreated#2026!', role: 'cluster_manager', branch_id: null,

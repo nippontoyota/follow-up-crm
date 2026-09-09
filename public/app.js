@@ -193,12 +193,14 @@ function loginView() {
         <form id="lf">
           <div class="input-line">
             <span class="ico">✉</span>
+            <label class="sr-only" for="u">Username</label>
             <input id="u" placeholder="Username" autocapitalize="none" autocomplete="username">
           </div>
           <div class="input-line">
             <span class="ico">🔒</span>
+            <label class="sr-only" for="p">Password</label>
             <input id="p" type="password" placeholder="Password" autocomplete="current-password">
-            <button type="button" class="eye" id="togglePw">👁</button>
+            <button type="button" class="eye" id="togglePw" aria-label="Show password" aria-pressed="false">👁</button>
           </div>
           <button class="btn-login" type="submit">Sign in</button>
           <div id="msg" style="margin-top:16px;font-size:14px;color:#ef4444;text-align:center;min-height:20px"></div>
@@ -224,7 +226,10 @@ function loginView() {
 
   document.getElementById('togglePw').onclick = () => {
     const p = document.getElementById('p');
-    p.type = p.type === 'password' ? 'text' : 'password';
+    const show = p.type === 'password';
+    p.type = show ? 'text' : 'password';
+    document.getElementById('togglePw').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    document.getElementById('togglePw').setAttribute('aria-pressed', String(show));
   };
   document.getElementById('lf').onsubmit = async (e) => {
     e.preventDefault();
@@ -252,8 +257,30 @@ const TABS = {
   manager: [['dashboard', 'Dashboard', '📊']],
   call_center_manager: [['callCenter', 'Call Center', '☎️']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
-  cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
+  cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈']],
 };
+
+function branchLabel(name) {
+  return String(name || '').replace(/^Nippon Toyota\s*-\s*/i, '');
+}
+
+function clusterAssignedBranches() {
+  return (me?.cluster_scope?.assigned || []).map(branch => ({ ...branch, label: branchLabel(branch.name) }));
+}
+
+function clusterScopeLabel() {
+  return clusterAssignedBranches().map(branch => branch.label).join(' · ') || 'No branches assigned';
+}
+
+function clusterScopeNotice() {
+  if (me?.role !== 'cluster_manager') return '';
+  const assigned = clusterAssignedBranches();
+  const missing = (me.cluster_scope?.missing || []).map(branchLabel);
+  return `<div class="scope-notice" role="status">
+    <b>Assigned branches</b><span>${esc(assigned.map(branch => branch.label).join(' · ') || 'None')}</span>
+    ${missing.length ? `<span class="scope-warning">⚠️ Missing from branch master: ${esc(missing.join(' · '))}. Contact Admin.</span>` : ''}
+  </div>`;
+}
 
 async function boot() {
   try { me = await api('/me'); } catch { return loginView(); }
@@ -263,6 +290,7 @@ async function boot() {
   nav.classList.remove('hide');
   document.getElementById('hdrUser').textContent = roleLabel[me.role]
     ? `${me.name} · ${roleLabel[me.role]}` : '';
+  document.getElementById('hdrScope').textContent = me.role === 'cluster_manager' ? `Scope: ${clusterScopeLabel()}` : '';
 
   nav.innerHTML = TABS[me.role]
     .map(([k, label, icon]) => `<button data-t="${k}"><b>${icon}</b><span class="lbl">${label}</span></button>`).join('') +
@@ -326,7 +354,8 @@ async function usersView() {
       ${pg}
       <div class="rows">${users.length ? users.map(u => `
         <div class="row">
-          <span><b>${esc(u.name)}</b><br><em>@${esc(u.username)} · ${esc(roleLabel[u.role] || u.role)}${u.branch ? ' · ' + esc(u.branch) : ''}${u.active ? '' : ' · disabled'}</em></span>
+          <span><b>${esc(u.name)}</b><br><em>@${esc(u.username)} · ${esc(roleLabel[u.role] || u.role)}${u.branch ? ' · ' + esc(u.branch) : ''}${u.active ? '' : ' · disabled'}</em>
+          ${u.cluster_scope ? `<span class="user-scope">Assigned: ${esc((u.cluster_scope.assigned || []).map(b => branchLabel(b.name)).join(' · ') || 'None')}</span>${u.cluster_scope.missing?.length ? `<span class="scope-warning">⚠️ Missing: ${esc(u.cluster_scope.missing.map(branchLabel).join(' · '))}</span>` : ''}` : ''}</span>
           ${u.role === 'cluster_manager' ? '<span class="pill">Fixed account</span>' : `<button data-id="${u.id}">${u.active ? 'Disable' : 'Enable'}</button>`}
         </div>`).join('') : '<div class="empty">No users on this page.</div>'}</div>
     </div>`;
@@ -723,7 +752,7 @@ async function openOutcomeLeads(callStatus, outcome, label) {
           <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
           <td>${esc(l.stage || '—')}</td>
         </tr>`).join('')}</tbody>
-      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+       </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
     card.querySelectorAll('.lead-row').forEach(row => {
       row.onclick = () => openLead(Number(row.dataset.id));
     });
@@ -753,7 +782,7 @@ async function openLostLeads(outcome, label) {
           <td>${l.fcount}</td>
           <td>${esc(l.stage || '—')}</td>
         </tr>`).join('')}</tbody>
-      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+       </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
     card.querySelectorAll('.lead-row').forEach(row => {
       row.onclick = () => openLead(Number(row.dataset.id));
     });
@@ -1206,11 +1235,13 @@ let salesStatusPage = 1;
 function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, page = 1) {
   const statusByOfficer = new Map();
   const observedStatuses = new Set();
+  const officerKey = (branch, officer) => `${branch || ''}|${officer}`;
   statusRows.forEach(row => {
     const officer = String(row.sales_officer || 'Unknown Sales Officer');
     const status = String(row.status || 'Unknown');
-    if (!statusByOfficer.has(officer)) statusByOfficer.set(officer, new Map());
-    statusByOfficer.get(officer).set(status, Number(row.count) || 0);
+    const key = officerKey(row.branch_id, officer);
+    if (!statusByOfficer.has(key)) statusByOfficer.set(key, new Map());
+    statusByOfficer.get(key).set(status, Number(row.count) || 0);
     observedStatuses.add(status);
   });
   const statuses = SO_STATUS_ORDER.filter(status => status !== 'Unknown' || observedStatuses.has(status))
@@ -1220,12 +1251,13 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
   const start = (salesStatusPage - 1) * SO_STATUS_PAGE_SIZE;
   const visibleOfficers = officers.slice(start, start + SO_STATUS_PAGE_SIZE);
   const statusHeader = statuses.map(status => `<th>${esc(status)}</th>`).join('');
-  const countCell = (officer, status, count) => count
-    ? `<button type="button" class="tbl-link so-status-link" data-officer="${esc(officer)}" data-status="${esc(status)}" title="View ${esc(status)} leads for ${esc(officer)}">${count}</button>`
+  const countCell = (officer, row, status, count) => count
+    ? `<button type="button" class="tbl-link so-status-link" data-branch-id="${row.branch_id || ''}" data-officer="${esc(officer)}" data-status="${esc(status)}" title="View ${esc(status)} leads for ${esc(officer)}">${count}</button>`
     : '<span class="tbl-zero">0</span>';
   const rows = visibleOfficers.map(officer => {
-    const counts = statusByOfficer.get(officer.sales_officer) || new Map();
-    return `<tr><td><b>${esc(officer.sales_officer)}</b></td><td>${officer.total}</td>${statuses.map(status => `<td>${countCell(officer.sales_officer, status, counts.get(status) || 0)}</td>`).join('')}</tr>`;
+    const counts = statusByOfficer.get(officerKey(officer.branch_id, officer.sales_officer)) || new Map();
+    const branch = me.role === 'cluster_manager' ? `<td>${esc(branchLabel(officer.branch || '—'))}</td>` : '';
+    return `<tr>${branch}<td><b>${esc(officer.sales_officer)}</b></td><td>${officer.total}</td>${statuses.map(status => `<td>${countCell(officer.sales_officer, officer, status, counts.get(status) || 0)}</td>`).join('')}</tr>`;
   }).join('');
 
   root.innerHTML = `<div class="card so-status-card">
@@ -1233,13 +1265,13 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
       <div><h2>Sales Officer-wise Lead Status</h2><p class="sop-pick-desc">Latest follow-up status by Sales Officer. Select a count to view those leads.</p></div>
     </div>
     ${officers.length ? `<div class="tbl-wrap"><table class="tbl so-status-table">
-      <thead><tr><th>Sales Officer</th><th>Total</th>${statusHeader}</tr></thead>
+       <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Sales Officer</th><th>Total</th>${statusHeader}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>${renderPager(salesStatusPage, pages, officers.length)}` : '<div class="empty">No Sales Officer status data found</div>'}
   </div>`;
 
   root.querySelectorAll('.so-status-link').forEach(button => {
-    button.onclick = () => openOfficerStatusLeads(branchId, button.dataset.officer, button.dataset.status);
+      button.onclick = () => openOfficerStatusLeads(button.dataset.branchId || branchId, button.dataset.officer, button.dataset.status);
   });
   bindPager(nextPage => renderSalesOfficerStatusTable(root, statusRows, officers, branchId, nextPage), root);
 }
@@ -1282,11 +1314,10 @@ async function salesPerformanceView() {
     }
 
     branchName = me.role === 'cluster_manager'
-      ? 'Assigned cluster'
+      ? clusterScopeLabel()
       : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     const d = await api(`/sales-manager/analytics${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
     const s = d.summary || {};
-    const flagged = d.flagged || [];
     const officers = d.bySalesOfficer || [];
 
     const sorters = {
@@ -1296,9 +1327,9 @@ async function salesPerformanceView() {
     const sorted = [...officers].sort(sorters[salesPerfSort] || sorters.total);
 
     const rowHtml = o => `
-      <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}">
+      <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}${o.branch ? ` in ${esc(branchLabel(o.branch))}` : ''}">
         <div class="sop-row-top">
-          <button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>
+          <span><button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>${me.role === 'cluster_manager' && o.branch ? `<span class="sop-row-branch">${esc(branchLabel(o.branch))}</span>` : ''}</span>
           <span class="sop-row-total">${o.total} lead${o.total !== 1 ? 's' : ''}</span>
         </div>
         <div class="sop-row-bar">${SO_BUCKETS.map(b => o[b.key] ? `<span class="sop-seg sop-seg-${b.key}" style="flex:${o[b.key]}" title="${esc(b.label)}: ${o[b.key]}"></span>` : '').join('')}</div>
@@ -1308,13 +1339,12 @@ async function salesPerformanceView() {
         </div>
       </div>`;
 
-    view.innerHTML = `${kpiRow([
+    view.innerHTML = `${clusterScopeNotice()}${kpiRow([
       { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
       { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
       { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
       { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
       { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
-      { num: flagged.length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" },
     ])}
     <div class="card sop-card">
       <div class="sop-head">
@@ -1373,13 +1403,14 @@ async function salesPerformanceView() {
         const pager = document.getElementById('sopPager');
         pager.innerHTML = renderPager(salesPerfPage, pages, filtered.length);
         view.querySelectorAll('#sopRows .sop-row').forEach(row => {
-          const openTotal = () => openOfficerLeads(branchId, row.dataset.officer, 'total');
+          const openTotal = () => openOfficerLeads(row.dataset.branchId || branchId, row.dataset.officer, 'total');
           row.onclick = openTotal;
           row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTotal(); } };
         });
         view.querySelectorAll('#sopRows .sop-pill').forEach(b => b.onclick = (e) => {
           e.stopPropagation();
-          openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket);
+          const row = b.closest('.sop-row');
+          openOfficerLeads(row?.dataset.branchId || branchId, b.dataset.officer, b.dataset.bucket);
         });
         bindPager(nextPage => { salesPerfPage = nextPage; renderRows(); }, pager);
       };
@@ -1425,7 +1456,7 @@ async function leadAnalysisView() {
     }
 
     branchName = me.role === 'cluster_manager'
-      ? 'Assigned cluster'
+      ? clusterScopeLabel()
       : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     const d = await api(`/sales-manager/lead-analysis${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
     const leadStatusCounts = d.leadStatusCounts || [];
@@ -1434,6 +1465,7 @@ async function leadAnalysisView() {
     const statusRows = d.bySalesOfficerStatus || [];
 
     view.innerHTML = `
+      ${clusterScopeNotice()}
       <div class="card">
         <div class="sop-head">
           <h2>Lead Analysis${branchName ? ` · ${esc(branchName)}` : ''}</h2>
@@ -1495,13 +1527,15 @@ async function openLeadAnalysisLeads(kind, status) {
 
   try {
     const query = new URLSearchParams({ branch_id: String(branchId), kind, value: label });
-    const leads = await api(`/sales-manager/lead-analysis/leads?${query}`);
+    const data = await api(`/sales-manager/lead-analysis/leads?${query}`);
+    const leads = data.leads || [];
     const card = sheet.querySelector('#laLeadsCard');
     const heading = kind === 'lost' ? `Lost · ${label}` : label;
-    card.innerHTML = `<h2>${esc(heading)} · ${leads.length}</h2>
-      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+     card.innerHTML = `<h2>${esc(heading)} · ${leads.length}</h2>
+       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
           <td>${esc(l.customer_name)}</td>
           <td>${esc(l.mobile)}</td>
           <td>${esc(l.sales_officer)}</td>
@@ -1509,7 +1543,7 @@ async function openLeadAnalysisLeads(kind, status) {
           <td>F${l.fcount}</td>
           <td>${esc(l.stage || '—')}</td>
         </tr>`).join('')}</tbody>
-      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+       </table></div>${data.hasMore ? `<p class="limit-note">Showing the first ${data.limit} leads for latency. Refine the analysis to narrow the result.</p>` : ''}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
     card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
   } catch (e) {
     sheet.querySelector('#laLeadsCard').innerHTML = `<p style="color:var(--bad);padding:16px">${esc(e.message)}</p>`;
@@ -1526,19 +1560,21 @@ async function openOfficerLeads(branchId, officer, bucket) {
   sheet.querySelector('#solx').onclick = () => sheet.remove();
 
   try {
-    const leads = await api(`/sales-manager/officer-leads?branch_id=${encodeURIComponent(branchId)}&officer=${encodeURIComponent(officer)}&bucket=${bucket}`);
+    const data = await api(`/sales-manager/officer-leads?branch_id=${encodeURIComponent(branchId)}&officer=${encodeURIComponent(officer)}&bucket=${bucket}`);
+    const leads = data.leads || [];
     const card = sheet.querySelector('#solCard');
-    card.innerHTML = `<h2>${esc(label)} — ${esc(officer)} · ${leads.length}</h2>
-      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+     card.innerHTML = `<h2>${esc(label)} — ${esc(officer)} · ${leads.length}</h2>
+       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
           <td>${esc(l.customer_name)}</td>
           <td>${esc(l.mobile)}</td>
           <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
           <td>F${l.fcount}</td>
           <td>${esc(l.stage || '—')}</td>
         </tr>`).join('')}</tbody>
-      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+       </table></div>${data.hasMore ? `<p class="limit-note">Showing the first ${data.limit} leads for latency. Refine the result to narrow it.</p>` : ''}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
     card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
   } catch (e) {
     sheet.querySelector('#solCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
@@ -1560,10 +1596,12 @@ async function openOfficerStatusLeads(branchId, officer, status) {
       const query = new URLSearchParams({ branch_id: String(branchId), officer, status, page: String(page), limit: '25' });
       const data = await api(`/sales-manager/officer-status-leads?${query}`);
       const leads = data.leads || [];
-      card.innerHTML = `<h2>${esc(status)} — ${esc(officer)} · ${data.total || 0}</h2>
+      const drillBranch = masters.branches.find(branch => String(branch.id) === String(branchId));
+      card.innerHTML = `<h2>${esc(status)} — ${esc(officer)}${me.role === 'cluster_manager' && drillBranch ? ` · ${esc(branchLabel(drillBranch.name))}` : ''} · ${data.total || 0}</h2>
         ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
+          <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
           <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+            ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || drillBranch?.name || '—'))}</td>` : ''}
             <td>${esc(l.customer_name)}</td>
             <td>${esc(l.mobile)}</td>
             <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
@@ -1585,8 +1623,8 @@ async function flaggedLeadsView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
   try {
     let flagged = [], cols, rows;
-    if (['sales_manager', 'cluster_manager'].includes(me.role)) {
-      const query = me.role === 'sales_manager' ? `?branch_id=${encodeURIComponent(me.branch_id)}` : '';
+    if (me.role === 'sales_manager') {
+      const query = `?branch_id=${encodeURIComponent(me.branch_id)}`;
       const d = await api(`/sales-manager/analytics${query}`);
       flagged = d.flagged || [];
       cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Executive', 'Stage'];
@@ -1603,7 +1641,7 @@ async function flaggedLeadsView() {
     const ids = flagged.map(r => r.id);
     view.innerHTML = `<div class="card flag-card">
       <h2 class="flag-card-h2">🚩 Flagged Leads · ${flagged.length}</h2>
-      ${flagged.length ? `<p class="flag-card-note">${['sales_manager', 'cluster_manager'].includes(me.role) ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}${me.role === 'admin' && flagged.some(r => !r.sales_manager) ? ' Some flagged leads have no active Branch Sales Manager and need assignment.' : ''}</p>` : ''}
+      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}${me.role === 'admin' && flagged.some(r => !r.sales_manager) ? ' Some flagged leads have no active Branch Sales Manager and need assignment.' : ''}</p>` : ''}
       <div class="tbl-wrap"><table class="tbl tbl-flag">
         <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((r, i) => `<tr class="lead-row" data-id="${ids[i]}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -2238,14 +2276,15 @@ async function showBulkReviewSheet(duplicates = 0) {
 
 async function openLead(id) {
   const l = await api('/leads/' + id);
+  const previousFocus = document.activeElement;
   const canAct = (['sales', 'call_guy'].includes(me.role) || me.role === 'admin') && l.status === 'open';
   const canFillOrderId = me.role === 'admin' || (['sales', 'call_guy'].includes(me.role) && l.assigned_to === me.id);
   const nextSeq = l.fcount + 1;
 
-  const sheet = el(`<div class="sheet"><div>
+  const sheet = el(`<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="leadTitle"><div>
     <div class="close"><button class="btn ghost" id="x">Close</button></div>
     <div class="card">
-      <h2>${esc(l.customer_name)}</h2>
+      <h2 id="leadTitle">${esc(l.customer_name)}</h2>
       <div class="kv"><b>Mobile</b><span><a href="tel:${esc(l.mobile)}">${esc(l.mobile)}</a></span></div>
       <div class="kv"><b>Source</b><span>${esc(l.source || '—')}</span></div>
       <div class="kv"><b>Branch</b><span>${esc(l.branch || '—')}</span></div>
@@ -2289,7 +2328,7 @@ async function openLead(id) {
       <h2 style="color:#B91C1C">⚑ Flagged for Sales Manager</h2>
       ${l.original_so_name ? `<div style="margin-bottom:12px"><b>Sales Officer:</b> ${esc(l.original_so_name)}</div>` : ''}
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}
-      ${me.role === 'sales_manager' || me.role === 'cluster_manager' || me.role === 'admin' ? `
+        ${me.role === 'sales_manager' || me.role === 'admin' ? `
         <label>Close Flag with Remarks</label>
         <textarea id="flagRemarks" placeholder="Enter remarks…"></textarea>
         <button class="btn" id="closeFlagBtn" style="background:#B91C1C">Close Flag</button>
@@ -2337,9 +2376,24 @@ async function openLead(id) {
   </div></div>`);
 
   document.body.appendChild(sheet);
-  const close = () => sheet.remove();
+  const close = () => {
+    sheet.remove();
+    if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+  };
   sheet.onclick = (e) => { if (e.target === sheet) close(); };
   sheet.querySelector('#x').onclick = close;
+  sheet.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key !== 'Tab') return;
+    const focusable = [...sheet.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
+      .filter(node => !node.disabled && node.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  requestAnimationFrame(() => sheet.querySelector('#x')?.focus());
   sheet.querySelectorAll('.copy-contact').forEach(button => {
     button.onclick = () => copyContactPhone(button.dataset.phone, button);
   });

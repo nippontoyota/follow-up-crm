@@ -36,6 +36,7 @@ const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost 
 const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
 const MAX_DAYS_AHEAD = 3;
 const clusterManagerScopes = new Map();
+const clusterManagerScopeDetails = new Map();
 
 function canonicalBranchInput(value) {
   const raw = String(value || '').trim();
@@ -54,14 +55,24 @@ async function loadClusterManagerScopes() {
   const branchIds = new Map(rows.map(row => [row.name, Number(row.id)]));
 
   clusterManagerScopes.clear();
+  clusterManagerScopeDetails.clear();
   for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
-    const ids = manager.branches.flatMap(name => {
+    const assigned = manager.branches.flatMap(name => {
       const id = branchIds.get(name);
       if (!id) console.warn(`Cluster manager ${manager.username}: branch not found: ${name}`);
-      return id ? [id] : [];
+      return id ? [{ id, name }] : [];
     });
-    clusterManagerScopes.set(manager.username, ids);
+    clusterManagerScopes.set(manager.username, assigned.map(branch => branch.id));
+    clusterManagerScopeDetails.set(manager.username, {
+      configured: [...manager.branches],
+      assigned,
+      missing: manager.branches.filter(name => !branchIds.has(name)),
+    });
   }
+}
+
+function clusterScopeFor(username) {
+  return clusterManagerScopeDetails.get(username) || { configured: [], assigned: [], missing: [] };
 }
 
 function managerBranchIds(req) {
@@ -165,7 +176,13 @@ app.get('/api/me', async (req, res, next) => {
   try {
     const u = await currentUser(req);
     if (!u) return res.status(401).json({ error: 'Not signed in' });
-    res.json({ ...u, today: today(), maxDate: addDays(today(), MAX_DAYS_AHEAD), outcomes: OUTCOMES });
+    res.json({
+      ...u,
+      today: today(),
+      maxDate: addDays(today(), MAX_DAYS_AHEAD),
+      outcomes: OUTCOMES,
+      cluster_scope: u.role === 'cluster_manager' ? clusterScopeFor(u.username) : null,
+    });
   } catch (e) { next(e); }
 });
 
@@ -329,7 +346,16 @@ app.get('/api/users', auth('admin'), async (req, res, next) => {
        ${whereSql} ORDER BY u.role, u.name LIMIT ? OFFSET ?`,
       ...args, limit, offset,
     );
-    res.json({ users, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
+    res.json({
+      users: users.map(user => ({
+        ...user,
+        cluster_scope: user.role === 'cluster_manager' ? clusterScopeFor(user.username) : null,
+      })),
+      total,
+      page,
+      limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
+    });
   } catch (e) { next(e); }
 });
 
@@ -1036,7 +1062,7 @@ app.get('/api/leads/:id', auth(), async (req, res, next) => {
       `SELECT so_name, so_mobile, created_at FROM salesforce_calls WHERE mobile = ? ORDER BY id DESC`,
       lead.mobile
     );
-    if (req.user.role === 'call_center_manager') {
+    if (['call_center_manager', 'cluster_manager'].includes(req.user.role)) {
       delete lead.is_flagged;
       delete lead.flag_remarks;
     }
@@ -1130,7 +1156,7 @@ app.post('/api/leads/:id/flag', auth('sales', 'call_guy', 'admin'), async (req, 
   } catch (e) { next(e); }
 });
 
-app.post('/api/leads/:id/close-flag', auth('manager', 'sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+app.post('/api/leads/:id/close-flag', auth('manager', 'sales_manager', 'admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { remarks } = req.body || {};
@@ -1138,11 +1164,6 @@ app.post('/api/leads/:id/close-flag', auth('manager', 'sales_manager', 'cluster_
       const lead = await get(`SELECT branch_id FROM leads WHERE id = ?`, id);
       if (!lead) return res.status(404).json({ error: 'Not found' });
       if (lead.branch_id !== req.user.branch_id) return res.status(403).json({ error: 'Not your branch' });
-    }
-    if (req.user.role === 'cluster_manager') {
-      const lead = await get(`SELECT branch_id FROM leads WHERE id = ?`, id);
-      if (!lead) return res.status(404).json({ error: 'Not found' });
-      if (!canManagerAccessBranch(req, lead.branch_id)) return res.status(403).json({ error: 'Not your branch' });
     }
     await run(`UPDATE leads SET is_flagged = 0, flag_remarks = ? WHERE id = ?`, remarks?.trim() || null, id);
     res.json({ ok: true });
@@ -1213,16 +1234,19 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
     const branchIds = managerBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
     const leadFilter = branchFilter('l.branch_id', branchIds);
-    const [bySalesOfficer, summary, flagged] = await Promise.all([
-      all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+    const [bySalesOfficer, summary] = await Promise.all([
+      all(`SELECT l.branch_id, b.name AS branch,
+          COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
           COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
           COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
           COUNT(*) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
           COUNT(*) FILTER (WHERE l.status = 'open' AND l.next_date <= ?)::int AS due
-        FROM leads l WHERE ${leadFilter.sql} GROUP BY COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
-        ORDER BY total DESC, sales_officer`, today(), ...leadFilter.args),
+        FROM leads l LEFT JOIN branches b ON b.id = l.branch_id
+        WHERE ${leadFilter.sql}
+        GROUP BY l.branch_id, b.name, COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
+        ORDER BY total DESC, branch, sales_officer`, today(), ...leadFilter.args),
 
       get(`SELECT COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE fcount > 0 AND status = 'open')::int AS followup,
@@ -1231,15 +1255,26 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
           COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
         FROM leads l WHERE ${leadFilter.sql}`, ...leadFilter.args),
 
-      all(`SELECT l.id, l.customer_name, l.mobile,
+    ]);
+    const response = {
+      branchId: branchIds.length === 1 ? branchIds[0] : null,
+      branchIds,
+      branches: req.user.role === 'cluster_manager' ? clusterScopeFor(req.user.username).assigned : [],
+      summary,
+      bySalesOfficer,
+    };
+    if (req.user.role !== 'cluster_manager') {
+      response.flagged = await all(`SELECT l.id, l.customer_name, l.mobile,
+          l.branch_id, b.name AS branch,
           COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           l.fcount, l.stage, l.status, u.name AS call_guy, l.flag_remarks
-        FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
+        FROM leads l
+        LEFT JOIN branches b ON b.id = l.branch_id
+        LEFT JOIN users u ON u.id = l.assigned_to
         WHERE ${leadFilter.sql} AND l.is_flagged = 1
-        ORDER BY l.id DESC`, ...leadFilter.args),
-
-    ]);
-    res.json({ branchId: branchIds.length === 1 ? branchIds[0] : null, branchIds, summary, bySalesOfficer, flagged });
+        ORDER BY l.id DESC`, ...leadFilter.args);
+    }
+    res.json(response);
   } catch (e) { next(e); }
 });
 
@@ -1270,33 +1305,46 @@ app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'cluster_manag
         GROUP BY COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown')
         ORDER BY count DESC, status`, ...leadFilter.args),
 
-      all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+      all(`SELECT l.branch_id, b.name AS branch,
+          COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
           COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
           COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
           COUNT(*) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
           COUNT(*) FILTER (WHERE l.status = 'open' AND l.next_date <= ?)::int AS due
-        FROM leads l WHERE ${leadFilter.sql} GROUP BY COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
-        ORDER BY total DESC, sales_officer`, today(), ...leadFilter.args),
+        FROM leads l LEFT JOIN branches b ON b.id = l.branch_id
+        WHERE ${leadFilter.sql}
+        GROUP BY l.branch_id, b.name, COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
+        ORDER BY total DESC, branch, sales_officer`, today(), ...leadFilter.args),
 
       all(`WITH latest AS (
           SELECT DISTINCT ON (l.id)
+            l.branch_id, b.name AS branch,
             COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
             CASE WHEN l.fcount = 0 THEN 'Fresh'
               ELSE COALESCE(NULLIF(TRIM(f.outcome), ''), NULLIF(TRIM(l.stage), ''), 'Unknown')
             END AS status
           FROM leads l
           LEFT JOIN followups f ON f.lead_id = l.id
+          LEFT JOIN branches b ON b.id = l.branch_id
           WHERE ${leadFilter.sql}
           ORDER BY l.id, f.created_at DESC NULLS LAST, f.id DESC NULLS LAST
         )
-        SELECT sales_officer, status, COUNT(*)::int AS count
-        FROM latest
-        GROUP BY sales_officer, status
-        ORDER BY sales_officer, status`, ...leadFilter.args),
+         SELECT branch_id, branch, sales_officer, status, COUNT(*)::int AS count
+         FROM latest
+         GROUP BY branch_id, branch, sales_officer, status
+         ORDER BY branch, sales_officer, status`, ...leadFilter.args),
     ]);
-    res.json({ branchId: branchIds.length === 1 ? branchIds[0] : null, branchIds, leadStatusCounts, lostStatusCounts, bySalesOfficer, bySalesOfficerStatus });
+    res.json({
+      branchId: branchIds.length === 1 ? branchIds[0] : null,
+      branchIds,
+      branches: req.user.role === 'cluster_manager' ? clusterScopeFor(req.user.username).assigned : [],
+      leadStatusCounts,
+      lostStatusCounts,
+      bySalesOfficer,
+      bySalesOfficerStatus,
+    });
   } catch (e) { next(e); }
 });
 
@@ -1311,23 +1359,25 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster
 
     const stageExpr = `COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END)`;
     const officerExpr = `COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')`;
-    const select = `SELECT l.id, l.customer_name, l.mobile, ${officerExpr} AS sales_officer,
-        l.fcount, l.stage, l.status, l.next_date`;
+    const select = `SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
+        ${officerExpr} AS sales_officer, l.fcount, l.stage, l.status, l.next_date`;
 
     if (kind === 'status') {
       const leads = await all(
         `${select}
          FROM leads l
+         LEFT JOIN branches b ON b.id = l.branch_id
          WHERE ${leadFilter.sql} AND ${stageExpr} = ?
-         ORDER BY l.id DESC LIMIT 200`,
+          ORDER BY l.id DESC LIMIT 201`,
         ...leadFilter.args, value,
       );
-      return res.json(leads);
+      return res.json({ leads: leads.slice(0, 200), limit: 200, hasMore: leads.length > 200 });
     }
 
     const leads = await all(
       `${select}
        FROM leads l
+       LEFT JOIN branches b ON b.id = l.branch_id
        LEFT JOIN LATERAL (
          SELECT f.outcome
          FROM followups f
@@ -1339,10 +1389,10 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster
          AND l.stage = 'Lost Lead'
          AND l.status = 'closed'
          AND COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown') = ?
-       ORDER BY l.id DESC LIMIT 200`,
-      ...leadFilter.args, value,
+      ORDER BY l.id DESC LIMIT 201`,
+       ...leadFilter.args, value,
     );
-    res.json(leads);
+    res.json({ leads: leads.slice(0, 200), limit: 200, hasMore: leads.length > 200 });
   } catch (e) { next(e); }
 });
 
@@ -1356,9 +1406,15 @@ const SO_BUCKET_FILTERS = {
   lost:      'l.stage = \'Lost Lead\' AND l.status = \'closed\'',
 };
 
+function managerDrilldownBranchIds(req) {
+  const allowed = managerBranchIds(req);
+  const requested = Number(req.query.branch_id || 0);
+  return requested && allowed.includes(requested) ? [requested] : allowed;
+}
+
 app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
   try {
-    const branchIds = managerBranchIds(req);
+    const branchIds = managerDrilldownBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
     const leadFilter = branchFilter('l.branch_id', branchIds);
     const officer = String(req.query.officer || '').trim();
@@ -1367,21 +1423,23 @@ app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manag
     const args = [...leadFilter.args, officer];
     if (bucket === 'due') args.push(today());
     const leads = await all(
-      `SELECT l.id, l.customer_name, l.mobile, l.stage, l.status, l.fcount, l.next_date
+      `SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
+          l.stage, l.status, l.fcount, l.next_date
        FROM leads l
+       LEFT JOIN branches b ON b.id = l.branch_id
        WHERE ${leadFilter.sql}
          AND COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') = ?
          AND ${SO_BUCKET_FILTERS[bucket]}
-       ORDER BY l.id DESC LIMIT 200`,
-      ...args,
+       ORDER BY l.id DESC LIMIT 201`,
+       ...args,
     );
-    res.json(leads);
+    res.json({ leads: leads.slice(0, 200), limit: 200, hasMore: leads.length > 200 });
   } catch (e) { next(e); }
 });
 
 app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
   try {
-    const branchIds = managerBranchIds(req);
+    const branchIds = managerDrilldownBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
     const leadFilter = branchFilter('l.branch_id', branchIds);
     const officer = String(req.query.officer || '').trim();
@@ -1396,7 +1454,8 @@ app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'cluste
       ELSE COALESCE(NULLIF(TRIM(latest.outcome), ''), NULLIF(TRIM(l.stage), ''), 'Unknown') END`;
     const rows = await all(
       `WITH filtered AS (
-         SELECT l.id, l.customer_name, l.mobile, ${officerExpr} AS sales_officer,
+         SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
+             ${officerExpr} AS sales_officer,
              l.fcount, l.stage, l.status, l.next_date,
              NULLIF(TRIM(latest.outcome), '') AS latest_outcome
          FROM leads l
@@ -1406,7 +1465,8 @@ app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'cluste
            WHERE f.lead_id = l.id
            ORDER BY f.created_at DESC NULLS LAST, f.id DESC NULLS LAST
            LIMIT 1
-         ) latest ON true
+          ) latest ON true
+          LEFT JOIN branches b ON b.id = l.branch_id
          WHERE ${leadFilter.sql} AND ${officerExpr} = ? AND ${statusExpr} = ?
        )
        SELECT filtered.*, COUNT(*) OVER()::int AS total_count
