@@ -275,7 +275,9 @@ async function boot() {
     loginView();
   };
 
-  go(TABS[me.role][0][0]);
+  const requestedTab = location.hash.slice(1).split('?')[0];
+  const allowedTabs = TABS[me.role].map(([key]) => key);
+  go(allowedTabs.includes(requestedTab) ? requestedTab : TABS[me.role][0][0]);
 }
 
 function go(t) {
@@ -283,7 +285,7 @@ function go(t) {
   if (['fresh', 'today', 'leads'].includes(t)) { leadsPage = 1; leadsQ = ''; invalidateLeadsStats(); }
   if (t === 'users') usersPage = 1;
   if (t === 'lists') { listsPage = { branches: 1, sources: 1 }; listsTab = 'branches'; }
-  if (t === 'salesPerf') location.hash = 'salesPerf';
+  if (location.hash.slice(1).split('?')[0] !== t) location.hash = t;
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
