@@ -767,7 +767,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 
 .sop-rows { display: flex; flex-direction: column; gap: 10px; }
 .sop-row {
-  padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff;
+  padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer;
   transition: border-color .15s ease-out;
 }
 .sop-row:hover { border-color: var(--brand); }

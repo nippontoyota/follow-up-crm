@@ -1290,7 +1290,7 @@ async function salesPerformanceView() {
     const sorted = [...officers].sort(sorters[salesPerfSort] || sorters.total);
 
     const rowHtml = o => `
-      <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}">
+      <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}">
         <div class="sop-row-top">
           <button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>
           <span class="sop-row-total">${o.total} lead${o.total !== 1 ? 's' : ''}</span>
@@ -1354,8 +1354,15 @@ async function salesPerformanceView() {
           row.classList.toggle('hide', !!q && !row.dataset.name.includes(q));
         });
       };
-      view.querySelectorAll('.sop-pill').forEach(b => b.onclick = () => openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket));
-      view.querySelectorAll('.sop-row-name-btn').forEach(b => b.onclick = () => openOfficerLeads(branchId, b.dataset.officer, 'total'));
+      view.querySelectorAll('.sop-row').forEach(row => {
+        const openTotal = () => openOfficerLeads(branchId, row.dataset.officer, 'total');
+        row.onclick = openTotal;
+        row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTotal(); } };
+      });
+      view.querySelectorAll('.sop-pill').forEach(b => b.onclick = (e) => {
+        e.stopPropagation();
+        openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket);
+      });
     }
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
