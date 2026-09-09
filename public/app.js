@@ -1397,6 +1397,8 @@ async function leadAnalysisView() {
     const d = await api(`/sales-manager/lead-analysis?branch_id=${encodeURIComponent(branchId)}`);
     const leadStatusCounts = d.leadStatusCounts || [];
     const lostStatusCounts = d.lostStatusCounts || [];
+    const officers = d.bySalesOfficer || [];
+    const statusRows = d.bySalesOfficerStatus || [];
 
     view.innerHTML = `
       <div class="card">
@@ -1423,7 +1425,8 @@ async function leadAnalysisView() {
           lostStatusCounts.map(r => [esc(r.status), leadAnalysisLink('lost', r.status, r.count)]),
           'No lost leads yet'
         )}
-      </div>`;
+      </div>
+      <div id="leadAnalysisSoStatusPanel"></div>`;
 
     if (me.role === 'admin') {
       document.getElementById('leadAnalysisBranch').onchange = (e) => {
@@ -1440,6 +1443,8 @@ async function leadAnalysisView() {
     view.querySelectorAll('.lead-analysis-link').forEach(button => {
       button.onclick = () => openLeadAnalysisLeads(button.dataset.kind, button.dataset.status);
     });
+    salesStatusPage = 1;
+    renderSalesOfficerStatusTable(document.getElementById('leadAnalysisSoStatusPanel'), statusRows, officers, branchId);
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
 

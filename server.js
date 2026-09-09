@@ -1214,7 +1214,7 @@ app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'admin'), asyn
   try {
     const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
     if (!branchId) return bad(res, 'Select a branch');
-    const [leadStatusCounts, lostStatusCounts] = await Promise.all([
+    const [leadStatusCounts, lostStatusCounts, bySalesOfficer, bySalesOfficerStatus] = await Promise.all([
       all(`SELECT COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END) AS status,
           COUNT(*)::int AS count
         FROM leads l
@@ -1235,8 +1235,34 @@ app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'admin'), asyn
         WHERE l.branch_id = ? AND l.stage = 'Lost Lead' AND l.status = 'closed'
         GROUP BY COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown')
         ORDER BY count DESC, status`, branchId),
+
+      all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+          COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+          COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
+          COUNT(*) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
+          COUNT(*) FILTER (WHERE l.status = 'open' AND l.next_date <= ?)::int AS due
+        FROM leads l WHERE l.branch_id = ? GROUP BY COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
+        ORDER BY total DESC, sales_officer`, today(), branchId),
+
+      all(`WITH latest AS (
+          SELECT DISTINCT ON (l.id)
+            COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+            CASE WHEN l.fcount = 0 THEN 'Fresh'
+              ELSE COALESCE(NULLIF(TRIM(f.outcome), ''), NULLIF(TRIM(l.stage), ''), 'Unknown')
+            END AS status
+          FROM leads l
+          LEFT JOIN followups f ON f.lead_id = l.id
+          WHERE l.branch_id = ?
+          ORDER BY l.id, f.created_at DESC NULLS LAST, f.id DESC NULLS LAST
+        )
+        SELECT sales_officer, status, COUNT(*)::int AS count
+        FROM latest
+        GROUP BY sales_officer, status
+        ORDER BY sales_officer, status`, branchId),
     ]);
-    res.json({ branchId, leadStatusCounts, lostStatusCounts });
+    res.json({ branchId, leadStatusCounts, lostStatusCounts, bySalesOfficer, bySalesOfficerStatus });
   } catch (e) { next(e); }
 });
 
