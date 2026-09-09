@@ -425,6 +425,23 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 }
 .scope-notice > span { color: var(--muted); }
 .scope-warning { display: block; width: 100%; color: var(--warn) !important; font-size: 12px; }
+.route-notice { margin-bottom: 12px; padding: 11px 14px; border: 1px solid #C7D7EF; border-radius: 12px; background: #EEF4FC; color: var(--brand-dark); font-size: 13px; }
+.analytics-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.analytics-refresh { width: auto; margin: 0; padding: 7px 12px; }
+.analytics-error { display: grid; justify-items: center; gap: 8px; }
+.analytics-error p { margin: 0; }
+.lead-search-form { margin-top: 14px; }
+.lead-search-controls { display: flex; gap: 8px; align-items: center; }
+.lead-search-controls input { flex: 1; min-width: 0; }
+.lead-search-controls .btn { width: auto; margin: 0; white-space: nowrap; }
+.search-result-count { color: var(--muted); font-size: 13px; margin: 14px 0 8px; }
+.so-mobile-summary { display: none; }
+.so-mobile-summary-row { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); }
+.so-mobile-summary-row > div { display: flex; justify-content: space-between; gap: 8px; }
+.so-mobile-summary-row small { display: block; color: var(--muted); font-size: 11px; }
+.so-mobile-summary-row strong { color: var(--brand-dark); font-size: 12px; }
+.so-mobile-summary-row p { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0; }
+.so-mobile-summary-row p span { padding: 3px 6px; border-radius: 6px; background: var(--brand-light); color: var(--brand-dark); font-size: 11px; }
 
 .outcome-grid { display: grid; gap: 16px; }
 @media (min-width: 600px) { .outcome-grid { grid-template-columns: 1fr 1fr; } }
@@ -942,6 +959,11 @@ input, select, textarea {
 @media (max-width: 599px) {
   header h1 { flex-wrap: wrap; }
   .header-scope { flex-basis: 100%; }
+  .lead-search-controls { align-items: stretch; flex-direction: column; }
+  .lead-search-controls .btn { width: 100%; text-align: center; }
+  .analytics-toolbar { justify-content: space-between; }
+  .so-mobile-summary { display: grid; gap: 8px; margin-bottom: 10px; }
+  .so-status-card .so-status-table { min-width: 920px; }
   .so-status-card .tbl-wrap::after { content: 'Swipe horizontally to see all statuses'; display: block; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; text-align: center; }
   .ai-analysis-head { flex-direction: column; gap: 14px; }
   .ai-analysis-action { width: 100%; }

@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
-import { CLUSTER_MANAGER_DEFINITIONS } from './cluster-managers.js';
+import { CLUSTER_MANAGER_DEFINITIONS, getClusterManagerPassword } from './cluster-managers.js';
 
 const { Pool } = pg;
 
@@ -115,6 +115,8 @@ const DDL = [
   `CREATE INDEX IF NOT EXISTS idx_leads_call_guy ON leads(assigned_to, status, next_date)`,
   `CREATE INDEX IF NOT EXISTS idx_followups_lead_created ON followups(lead_id, created_at DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_leads_branch_flagged ON leads(branch_id, is_flagged, id DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_leads_customer_name_prefix ON leads (LOWER(customer_name) text_pattern_ops)`,
+  `CREATE INDEX IF NOT EXISTS idx_leads_mobile_prefix ON leads (mobile text_pattern_ops)`,
   `CREATE TABLE IF NOT EXISTS sales_officer_contacts (
     id           SERIAL PRIMARY KEY,
     name_key     TEXT NOT NULL UNIQUE,
@@ -167,27 +169,35 @@ export async function seedClusterManagers() {
       `SELECT id, password FROM users WHERE username = ?`,
       manager.username,
     );
-    if (!existing && manager.legacyUsername) {
-      const legacy = await get(
-        `SELECT id FROM users WHERE username = ?`,
-        manager.legacyUsername,
-      );
+    const legacy = !existing && manager.legacyUsername
+      ? await get(`SELECT id FROM users WHERE username = ?`, manager.legacyUsername)
+      : null;
+    const configuredPassword = String(process.env[manager.passwordEnv] || '');
+    if (!configuredPassword && (existing || legacy)) {
       if (legacy) {
         await pool.query(
-          `UPDATE users SET username = $1, password = $2 WHERE id = $3`,
-          [manager.username, hash(manager.password), legacy.id],
+          `UPDATE users SET username = $1 WHERE id = $2`,
+          [manager.username, legacy.id],
         );
       }
+      continue;
+    }
+    const password = getClusterManagerPassword(manager);
+    if (!existing && legacy) {
+      await pool.query(
+        `UPDATE users SET username = $1, password = $2 WHERE id = $3`,
+        [manager.username, hash(password), legacy.id],
+      );
     }
 
     const current = existing || await get(
       `SELECT id, password FROM users WHERE username = ?`,
       manager.username,
     );
-    if (current && !verify(manager.password, current.password)) {
+    if (current && !verify(password, current.password)) {
       await pool.query(
         `UPDATE users SET password = $1 WHERE id = $2`,
-        [hash(manager.password), current.id],
+        [hash(password), current.id],
       );
       continue;
     }
@@ -196,7 +206,7 @@ export async function seedClusterManagers() {
       `INSERT INTO users (username, password, name, role, branch_id)
        VALUES ($1, $2, $3, 'cluster_manager', NULL)
        ON CONFLICT (username) DO NOTHING`,
-      [manager.username, hash(manager.password), manager.name],
+      [manager.username, hash(password), manager.name],
     );
   }
 }

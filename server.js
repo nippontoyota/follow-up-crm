@@ -1278,6 +1278,34 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
   } catch (e) { next(e); }
 });
 
+app.get('/api/sales-manager/lead-search', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+  try {
+    const query = String(req.query.q || '').trim().replace(/[\\%_]/g, '').slice(0, 80);
+    if (query.length < 2) return bad(res, 'Enter at least 2 characters to search');
+    const branchIds = managerBranchIds(req);
+    if (!branchIds.length) return bad(res, 'No assigned branches');
+    const leadFilter = branchFilter('l.branch_id', branchIds);
+    const prefix = `${query}%`;
+    const rows = await all(
+      `SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
+          COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+          l.stage, l.next_date
+       FROM leads l
+       LEFT JOIN branches b ON b.id = l.branch_id
+       WHERE ${leadFilter.sql}
+         AND (LOWER(l.customer_name) LIKE LOWER(?) OR l.mobile LIKE ?)
+       ORDER BY l.id DESC
+       LIMIT 51`,
+      ...leadFilter.args, prefix, prefix,
+    );
+    res.json({
+      query,
+      leads: rows.slice(0, 50),
+      hasMore: rows.length > 50,
+    });
+  } catch (e) { next(e); }
+});
+
 app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
   try {
     const branchIds = managerBranchIds(req);
@@ -1356,6 +1384,9 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster
     const kind = String(req.query.kind || '').trim();
     const value = String(req.query.value || '').trim();
     if (!['status', 'lost'].includes(kind) || !value) return bad(res, 'A valid analysis filter is required');
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
 
     const stageExpr = `COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END)`;
     const officerExpr = `COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')`;
@@ -1363,36 +1394,50 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster
         ${officerExpr} AS sales_officer, l.fcount, l.stage, l.status, l.next_date`;
 
     if (kind === 'status') {
-      const leads = await all(
-        `${select}
-         FROM leads l
-         LEFT JOIN branches b ON b.id = l.branch_id
-         WHERE ${leadFilter.sql} AND ${stageExpr} = ?
-          ORDER BY l.id DESC LIMIT 201`,
-        ...leadFilter.args, value,
+      const rows = await all(
+        `WITH filtered AS (
+           ${select}
+           FROM leads l
+           LEFT JOIN branches b ON b.id = l.branch_id
+           WHERE ${leadFilter.sql} AND ${stageExpr} = ?
+         )
+         SELECT filtered.*, COUNT(*) OVER()::int AS total_count
+         FROM filtered
+         ORDER BY filtered.id DESC
+         LIMIT ? OFFSET ?`,
+        ...leadFilter.args, value, limit, offset,
       );
-      return res.json({ leads: leads.slice(0, 200), limit: 200, hasMore: leads.length > 200 });
+      const total = rows[0]?.total_count || 0;
+      const leads = rows.map(({ total_count, ...lead }) => lead);
+      return res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
     }
 
-    const leads = await all(
-      `${select}
-       FROM leads l
-       LEFT JOIN branches b ON b.id = l.branch_id
-       LEFT JOIN LATERAL (
-         SELECT f.outcome
-         FROM followups f
-         WHERE f.lead_id = l.id
-         ORDER BY f.created_at DESC, f.id DESC
-         LIMIT 1
-       ) latest ON true
-       WHERE ${leadFilter.sql}
-         AND l.stage = 'Lost Lead'
-         AND l.status = 'closed'
-         AND COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown') = ?
-      ORDER BY l.id DESC LIMIT 201`,
-       ...leadFilter.args, value,
+    const rows = await all(
+      `WITH filtered AS (
+         ${select}
+         FROM leads l
+         LEFT JOIN branches b ON b.id = l.branch_id
+         LEFT JOIN LATERAL (
+           SELECT f.outcome
+           FROM followups f
+           WHERE f.lead_id = l.id
+           ORDER BY f.created_at DESC, f.id DESC
+           LIMIT 1
+         ) latest ON true
+         WHERE ${leadFilter.sql}
+           AND l.stage = 'Lost Lead'
+           AND l.status = 'closed'
+           AND COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown') = ?
+       )
+       SELECT filtered.*, COUNT(*) OVER()::int AS total_count
+       FROM filtered
+       ORDER BY filtered.id DESC
+       LIMIT ? OFFSET ?`,
+       ...leadFilter.args, value, limit, offset,
     );
-    res.json({ leads: leads.slice(0, 200), limit: 200, hasMore: leads.length > 200 });
+    const total = rows[0]?.total_count || 0;
+    const leads = rows.map(({ total_count, ...lead }) => lead);
+    res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 
@@ -1420,20 +1465,30 @@ app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manag
     const officer = String(req.query.officer || '').trim();
     const bucket = String(req.query.bucket || '');
     if (!officer || !SO_BUCKET_FILTERS[bucket]) return bad(res, 'officer and a valid bucket are required');
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
     const args = [...leadFilter.args, officer];
     if (bucket === 'due') args.push(today());
-    const leads = await all(
-      `SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
-          l.stage, l.status, l.fcount, l.next_date
-       FROM leads l
-       LEFT JOIN branches b ON b.id = l.branch_id
-       WHERE ${leadFilter.sql}
-         AND COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') = ?
-         AND ${SO_BUCKET_FILTERS[bucket]}
-       ORDER BY l.id DESC LIMIT 201`,
-       ...args,
+    const rows = await all(
+      `WITH filtered AS (
+         SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
+            l.stage, l.status, l.fcount, l.next_date
+         FROM leads l
+         LEFT JOIN branches b ON b.id = l.branch_id
+         WHERE ${leadFilter.sql}
+           AND COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') = ?
+           AND ${SO_BUCKET_FILTERS[bucket]}
+       )
+       SELECT filtered.*, COUNT(*) OVER()::int AS total_count
+       FROM filtered
+       ORDER BY filtered.id DESC
+       LIMIT ? OFFSET ?`,
+       ...args, limit, offset,
     );
-    res.json({ leads: leads.slice(0, 200), limit: 200, hasMore: leads.length > 200 });
+    const total = rows[0]?.total_count || 0;
+    const leads = rows.map(({ total_count, ...lead }) => lead);
+    res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 

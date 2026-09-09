@@ -16,6 +16,9 @@ const LISTS_PER_PAGE = 25;
 const PAGINATED_LISTS = new Set(['branches', 'sources']);
 let listsPage = { branches: 1, sources: 1 };
 let listsTab = 'branches';
+let pendingRouteMessage = '';
+let searchQuery = '';
+const analyticsUpdatedAt = { salesPerf: null, leadAnalysis: null };
 let leadsGen = 0;
 let leadsCtrl = null;
 let leadsStatsCache = null;
@@ -257,7 +260,7 @@ const TABS = {
   manager: [['dashboard', 'Dashboard', '📊']],
   call_center_manager: [['callCenter', 'Call Center', '☎️']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
-  cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈']],
+  cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['leadSearch', 'Search Leads', '🔎']],
 };
 
 function branchLabel(name) {
@@ -280,6 +283,23 @@ function clusterScopeNotice() {
     <b>Assigned branches</b><span>${esc(assigned.map(branch => branch.label).join(' · ') || 'None')}</span>
     ${missing.length ? `<span class="scope-warning">⚠️ Missing from branch master: ${esc(missing.join(' · '))}. Contact Admin.</span>` : ''}
   </div>`;
+}
+
+function routeNotice() {
+  if (!pendingRouteMessage) return '';
+  const message = pendingRouteMessage;
+  pendingRouteMessage = '';
+  return `<div class="route-notice" role="status">${esc(message)}</div>`;
+}
+
+function analyticsToolbar(key) {
+  const updated = analyticsUpdatedAt[key];
+  const label = updated ? `Updated ${updated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not updated yet';
+  return `<div class="analytics-toolbar"><span id="${key}Updated">${esc(label)}</span><button type="button" class="btn ghost analytics-refresh" id="${key}Refresh">Refresh</button></div>`;
+}
+
+function analyticsError(message, retryId) {
+  return `<div class="empty analytics-error"><p>${esc(message)}</p><button type="button" class="btn ghost" id="${retryId}">Retry</button></div>`;
 }
 
 async function boot() {
@@ -306,7 +326,13 @@ async function boot() {
 
   const requestedTab = location.hash.slice(1).split('?')[0];
   const allowedTabs = TABS[me.role].map(([key]) => key);
-  go(allowedTabs.includes(requestedTab) ? requestedTab : TABS[me.role][0][0]);
+  if (allowedTabs.includes(requestedTab)) go(requestedTab);
+  else {
+    if (requestedTab) pendingRouteMessage = me.role === 'cluster_manager' && requestedTab === 'flagged'
+      ? 'Flag review is handled by Branch Sales Managers.'
+      : `That view is not available for your ${roleLabel[me.role] || 'role'} account.`;
+    go(TABS[me.role][0][0]);
+  }
 }
 
 function go(t) {
@@ -318,7 +344,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -1259,12 +1285,17 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
     const branch = me.role === 'cluster_manager' ? `<td>${esc(branchLabel(officer.branch || '—'))}</td>` : '';
     return `<tr>${branch}<td><b>${esc(officer.sales_officer)}</b></td><td>${officer.total}</td>${statuses.map(status => `<td>${countCell(officer.sales_officer, officer, status, counts.get(status) || 0)}</td>`).join('')}</tr>`;
   }).join('');
+  const mobileRows = visibleOfficers.map(officer => {
+    const counts = statusByOfficer.get(officerKey(officer.branch_id, officer.sales_officer)) || new Map();
+    const nonZero = statuses.filter(status => counts.get(status)).map(status => `<span>${esc(status)} <b>${counts.get(status)}</b></span>`).join('');
+    return `<div class="so-mobile-summary-row"><div><b>${esc(officer.sales_officer)}</b>${me.role === 'cluster_manager' && officer.branch ? `<small>${esc(branchLabel(officer.branch))}</small>` : ''}</div><strong>${officer.total} total</strong><p>${nonZero || '<span>No non-zero statuses</span>'}</p></div>`;
+  }).join('');
 
   root.innerHTML = `<div class="card so-status-card">
     <div class="sop-head">
       <div><h2>Sales Officer-wise Lead Status</h2><p class="sop-pick-desc">Latest follow-up status by Sales Officer. Select a count to view those leads.</p></div>
     </div>
-    ${officers.length ? `<div class="tbl-wrap"><table class="tbl so-status-table">
+    ${officers.length ? `<div class="so-mobile-summary">${mobileRows}</div><div class="tbl-wrap"><table class="tbl so-status-table">
        <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Sales Officer</th><th>Total</th>${statusHeader}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>${renderPager(salesStatusPage, pages, officers.length)}` : '<div class="empty">No Sales Officer status data found</div>'}
@@ -1294,7 +1325,7 @@ async function salesPerformanceView() {
 
     if (!branchId && me.role === 'admin') {
       const branches = await api('/analytics');
-      view.innerHTML = `
+      view.innerHTML = `${routeNotice()}
         <div class="card sop-pick-card">
           <h2>Sales Officer Performance</h2>
           <p class="sop-pick-desc">Pick a branch to see how its imported sales officers are performing.</p>
@@ -1317,6 +1348,7 @@ async function salesPerformanceView() {
       ? clusterScopeLabel()
       : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     const d = await api(`/sales-manager/analytics${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
+    analyticsUpdatedAt.salesPerf = new Date();
     const s = d.summary || {};
     const officers = d.bySalesOfficer || [];
 
@@ -1339,7 +1371,7 @@ async function salesPerformanceView() {
         </div>
       </div>`;
 
-    view.innerHTML = `${clusterScopeNotice()}${kpiRow([
+    view.innerHTML = `${routeNotice()}${clusterScopeNotice()}${analyticsToolbar('salesPerf')}${kpiRow([
       { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
       { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
       { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
@@ -1348,7 +1380,7 @@ async function salesPerformanceView() {
     ])}
     <div class="card sop-card">
       <div class="sop-head">
-        <h2>Sales Officer Performance${branchName ? ` · ${esc(branchName)}` : ''}</h2>
+        <h2>Sales Officer Performance${branchName && me.role !== 'cluster_manager' ? ` · ${esc(branchName)}` : ''}</h2>
         ${me.role === 'admin' ? `<div class="sop-head-actions">
           <button type="button" class="btn ghost sop-back" id="salesBranchBack">← All branches</button>
           <label class="sop-switch-wrap">Branch<select id="salesBranchSwitch" class="sop-switch">${options(masters.branches, Number(branchId))}</select></label>
@@ -1385,6 +1417,7 @@ async function salesPerformanceView() {
     }
 
     if (officers.length) {
+      document.getElementById('salesPerfRefresh').onclick = () => salesPerformanceView();
       document.getElementById('sopSort').querySelectorAll('.sop-sort-opt').forEach(b => b.onclick = () => {
         salesPerfSort = b.dataset.sort;
         salesPerfPage = 1;
@@ -1422,7 +1455,11 @@ async function salesPerformanceView() {
       };
       renderRows();
     }
-  } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+    else document.getElementById('salesPerfRefresh').onclick = () => salesPerformanceView();
+  } catch (e) {
+    view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'salesPerfRetry')}`;
+    document.getElementById('salesPerfRetry').onclick = () => salesPerformanceView();
+  }
 }
 
 async function leadAnalysisView() {
@@ -1438,7 +1475,7 @@ async function leadAnalysisView() {
 
     if (!branchId && me.role === 'admin') {
       const branches = await api('/analytics');
-      view.innerHTML = `
+      view.innerHTML = `${routeNotice()}
         <div class="card sop-pick-card">
           <h2>Lead Analysis</h2>
           <p class="sop-pick-desc">Pick a branch to review its lead status and lost lead breakdown.</p>
@@ -1459,16 +1496,19 @@ async function leadAnalysisView() {
       ? clusterScopeLabel()
       : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     const d = await api(`/sales-manager/lead-analysis${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
+    analyticsUpdatedAt.leadAnalysis = new Date();
     const leadStatusCounts = d.leadStatusCounts || [];
     const lostStatusCounts = d.lostStatusCounts || [];
     const officers = d.bySalesOfficer || [];
     const statusRows = d.bySalesOfficerStatus || [];
 
     view.innerHTML = `
+      ${routeNotice()}
       ${clusterScopeNotice()}
+      ${analyticsToolbar('leadAnalysis')}
       <div class="card">
         <div class="sop-head">
-          <h2>Lead Analysis${branchName ? ` · ${esc(branchName)}` : ''}</h2>
+          <h2>Lead Analysis${branchName && me.role !== 'cluster_manager' ? ` · ${esc(branchName)}` : ''}</h2>
           ${me.role === 'admin' ? `<div class="sop-head-actions">
             <button type="button" class="btn ghost sop-back" id="leadAnalysisBack">← All branches</button>
             <label class="sop-switch-wrap">Branch<select id="leadAnalysisBranch" class="sop-switch">${options(masters.branches, Number(branchId))}</select></label>
@@ -1510,7 +1550,60 @@ async function leadAnalysisView() {
     });
     salesStatusPage = 1;
     renderSalesOfficerStatusTable(document.getElementById('leadAnalysisSoStatusPanel'), statusRows, officers, branchId);
-  } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+    document.getElementById('leadAnalysisRefresh').onclick = () => leadAnalysisView();
+  } catch (e) {
+    view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'leadAnalysisRetry')}`;
+    document.getElementById('leadAnalysisRetry').onclick = () => leadAnalysisView();
+  }
+}
+
+async function leadSearchView() {
+  const renderShell = () => {
+    view.innerHTML = `${routeNotice()}${clusterScopeNotice()}
+      <div class="card lead-search-card">
+        <div class="sop-head"><div><h2>Search leads</h2><p class="sop-pick-desc">Search customers and mobile numbers across your assigned branches.</p></div></div>
+        <form id="leadSearchForm" class="lead-search-form">
+          <label for="leadSearchInput">Customer name or mobile number</label>
+          <div class="lead-search-controls"><input id="leadSearchInput" type="search" value="${esc(searchQuery)}" placeholder="Enter at least 2 characters" autocomplete="off"><button type="submit" class="btn">Search</button></div>
+        </form>
+        <div id="leadSearchResults"><div class="empty">Enter a customer name or mobile number to search.</div></div>
+      </div>`;
+  };
+
+  const renderResults = data => {
+    const results = data.leads || [];
+    const root = document.getElementById('leadSearchResults');
+    root.innerHTML = results.length
+      ? `<p class="search-result-count">${results.length}${data.hasMore ? '+' : ''} result${results.length === 1 ? '' : 's'} for “${esc(data.query)}”</p>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Branch</th><th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Stage</th><th>Next Date</th></tr></thead>
+        <tbody>${results.map(l => `<tr class="lead-row" data-id="${l.id}"><td>${esc(branchLabel(l.branch || '—'))}</td><td>${esc(l.customer_name)}</td><td>${esc(l.mobile)}</td><td>${esc(l.sales_officer || '—')}</td><td>${esc(l.stage || '—')}</td><td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td></tr>`).join('')}</tbody></table></div>
+        ${data.hasMore ? '<p class="limit-note">Showing the first 50 matches. Refine the search to narrow it.</p>' : ''}`
+      : `<div class="empty">No leads found for “${esc(data.query)}”.</div>`;
+    root.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
+  };
+
+  const loadResults = async query => {
+    const root = document.getElementById('leadSearchResults');
+    root.innerHTML = '<div class="empty">Searching…</div>';
+    try {
+      const data = await api(`/sales-manager/lead-search?q=${encodeURIComponent(query)}`);
+      renderResults(data);
+    } catch (e) {
+      root.innerHTML = analyticsError(e.message, 'leadSearchRetry');
+      document.getElementById('leadSearchRetry').onclick = () => loadResults(searchQuery);
+    }
+  };
+
+  renderShell();
+  document.getElementById('leadSearchForm').onsubmit = event => {
+    event.preventDefault();
+    searchQuery = document.getElementById('leadSearchInput').value.trim();
+    if (searchQuery.length < 2) {
+      document.getElementById('leadSearchResults').innerHTML = '<div class="empty" style="color:var(--bad)">Enter at least 2 characters to search.</div>';
+      return;
+    }
+    loadResults(searchQuery);
+  };
 }
 
 async function openLeadAnalysisLeads(kind, status) {
@@ -1525,32 +1618,38 @@ async function openLeadAnalysisLeads(kind, status) {
   document.body.appendChild(sheet);
   sheet.querySelector('#lalx').onclick = () => sheet.remove();
 
-  try {
-    const query = new URLSearchParams({ branch_id: String(branchId), kind, value: label });
-    const data = await api(`/sales-manager/lead-analysis/leads?${query}`);
-    const leads = data.leads || [];
-    const card = sheet.querySelector('#laLeadsCard');
-    const heading = kind === 'lost' ? `Lost · ${label}` : label;
-     card.innerHTML = `<h2>${esc(heading)} · ${leads.length}</h2>
-       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-        <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
-        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
-          ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
-          <td>${esc(l.customer_name)}</td>
-          <td>${esc(l.mobile)}</td>
-          <td>${esc(l.sales_officer)}</td>
-          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
-          <td>F${l.fcount}</td>
-          <td>${esc(l.stage || '—')}</td>
-        </tr>`).join('')}</tbody>
-       </table></div>${data.hasMore ? `<p class="limit-note">Showing the first ${data.limit} leads for latency. Refine the analysis to narrow the result.</p>` : ''}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
-    card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
-  } catch (e) {
-    sheet.querySelector('#laLeadsCard').innerHTML = `<p style="color:var(--bad);padding:16px">${esc(e.message)}</p>`;
-  }
+  const card = sheet.querySelector('#laLeadsCard');
+  const loadPage = async (page = 1) => {
+    card.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const query = new URLSearchParams({ branch_id: String(branchId), kind, value: label, page: String(page), limit: '25' });
+      const data = await api(`/sales-manager/lead-analysis/leads?${query}`);
+      const leads = data.leads || [];
+      const heading = kind === 'lost' ? `Lost · ${label}` : label;
+      card.innerHTML = `<h2>${esc(heading)} · ${data.total || 0}</h2>
+        ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+           ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
+           <td>${esc(l.customer_name)}</td>
+           <td>${esc(l.mobile)}</td>
+           <td>${esc(l.sales_officer)}</td>
+           <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
+           <td>F${l.fcount}</td>
+           <td>${esc(l.stage || '—')}</td>
+         </tr>`).join('')}</tbody>
+        </table></div>${renderPager(data.page, data.pages, data.total)}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+      card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
+      bindPager(nextPage => loadPage(nextPage), card);
+    } catch (e) {
+      card.innerHTML = analyticsError(e.message, 'leadAnalysisLeadsRetry');
+      document.getElementById('leadAnalysisLeadsRetry').onclick = () => loadPage(page);
+    }
+  };
+  await loadPage();
 }
 
-async function openOfficerLeads(branchId, officer, bucket) {
+async function openOfficerLeadsLegacy(branchId, officer, bucket) {
   const label = { total: 'Total', untouched: 'Untouched', due: 'Due' }[bucket] || bucket;
   const sheet = el(`<div class="sheet"><div>
     <div class="close"><button class="btn ghost" id="solx">← Back</button></div>
@@ -1579,6 +1678,44 @@ async function openOfficerLeads(branchId, officer, bucket) {
   } catch (e) {
     sheet.querySelector('#solCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
   }
+}
+
+async function openOfficerLeads(branchId, officer, bucket) {
+  const label = { total: 'Total', untouched: 'Untouched', due: 'Due' }[bucket] || bucket;
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="solx">← Back</button></div>
+    <div class="card" id="solCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#solx').onclick = () => sheet.remove();
+
+  const card = sheet.querySelector('#solCard');
+  const loadPage = async (page = 1) => {
+    card.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const query = new URLSearchParams({ branch_id: String(branchId), officer, bucket, page: String(page), limit: '25' });
+      const data = await api(`/sales-manager/officer-leads?${query}`);
+      const leads = data.leads || [];
+      card.innerHTML = `<h2>${esc(label)} — ${esc(officer)} · ${data.total || 0}</h2>
+        ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+           ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
+           <td>${esc(l.customer_name)}</td>
+           <td>${esc(l.mobile)}</td>
+           <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
+           <td>F${l.fcount}</td>
+           <td>${esc(l.stage || '—')}</td>
+         </tr>`).join('')}</tbody>
+        </table></div>${renderPager(data.page, data.pages, data.total)}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+      card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
+      bindPager(nextPage => loadPage(nextPage), card);
+    } catch (e) {
+      card.innerHTML = analyticsError(e.message, 'officerLeadsRetry');
+      document.getElementById('officerLeadsRetry').onclick = () => loadPage(page);
+    }
+  };
+  await loadPage();
 }
 
 async function openOfficerStatusLeads(branchId, officer, status) {

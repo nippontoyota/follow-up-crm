@@ -17,6 +17,17 @@ GROQ_API_KEY=gsk_...
 
 Without this environment variable, the regular CRM still runs but the AI Summary button reports that the AI integration is not configured.
 
+The four fixed cluster-manager accounts also require these server environment variables. Keep the values in Render Environment Variables or the ignored local `.env` file. They are intentionally not stored in source:
+
+```dotenv
+CLUSTER_MANAGER_PASSWORD_BIJU=...
+CLUSTER_MANAGER_PASSWORD_PRAVEEN=...
+CLUSTER_MANAGER_PASSWORD_VINOD=...
+CLUSTER_MANAGER_PASSWORD_NIRMAL=...
+```
+
+The application does not create missing branch records on startup. If a configured branch is missing from the branch master, it stays unavailable and the affected users see a warning.
+
 Open http://localhost:3000. A new database seeds `admin / admin123` on first run.
 
 Data lives in PostgreSQL. `.secret` holds the cookie signing key — keep it out of version control.

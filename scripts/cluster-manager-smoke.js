@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { all, get, pool } from '../db.js';
-import { CLUSTER_MANAGER_DEFINITIONS } from '../cluster-managers.js';
+import { CLUSTER_MANAGER_DEFINITIONS, getClusterManagerPassword } from '../cluster-managers.js';
+import branchCodes from '../demo-data/branch-codes.json' with { type: 'json' };
 
 const base = process.env.CLUSTER_BASE_URL || 'http://localhost:3000';
 const adminUsername = process.env.CLUSTER_ADMIN_USER || (process.env.DEMO_MODE === '1' ? 'demo-admin' : 'admin');
@@ -55,9 +56,14 @@ const admin = await adminSession();
 const masters = await api('/api/masters', admin);
 assert.equal(masters.status, 200, 'Admin must be able to read masters');
 const branchIds = new Map((masters.data.branches || []).map(branch => [branch.name, branch.id]));
+assert.equal(branchCodes.KT01B, 'Nippon Toyota - Pala', 'Pala branch code mapping is missing');
+for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
+  assert.equal('password' in manager, false, `${manager.username} must not keep a plaintext password in source`);
+  assert.ok(manager.passwordEnv, `${manager.username} must declare a password environment variable`);
+}
 
 for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
-  const cookie = await login(manager.username, manager.password);
+  const cookie = await login(manager.username, getClusterManagerPassword(manager));
   const me = await api('/api/me', cookie);
   assert.equal(me.status, 200);
   assert.equal(me.data.role, 'cluster_manager');
@@ -69,6 +75,27 @@ for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
   assert.equal(analytics.status, 200, `${manager.username} analytics failed`);
   assert.deepEqual(analytics.data.branchIds, expectedIds, `${manager.username} scope mismatch`);
   assert.equal(Object.prototype.hasOwnProperty.call(analytics.data, 'flagged'), false, `${manager.username} must not receive flag data`);
+
+  const analysis = await api('/api/sales-manager/lead-analysis', cookie);
+  assert.equal(analysis.status, 200, `${manager.username} lead analysis failed`);
+  const status = analysis.data.leadStatusCounts?.[0]?.status;
+  if (status) {
+    const drilldown = await api(`/api/sales-manager/lead-analysis/leads?kind=status&value=${encodeURIComponent(status)}&page=1&limit=1`, cookie);
+    assert.equal(drilldown.status, 200, `${manager.username} lead-analysis drilldown failed`);
+    assert.equal(typeof drilldown.data.total, 'number');
+    assert.equal(drilldown.data.page, 1);
+    assert.equal(drilldown.data.limit, 1);
+    assert.ok(drilldown.data.pages >= 1);
+    assert.equal(Object.prototype.hasOwnProperty.call(drilldown.data.leads?.[0] || {}, 'is_flagged'), false);
+  }
+
+  const officer = analytics.data.bySalesOfficer?.[0];
+  if (officer) {
+    const officerLeads = await api(`/api/sales-manager/officer-leads?branch_id=${officer.branch_id}&officer=${encodeURIComponent(officer.sales_officer)}&bucket=total&page=1&limit=1`, cookie);
+    assert.equal(officerLeads.status, 200, `${manager.username} officer drilldown failed`);
+    assert.equal(typeof officerLeads.data.total, 'number');
+    assert.equal(officerLeads.data.limit, 1);
+  }
 
   const override = await api('/api/sales-manager/analytics?branch_id=1', cookie);
   assert.equal(override.status, 200, `${manager.username} override request failed`);
@@ -84,6 +111,15 @@ for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
     assert.equal(Object.prototype.hasOwnProperty.call(lead.data, 'flag_remarks'), false, `${manager.username} must not see flag remarks`);
     const closeAttempt = await api(`/api/leads/${scopedLead.id}/close-flag`, cookie, 'POST', { remarks: 'must be rejected' });
     assert.equal(closeAttempt.status, 403, `${manager.username} must not close flags`);
+
+    const searchTerm = String((await get('SELECT customer_name FROM leads WHERE id = ?', scopedLead.id))?.customer_name || '').slice(0, 2);
+    if (searchTerm.length >= 2) {
+      const search = await api(`/api/sales-manager/lead-search?q=${encodeURIComponent(searchTerm)}`, cookie);
+      assert.equal(search.status, 200, `${manager.username} scoped search failed`);
+      for (const row of search.data.leads || []) assert.ok(expectedIds.includes(Number(row.branch_id)), `${manager.username} search escaped branch scope`);
+      assert.equal(Object.prototype.hasOwnProperty.call(search.data.leads?.[0] || {}, 'is_flagged'), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(search.data.leads?.[0] || {}, 'flag_remarks'), false);
+    }
   }
 
   if (manager.legacyUsername) {
