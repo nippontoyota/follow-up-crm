@@ -806,11 +806,16 @@ ${remarksText}`;
   }
 });
 
-app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) => {
+app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), async (req, res, next) => {
   try {
     const branchId = req.user.branch_id;
-    if (!branchId) return bad(res, 'No branch assigned');
-    const { officer_id, stage, call_status, outcome, latest_outcome, flagged } = req.query;
+    const isCallCenter = req.user.role === 'call_center_manager';
+    if (!isCallCenter && !branchId) return bad(res, 'No branch assigned');
+    const scopeSql = isCallCenter
+      ? `l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`
+      : `l.branch_id = ?`;
+    const scopeArgs = isCallCenter ? [] : [branchId];
+    const { officer_id, stage, call_status, outcome, latest_outcome, flagged, overdue, call_guy_id } = req.query;
 
     const BASE = `
       SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
@@ -822,25 +827,33 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
       LEFT JOIN sources  s ON s.id = l.source_id`;
 
     let leads;
-    if (flagged === '1' && officer_id) {
+    if (overdue === '1') {
+      if (!isCallCenter || !Number.isInteger(Number(call_guy_id)) || Number(call_guy_id) < 1)
+        return bad(res, 'A valid Call Executive is required');
       leads = await all(`${BASE}
-        WHERE l.branch_id = ? AND l.assigned_to = ? AND l.is_flagged = 1
+        WHERE ${scopeSql} AND l.assigned_to = ? AND l.status = 'open' AND l.next_date < ?
+        ORDER BY l.next_date ASC, l.id DESC
+      `, ...scopeArgs, Number(call_guy_id), today());
+    } else if (flagged === '1' && officer_id) {
+      leads = await all(`${BASE}
+        WHERE ${scopeSql} AND l.assigned_to = ? AND l.is_flagged = 1
         ORDER BY l.id DESC
-      `, branchId, Number(officer_id));
+      `, ...scopeArgs, Number(officer_id));
     } else if (call_status && outcome) {
       leads = await all(`${BASE}
-        WHERE l.branch_id = ?
+        WHERE ${scopeSql}
           AND (SELECT f.call_status FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
           AND (SELECT f.outcome     FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
         ORDER BY l.next_date NULLS FIRST, l.id DESC
-      `, branchId, call_status, outcome);
+      `, ...scopeArgs, call_status, outcome);
     } else if (latest_outcome) {
       leads = await all(`${BASE}
-        WHERE l.branch_id = ?
+        WHERE ${scopeSql}
           AND (SELECT f.outcome FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
         ORDER BY l.next_date NULLS FIRST, l.id DESC
-      `, branchId, latest_outcome);
+      `, ...scopeArgs, latest_outcome);
     } else {
+      if (isCallCenter) return bad(res, 'A drill-down filter is required');
       if (!officer_id) return bad(res, 'officer_id required');
       const STAGE_FILTER = {
         pending: `l.fcount > 0 AND l.status = 'open'`,
@@ -853,9 +866,9 @@ app.get('/api/manager/leads', auth('manager', 'admin'), async (req, res, next) =
       const stageSql = STAGE_FILTER[stage];
       if (!stageSql) return bad(res, 'Invalid stage');
       leads = await all(`${BASE}
-        WHERE l.branch_id = ? AND l.assigned_to = ? AND ${stageSql}
+        WHERE ${scopeSql} AND l.assigned_to = ? AND ${stageSql}
         ORDER BY l.next_date NULLS FIRST, l.id DESC
-      `, branchId, Number(officer_id));
+      `, ...scopeArgs, Number(officer_id));
     }
     res.json(leads);
   } catch (e) { next(e); }
@@ -1039,7 +1052,7 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
         FROM branches b LEFT JOIN leads l ON l.branch_id = b.id
           AND l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
         GROUP BY b.id, b.name ORDER BY total DESC, b.name`),
-      all(`SELECT u.name AS call_guy, COUNT(l.id)::int AS overdue
+      all(`SELECT u.id AS call_guy_id, u.name AS call_guy, COUNT(l.id)::int AS overdue
         FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
           AND l.status = 'open' AND l.next_date < ?
         WHERE u.role = 'call_guy' AND u.active = 1

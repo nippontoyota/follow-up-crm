@@ -665,6 +665,13 @@ function outcomeLink(callStatus, outcome, count) {
   return `<button class="tbl-link" onclick="openOutcomeLeads('${cs}','${oc}','${esc(outcome)}')">${count}</button>`;
 }
 
+function overdueLink(callGuyId, callGuy, count) {
+  if (!count) return `<span style="color:var(--muted)">0</span>`;
+  const id = encodeURIComponent(String(callGuyId));
+  const label = encodeURIComponent(callGuy || 'Call Executive');
+  return `<button class="tbl-link" onclick="openOverdueLeads('${id}','${label}')">${count}</button>`;
+}
+
 function lostCaseLink(outcome, count) {
   if (!count) return `<span style="color:var(--muted)">0</span>`;
   const oc = encodeURIComponent(outcome);
@@ -728,6 +735,36 @@ async function openLostLeads(outcome, label) {
     });
   } catch (e) {
     sheet.querySelector('#llCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
+  }
+}
+
+async function openOverdueLeads(callGuyId, label) {
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="odx">← Back</button></div>
+    <div class="card" id="odCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#odx').onclick = () => sheet.remove();
+
+  try {
+    const leads = await api(`/manager/leads?overdue=1&call_guy_id=${callGuyId}`);
+    const card = sheet.querySelector('#odCard');
+    card.innerHTML = `<h2>Overdue — ${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Call Executive</th><th>Next Date</th><th>Stage</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.officer || '—')}</td>
+          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
+          <td>${esc(l.stage || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No overdue leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => {
+      row.onclick = () => openLead(Number(row.dataset.id));
+    });
+  } catch (e) {
+    sheet.querySelector('#odCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
   }
 }
 
@@ -1055,10 +1092,10 @@ async function callCenterView() {
       ['Branch','Total','Open','Won'], d.byBranch.map(r => [esc(r.branch), r.total, r.open, r.won]), 'No branch data'
     )}</div>
     <div class="card"><h2>Call Outcomes</h2>${tblHtml(
-      ['Call Status','Outcome','Count'], d.outcomes.map(r => [esc(r.call_status), esc(r.outcome), r.count]), 'No calls logged'
+      ['Call Status','Outcome','Count'], d.outcomes.map(r => [esc(r.call_status), esc(r.outcome), outcomeLink(r.call_status, r.outcome, r.count)]), 'No calls logged'
     )}</div>
     <div class="card"><h2>Overdue Work</h2>${tblHtml(
-      ['Call Executive','Overdue Leads'], d.overdue.map(r => [esc(r.call_guy), r.overdue]), 'No overdue follow-ups'
+      ['Call Executive','Overdue Leads'], d.overdue.map(r => [esc(r.call_guy), overdueLink(r.call_guy_id, r.call_guy, r.overdue)]), 'No overdue follow-ups'
     )}</div>`;
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
