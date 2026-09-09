@@ -18,6 +18,7 @@
     "demo:workbook": "node scripts/generate-demo-workbook.js",
     "demo:smoke": "node scripts/demo-smoke.js",
     "demo:activity": "node --env-file=.env.demo scripts/seed-demo-activity.js",
+    "cluster:smoke": "node --env-file=.env scripts/cluster-manager-smoke.js",
     "test-leads:seed": "node --env-file=.env scripts/test-leads.js seed",
     "test-leads:cleanup": "node --env-file=.env scripts/test-leads.js cleanup",
     "test-leads:teardown": "node --env-file=.env scripts/test-leads.js teardown",

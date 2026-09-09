@@ -29,7 +29,7 @@ function invalidateLeadsStats() { leadsStatsCache = null; }
 const el = (html) => Object.assign(document.createElement('div'), { innerHTML: html }).firstElementChild;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const val = (id) => document.getElementById(id).value.trim();
-const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager' };
+const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager', cluster_manager: 'Cluster Manager' };
 
 async function copyContactPhone(phone, button) {
   try {
@@ -252,6 +252,7 @@ const TABS = {
   manager: [['dashboard', 'Dashboard', '📊']],
   call_center_manager: [['callCenter', 'Call Center', '☎️']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
+  cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
 };
 
 async function boot() {
@@ -326,7 +327,7 @@ async function usersView() {
       <div class="rows">${users.length ? users.map(u => `
         <div class="row">
           <span><b>${esc(u.name)}</b><br><em>@${esc(u.username)} · ${esc(roleLabel[u.role] || u.role)}${u.branch ? ' · ' + esc(u.branch) : ''}${u.active ? '' : ' · disabled'}</em></span>
-          <button data-id="${u.id}">${u.active ? 'Disable' : 'Enable'}</button>
+          ${u.role === 'cluster_manager' ? '<span class="pill">Fixed account</span>' : `<button data-id="${u.id}">${u.active ? 'Disable' : 'Enable'}</button>`}
         </div>`).join('') : '<div class="empty">No users on this page.</div>'}</div>
     </div>`;
 
@@ -1280,8 +1281,10 @@ async function salesPerformanceView() {
       return;
     }
 
-    branchName = masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
-    const d = await api(`/sales-manager/analytics?branch_id=${encodeURIComponent(branchId)}`);
+    branchName = me.role === 'cluster_manager'
+      ? 'Assigned cluster'
+      : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
+    const d = await api(`/sales-manager/analytics${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
     const s = d.summary || {};
     const flagged = d.flagged || [];
     const officers = d.bySalesOfficer || [];
@@ -1421,8 +1424,10 @@ async function leadAnalysisView() {
       return;
     }
 
-    branchName = masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
-    const d = await api(`/sales-manager/lead-analysis?branch_id=${encodeURIComponent(branchId)}`);
+    branchName = me.role === 'cluster_manager'
+      ? 'Assigned cluster'
+      : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
+    const d = await api(`/sales-manager/lead-analysis${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
     const leadStatusCounts = d.leadStatusCounts || [];
     const lostStatusCounts = d.lostStatusCounts || [];
     const officers = d.bySalesOfficer || [];
@@ -1580,8 +1585,9 @@ async function flaggedLeadsView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
   try {
     let flagged = [], cols, rows;
-    if (me.role === 'sales_manager') {
-      const d = await api(`/sales-manager/analytics?branch_id=${encodeURIComponent(me.branch_id)}`);
+    if (['sales_manager', 'cluster_manager'].includes(me.role)) {
+      const query = me.role === 'sales_manager' ? `?branch_id=${encodeURIComponent(me.branch_id)}` : '';
+      const d = await api(`/sales-manager/analytics${query}`);
       flagged = d.flagged || [];
       cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Executive', 'Stage'];
       rows = flagged.map(r => [esc(r.customer_name), esc(r.mobile), esc(r.sales_officer), esc(r.call_guy || '—'), esc(r.stage || '—')]);
@@ -1597,7 +1603,7 @@ async function flaggedLeadsView() {
     const ids = flagged.map(r => r.id);
     view.innerHTML = `<div class="card flag-card">
       <h2 class="flag-card-h2">🚩 Flagged Leads · ${flagged.length}</h2>
-      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}${me.role === 'admin' && flagged.some(r => !r.sales_manager) ? ' Some flagged leads have no active Branch Sales Manager and need assignment.' : ''}</p>` : ''}
+      ${flagged.length ? `<p class="flag-card-note">${['sales_manager', 'cluster_manager'].includes(me.role) ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}${me.role === 'admin' && flagged.some(r => !r.sales_manager) ? ' Some flagged leads have no active Branch Sales Manager and need assignment.' : ''}</p>` : ''}
       <div class="tbl-wrap"><table class="tbl tbl-flag">
         <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((r, i) => `<tr class="lead-row" data-id="${ids[i]}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -2283,7 +2289,7 @@ async function openLead(id) {
       <h2 style="color:#B91C1C">⚑ Flagged for Sales Manager</h2>
       ${l.original_so_name ? `<div style="margin-bottom:12px"><b>Sales Officer:</b> ${esc(l.original_so_name)}</div>` : ''}
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}
-      ${me.role === 'sales_manager' || me.role === 'admin' ? `
+      ${me.role === 'sales_manager' || me.role === 'cluster_manager' || me.role === 'admin' ? `
         <label>Close Flag with Remarks</label>
         <textarea id="flagRemarks" placeholder="Enter remarks…"></textarea>
         <button class="btn" id="closeFlagBtn" style="background:#B91C1C">Close Flag</button>

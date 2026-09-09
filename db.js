@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { CLUSTER_MANAGER_DEFINITIONS } from './cluster-managers.js';
 
 const { Pool } = pg;
 
@@ -96,7 +97,7 @@ const DDL = [
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_flagged INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS flag_remarks TEXT`,
   `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
-  `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager'))`,
+  `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager','cluster_manager'))`,
   `CREATE TABLE IF NOT EXISTS salesforce_calls (
     id SERIAL PRIMARY KEY,
     mobile TEXT NOT NULL UNIQUE,
@@ -145,5 +146,28 @@ export async function initDb() {
       ['admin', hash('admin123'), 'Administrator', 'admin'],
     );
     console.log('Seeded default admin  ->  username: admin  password: admin123');
+  }
+
+  await seedClusterManagers();
+}
+
+export async function seedClusterManagers() {
+  const constraint = await get(
+    `SELECT pg_get_constraintdef(oid) AS definition
+     FROM pg_constraint
+     WHERE conrelid = 'users'::regclass AND conname = 'users_role_check'`,
+  );
+  if (!String(constraint?.definition || '').includes('cluster_manager')) {
+    await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+    await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager','cluster_manager'))`);
+  }
+
+  for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
+    await pool.query(
+      `INSERT INTO users (username, password, name, role, branch_id)
+       VALUES ($1, $2, $3, 'cluster_manager', NULL)
+       ON CONFLICT (username) DO NOTHING`,
+      [manager.username, hash(manager.password), manager.name],
+    );
   }
 }
