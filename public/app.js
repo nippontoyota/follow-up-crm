@@ -1244,6 +1244,9 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
 }
 
 let salesPerfSort = 'total';
+const SO_PERFORMANCE_PAGE_SIZE = 10;
+let salesPerfPage = 1;
+let salesPerfFilter = '';
 
 async function salesPerformanceView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
@@ -1272,7 +1275,7 @@ async function salesPerformanceView() {
           </div>
         </div>`;
       view.querySelectorAll('.sop-pick-row').forEach(row => {
-        row.onclick = () => { location.hash = 'salesPerf?branch_id=' + row.dataset.id; salesPerformanceView(); };
+        row.onclick = () => { salesPerfPage = 1; salesPerfFilter = ''; location.hash = 'salesPerf?branch_id=' + row.dataset.id; salesPerformanceView(); };
       });
       return;
     }
@@ -1326,7 +1329,8 @@ async function salesPerformanceView() {
         </div>
         <input id="sopFilter" class="sop-filter" placeholder="Filter officers…">
       </div>
-      <div class="sop-rows" id="sopRows">${sorted.map(rowHtml).join('')}</div>
+      <div class="sop-rows" id="sopRows"></div>
+      <div id="sopPager"></div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
     </div>`;
 
@@ -1334,10 +1338,14 @@ async function salesPerformanceView() {
       document.getElementById('salesBranchSwitch').onchange = (e) => {
         const id = e.target.value;
         if (!id) return;
+        salesPerfPage = 1;
+        salesPerfFilter = '';
         location.hash = 'salesPerf?branch_id=' + id;
         salesPerformanceView();
       };
       document.getElementById('salesBranchBack').onclick = () => {
+        salesPerfPage = 1;
+        salesPerfFilter = '';
         location.hash = 'salesPerf';
         salesPerformanceView();
       };
@@ -1346,23 +1354,39 @@ async function salesPerformanceView() {
     if (officers.length) {
       document.getElementById('sopSort').querySelectorAll('.sop-sort-opt').forEach(b => b.onclick = () => {
         salesPerfSort = b.dataset.sort;
+        salesPerfPage = 1;
         salesPerformanceView();
       });
-      document.getElementById('sopFilter').oninput = (e) => {
-        const q = e.target.value.trim().toLowerCase();
-        document.querySelectorAll('#sopRows .sop-row').forEach(row => {
-          row.classList.toggle('hide', !!q && !row.dataset.name.includes(q));
+      const renderRows = () => {
+        const query = salesPerfFilter.trim().toLowerCase();
+        const filtered = query ? sorted.filter(o => o.sales_officer.toLowerCase().includes(query)) : sorted;
+        const pages = Math.max(1, Math.ceil(filtered.length / SO_PERFORMANCE_PAGE_SIZE));
+        salesPerfPage = Math.min(Math.max(1, salesPerfPage), pages);
+        const start = (salesPerfPage - 1) * SO_PERFORMANCE_PAGE_SIZE;
+        const visible = filtered.slice(start, start + SO_PERFORMANCE_PAGE_SIZE);
+        document.getElementById('sopRows').innerHTML = visible.length
+          ? visible.map(rowHtml).join('')
+          : '<div class="empty">No matching Sales Officers</div>';
+        const pager = document.getElementById('sopPager');
+        pager.innerHTML = renderPager(salesPerfPage, pages, filtered.length);
+        view.querySelectorAll('#sopRows .sop-row').forEach(row => {
+          const openTotal = () => openOfficerLeads(branchId, row.dataset.officer, 'total');
+          row.onclick = openTotal;
+          row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTotal(); } };
         });
+        view.querySelectorAll('#sopRows .sop-pill').forEach(b => b.onclick = (e) => {
+          e.stopPropagation();
+          openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket);
+        });
+        bindPager(nextPage => { salesPerfPage = nextPage; renderRows(); }, pager);
       };
-      view.querySelectorAll('.sop-row').forEach(row => {
-        const openTotal = () => openOfficerLeads(branchId, row.dataset.officer, 'total');
-        row.onclick = openTotal;
-        row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTotal(); } };
-      });
-      view.querySelectorAll('.sop-pill').forEach(b => b.onclick = (e) => {
-        e.stopPropagation();
-        openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket);
-      });
+      document.getElementById('sopFilter').value = salesPerfFilter;
+      document.getElementById('sopFilter').oninput = (e) => {
+        salesPerfFilter = e.target.value;
+        salesPerfPage = 1;
+        renderRows();
+      };
+      renderRows();
     }
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
