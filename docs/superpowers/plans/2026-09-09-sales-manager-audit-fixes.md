@@ -56,4 +56,4 @@
 
 - [x] Run syntax, diff, and static assertions.
 - [x] Run role-scoped read-only API tests and before/after row-count checks.
-- [ ] Push, verify the live asset version, and smoke-test Sales Manager and CAC-visible behavior.
+- [x] Push, verify the live asset version, and smoke-test Sales Manager and CAC-visible behavior.
