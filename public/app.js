@@ -250,7 +250,7 @@ const TABS = {
   sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   call_guy: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   manager: [['dashboard', 'Dashboard', '📊']],
-  call_center_manager: [['callCenter', 'Call Center', '☎️'], ['flagged', 'Flagged Leads', '🚩']],
+  call_center_manager: [['callCenter', 'Call Center', '☎️']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
 };
 
@@ -1140,7 +1140,7 @@ async function callCenterView() {
       { num: s.booked || 0, lbl: 'Booked', col: 'ok', onClick: callCenterMetricClick({ bucket: 'booked' }, 'Booked leads') },
       { num: s.retailed || 0, lbl: 'Retail', col: 'ok', onClick: callCenterMetricClick({ bucket: 'retailed' }, 'Retail leads') },
       { num: s.lost || 0, lbl: 'Lost', col: 'bad', onClick: callCenterMetricClick({ bucket: 'lost' }, 'Lost leads') },
-      { num: (d.flagged || []).length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" },
+      ...(me.role === 'admin' ? [{ num: (d.flagged || []).length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" }] : []),
     ])}
     <div class="card"><h2>Call Executive Performance</h2>${tblHtml(
       ['Call Executive','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
@@ -1192,6 +1192,57 @@ const SO_BUCKETS = [
   { key: 'lost',      label: 'Lost' },
 ];
 
+const SO_STATUS_ORDER = [
+  'Fresh', 'RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number',
+  'Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done',
+  'Customer Busy', 'Details Received', 'Need time', 'Need SO Call', 'Need More Details',
+  'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected',
+  'Dropped', 'Lost to co-dealer', 'Lost Lead', 'Unknown',
+];
+const SO_STATUS_PAGE_SIZE = 10;
+let salesStatusPage = 1;
+
+function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, page = 1) {
+  const statusByOfficer = new Map();
+  const observedStatuses = new Set();
+  statusRows.forEach(row => {
+    const officer = String(row.sales_officer || 'Unknown Sales Officer');
+    const status = String(row.status || 'Unknown');
+    if (!statusByOfficer.has(officer)) statusByOfficer.set(officer, new Map());
+    statusByOfficer.get(officer).set(status, Number(row.count) || 0);
+    observedStatuses.add(status);
+  });
+  const statuses = SO_STATUS_ORDER.filter(status => status !== 'Unknown' || observedStatuses.has(status))
+    .concat([...observedStatuses].filter(status => !SO_STATUS_ORDER.includes(status)).sort());
+  const pages = Math.max(1, Math.ceil(officers.length / SO_STATUS_PAGE_SIZE));
+  salesStatusPage = Math.min(Math.max(1, page), pages);
+  const start = (salesStatusPage - 1) * SO_STATUS_PAGE_SIZE;
+  const visibleOfficers = officers.slice(start, start + SO_STATUS_PAGE_SIZE);
+  const statusHeader = statuses.map(status => `<th>${esc(status)}</th>`).join('');
+  const countCell = (officer, status, count) => count
+    ? `<button type="button" class="tbl-link so-status-link" data-officer="${esc(officer)}" data-status="${esc(status)}" title="View ${esc(status)} leads for ${esc(officer)}">${count}</button>`
+    : '<span class="tbl-zero">0</span>';
+  const rows = visibleOfficers.map(officer => {
+    const counts = statusByOfficer.get(officer.sales_officer) || new Map();
+    return `<tr><td><b>${esc(officer.sales_officer)}</b></td><td>${officer.total}</td>${statuses.map(status => `<td>${countCell(officer.sales_officer, status, counts.get(status) || 0)}</td>`).join('')}</tr>`;
+  }).join('');
+
+  root.innerHTML = `<div class="card so-status-card">
+    <div class="sop-head">
+      <div><h2>Sales Officer-wise Lead Status</h2><p class="sop-pick-desc">Latest follow-up status by Sales Officer. Select a count to view those leads.</p></div>
+    </div>
+    ${officers.length ? `<div class="tbl-wrap"><table class="tbl so-status-table">
+      <thead><tr><th>Sales Officer</th><th>Total</th>${statusHeader}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>${renderPager(salesStatusPage, pages, officers.length)}` : '<div class="empty">No Sales Officer status data found</div>'}
+  </div>`;
+
+  root.querySelectorAll('.so-status-link').forEach(button => {
+    button.onclick = () => openOfficerStatusLeads(branchId, button.dataset.officer, button.dataset.status);
+  });
+  bindPager(nextPage => renderSalesOfficerStatusTable(root, statusRows, officers, branchId, nextPage), root);
+}
+
 let salesPerfSort = 'total';
 
 async function salesPerformanceView() {
@@ -1231,6 +1282,7 @@ async function salesPerformanceView() {
     const s = d.summary || {};
     const flagged = d.flagged || [];
     const officers = d.bySalesOfficer || [];
+    const statusRows = d.bySalesOfficerStatus || [];
 
     const sorters = {
       total: (a, b) => b.total - a.total,
@@ -1246,6 +1298,7 @@ async function salesPerformanceView() {
         </div>
         <div class="sop-row-bar">${SO_BUCKETS.map(b => o[b.key] ? `<span class="sop-seg sop-seg-${b.key}" style="flex:${o[b.key]}" title="${esc(b.label)}: ${o[b.key]}"></span>` : '').join('')}</div>
         <div class="sop-row-pills">
+          <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="untouched">${o.untouched} untouched</button>
           <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button>
           <span class="sop-row-outcome">${o.booked}B · ${o.retailed}R · ${o.lost}L</span>
         </div>
@@ -1253,6 +1306,7 @@ async function salesPerformanceView() {
 
     view.innerHTML = `${kpiRow([
       { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
+      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn' },
       { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
       { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
       { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
@@ -1277,7 +1331,8 @@ async function salesPerformanceView() {
       </div>
       <div class="sop-rows" id="sopRows">${sorted.map(rowHtml).join('')}</div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
-    </div>`;
+    </div>
+    <div id="soStatusPanel"></div>`;
 
     if (me.role === 'admin') {
       document.getElementById('salesBranchSwitch').onchange = (e) => {
@@ -1305,6 +1360,8 @@ async function salesPerformanceView() {
       };
       view.querySelectorAll('.sop-pill').forEach(b => b.onclick = () => openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket));
     }
+    salesStatusPage = 1;
+    renderSalesOfficerStatusTable(document.getElementById('soStatusPanel'), statusRows, sorted, branchId);
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
 
@@ -1452,6 +1509,36 @@ async function openOfficerLeads(branchId, officer, bucket) {
   }
 }
 
+async function openOfficerStatusLeads(branchId, officer, status) {
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="soslx">← Back</button></div>
+    <div class="card" id="soslCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#soslx').onclick = () => sheet.remove();
+
+  try {
+    const query = new URLSearchParams({ branch_id: String(branchId), officer, status });
+    const leads = await api(`/sales-manager/officer-status-leads?${query}`);
+    const card = sheet.querySelector('#soslCard');
+    card.innerHTML = `<h2>${esc(status)} — ${esc(officer)} · ${leads.length}</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
+          <td>F${l.fcount}</td>
+          <td>${esc(l.latest_outcome || (l.fcount === 0 ? 'Fresh' : '—'))}</td>
+          <td>${esc(l.stage || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
+  } catch (e) {
+    sheet.querySelector('#soslCard').innerHTML = `<p style="color:var(--bad);padding:16px">${esc(e.message)}</p>`;
+  }
+}
+
 async function flaggedLeadsView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
   try {
@@ -1461,16 +1548,19 @@ async function flaggedLeadsView() {
       flagged = d.flagged || [];
       cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Executive', 'Stage'];
       rows = flagged.map(r => [esc(r.customer_name), esc(r.mobile), esc(r.sales_officer), esc(r.call_guy || '—'), esc(r.stage || '—')]);
-    } else {
+    } else if (me.role === 'admin') {
       const d = await api('/call-center/analytics');
       flagged = d.flagged || [];
       cols = ['Customer', 'Branch', 'Sales Officer', 'Call Executive', 'Sales Manager'];
       rows = flagged.map(r => [esc(r.customer_name), esc(r.branch || '—'), esc(r.original_so_name || '—'), esc(r.call_guy || '—'), esc(r.sales_manager || 'Unassigned')]);
+    } else {
+      view.innerHTML = '<div class="empty">Flag review is handled by Branch Sales Managers.</div>';
+      return;
     }
     const ids = flagged.map(r => r.id);
     view.innerHTML = `<div class="card flag-card">
       <h2 class="flag-card-h2">🚩 Flagged Leads · ${flagged.length}</h2>
-      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by call executives, routed to the sales manager of the flagged lead\'s branch.'}</p>` : ''}
+      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}</p>` : ''}
       <div class="tbl-wrap"><table class="tbl tbl-flag">
         <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((r, i) => `<tr class="lead-row" data-id="${ids[i]}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -2152,7 +2242,7 @@ async function openLead(id) {
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
-    ${l.is_flagged && ['manager', 'call_center_manager', 'sales_manager', 'admin'].includes(me.role) ? `<div class="card" style="border-color:#B91C1C">
+    ${l.is_flagged && ['manager', 'sales_manager', 'admin'].includes(me.role) ? `<div class="card" style="border-color:#B91C1C">
       <h2 style="color:#B91C1C">⚑ Flagged for Sales Manager</h2>
       ${l.original_so_name ? `<div style="margin-bottom:12px"><b>Sales Officer:</b> ${esc(l.original_so_name)}</div>` : ''}
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}

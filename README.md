@@ -60,6 +60,10 @@ Call status → outcome:
 - `db.js` — schema, seeding, password helpers
 - `public/` — `index.html`, `app.js`, `style.css`
 
+## Sales Manager analytics
+
+Branch Sales Managers get a branch-scoped Sales Officer-wise lead-status table below the performance view. It is based on each lead's latest follow-up outcome, includes `Fresh` leads, shows 10 Sales Officers per page, and opens the matching leads when a non-zero status count is selected. Call Executive flags are reviewed by the Sales Manager assigned to the lead's branch; Admin retains global oversight.
+
 ## Local call-center demo
 
 The repository includes an isolated demo flow for the repurposed call-center model. It uses a separate PostgreSQL database named `followup_crm_demo` on `localhost`. The demo refuses to start if its database host or name points elsewhere. It does not load `.env`, and it does not change the connected database service.
