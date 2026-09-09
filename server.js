@@ -806,6 +806,32 @@ ${remarksText}`;
   }
 });
 
+app.get('/api/call-center/leads/export', auth('call_center_manager', 'admin'), async (req, res, next) => {
+  try {
+    const leads = await all(`
+      SELECT l.customer_name, l.mobile, b.name AS branch, s.name AS source,
+             u.name AS officer, sc.so_name, l.fcount, l.stage, l.status, l.next_date,
+             l.location, l.remarks AS lead_remarks, l.created_at,
+             f.call_status AS latest_call_status, f.outcome AS latest_outcome,
+             f.remarks AS latest_remarks, f.created_at AS latest_call_date
+      FROM leads l
+      LEFT JOIN users          u  ON u.id  = l.assigned_to
+      LEFT JOIN branches       b  ON b.id  = l.branch_id
+      LEFT JOIN sources        s  ON s.id  = l.source_id
+      LEFT JOIN salesforce_calls sc ON sc.mobile = l.mobile
+      LEFT JOIN LATERAL (
+        SELECT call_status, outcome, remarks, created_at
+        FROM followups WHERE lead_id = l.id
+        ORDER BY created_at DESC LIMIT 1
+      ) f ON true
+      WHERE l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
+        AND l.fcount > 0
+      ORDER BY l.next_date NULLS FIRST, l.id DESC
+    `);
+    res.json(leads);
+  } catch (e) { next(e); }
+});
+
 app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), async (req, res, next) => {
   try {
     const branchId = req.user.branch_id;
@@ -816,7 +842,7 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
       ? `l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`
       : `l.branch_id = ?`;
     const scopeArgs = isCallCenter ? [] : [branchId];
-    const { officer_id, stage, call_status, outcome, latest_outcome, flagged, overdue, call_guy_id } = req.query;
+    const { officer_id, stage, call_status, outcome, latest_outcome, flagged, overdue, call_guy_id, branch_id, bucket } = req.query;
 
     const BASE = `
       SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
@@ -835,6 +861,45 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
         WHERE ${scopeSql} AND l.assigned_to = ? AND l.status = 'open' AND l.next_date < ?
         ORDER BY l.next_date ASC, l.id DESC
       `, ...scopeArgs, Number(call_guy_id), today());
+    } else if (isCallCenter && (bucket || call_guy_id || branch_id)) {
+      const BUCKET_FILTERS = {
+        total:    '1 = 1',
+        open:     `l.status = 'open'`,
+        untouched: `l.fcount = 0 AND l.status = 'open'`,
+        followup:  `l.fcount > 0 AND l.status = 'open'`,
+        due:       `l.status = 'open' AND l.next_date <= ?`,
+        overdue:   `l.status = 'open' AND l.next_date < ?`,
+        booked:    `l.stage = 'Booking Done' AND l.status = 'closed'`,
+        retailed:  `l.stage = 'Retail Done' AND l.status = 'closed'`,
+        won:       `l.stage IN ('Booking Done', 'Retail Done')`,
+        lost:      `l.stage = 'Lost Lead' AND l.status = 'closed'`,
+        f1:        `l.fcount = 1 AND l.status = 'open'`,
+        f2:        `l.fcount = 2 AND l.status = 'open'`,
+        f3:        `l.fcount = 3 AND l.status = 'open'`,
+        f4:        `l.fcount = 4 AND l.status = 'open'`,
+        f5plus:    `l.fcount >= 5 AND l.status = 'open'`,
+      };
+      const bucketSql = BUCKET_FILTERS[bucket || 'total'];
+      if (!bucketSql) return bad(res, 'Invalid Call Center filter');
+      const filters = [scopeSql, bucketSql];
+      const args = [...scopeArgs];
+      if (['due', 'overdue'].includes(bucket || '')) args.push(today());
+      if (call_guy_id) {
+        if (!Number.isInteger(Number(call_guy_id)) || Number(call_guy_id) < 1)
+          return bad(res, 'Invalid Call Executive');
+        filters.push('l.assigned_to = ?');
+        args.push(Number(call_guy_id));
+      }
+      if (branch_id) {
+        if (!Number.isInteger(Number(branch_id)) || Number(branch_id) < 1)
+          return bad(res, 'Invalid branch');
+        filters.push('l.branch_id = ?');
+        args.push(Number(branch_id));
+      }
+      leads = await all(`${BASE}
+        WHERE ${filters.join(' AND ')}
+        ORDER BY l.next_date NULLS FIRST, l.id DESC
+      `, ...args);
     } else if (flagged === '1' && officer_id) {
       leads = await all(`${BASE}
         WHERE ${scopeSql} AND l.assigned_to = ? AND l.is_flagged = 1
@@ -1039,7 +1104,12 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
           COUNT(l.id) FILTER (WHERE l.next_date <= ? AND l.status = 'open')::int AS due,
           COUNT(l.id) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
           COUNT(l.id) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
-          COUNT(l.id) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost
+          COUNT(l.id) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
+          COUNT(l.id) FILTER (WHERE l.fcount = 1 AND l.status = 'open')::int AS f1,
+          COUNT(l.id) FILTER (WHERE l.fcount = 2 AND l.status = 'open')::int AS f2,
+          COUNT(l.id) FILTER (WHERE l.fcount = 3 AND l.status = 'open')::int AS f3,
+          COUNT(l.id) FILTER (WHERE l.fcount = 4 AND l.status = 'open')::int AS f4,
+          COUNT(l.id) FILTER (WHERE l.fcount >= 5 AND l.status = 'open')::int AS f5plus
         FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
         WHERE u.role = 'call_guy' AND u.active = 1
         GROUP BY u.id, u.name ORDER BY u.name`, day),
@@ -1047,7 +1117,7 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
         FROM followups f JOIN leads l ON l.id = f.lead_id
         WHERE l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
         GROUP BY f.call_status, f.outcome ORDER BY count DESC`),
-      all(`SELECT b.name AS branch, COUNT(l.id)::int AS total,
+      all(`SELECT b.id AS branch_id, b.name AS branch, COUNT(l.id)::int AS total,
           COUNT(l.id) FILTER (WHERE l.status = 'open')::int AS open,
           COUNT(l.id) FILTER (WHERE l.stage IN ('Booking Done','Retail Done'))::int AS won
         FROM branches b LEFT JOIN leads l ON l.branch_id = b.id

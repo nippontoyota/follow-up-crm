@@ -245,7 +245,7 @@ function loginView() {
 /* -------------------------------------------------------------------- shell */
 
 const TABS = {
-  admin:   [['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['salesPerf', 'Sales Officers', '👥'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
+  admin:   [['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['salesPerf', 'Sales Officers', '👥'], ['flagged', 'Flagged Leads', '🚩'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
   sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   call_guy: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
@@ -674,6 +674,20 @@ function overdueLink(callGuyId, callGuy, count) {
   return `<button class="tbl-link" onclick="openOverdueLeads('${id}','${label}')">${count}</button>`;
 }
 
+function callCenterMetricQuery(filters) {
+  return new URLSearchParams({ scope: 'call_center', ...filters }).toString();
+}
+
+function callCenterMetricClick(filters, label) {
+  const query = callCenterMetricQuery(filters);
+  return `openMetricLeads('${query}','${encodeURIComponent(label)}')`;
+}
+
+function callCenterMetricLink(filters, label, count) {
+  if (!count) return `<span style="color:var(--muted)">0</span>`;
+  return `<button class="tbl-link" onclick="${callCenterMetricClick(filters, label)}">${count}</button>`;
+}
+
 function lostCaseLink(outcome, count) {
   if (!count) return `<span style="color:var(--muted)">0</span>`;
   const oc = encodeURIComponent(outcome);
@@ -769,6 +783,37 @@ async function openOverdueLeads(callGuyId, label) {
     });
   } catch (e) {
     sheet.querySelector('#odCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
+  }
+}
+
+async function openMetricLeads(query, label) {
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="mlx">← Back</button></div>
+    <div class="card" id="mlCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#mlx').onclick = () => sheet.remove();
+
+  try {
+    const leads = await api(`/manager/leads?${query}`);
+    const card = sheet.querySelector('#mlCard');
+    card.innerHTML = `<h2>${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Branch</th><th>Call Executive</th><th>Next Date</th><th>Stage</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.branch || '—')}</td>
+          <td>${esc(l.officer || '—')}</td>
+          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
+          <td>${esc(l.stage || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No matching leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => {
+      row.onclick = () => openLead(Number(row.dataset.id));
+    });
+  } catch (e) {
+    sheet.querySelector('#mlCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
   }
 }
 
@@ -874,7 +919,7 @@ async function downloadLeadsExcel() {
   const btn = document.getElementById('exportBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
   try {
-    const leads = await api('/manager/leads/export');
+    const leads = await api(tab === 'callCenter' ? '/call-center/leads/export' : '/manager/leads/export');
     const rows = leads.map(l => ({
       'Customer Name':       l.customer_name,
       'Mobile':              l.mobile,
@@ -1077,23 +1122,51 @@ async function callCenterView() {
   try {
     const d = await api('/call-center/analytics');
     const s = d.summary || d.kpi || {};
-    view.innerHTML = `${kpiRow([
-      { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
-      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn' },
-      { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
-      { num: s.overdue || 0, lbl: 'Overdue', col: 'bad' },
-      { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
-      { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
-      { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
+    view.innerHTML = `<div style="display:flex;justify-content:flex-end;padding:0 4px 8px">
+      <button id="exportBtn" class="btn" style="width:auto;padding:8px 18px;font-size:13px" onclick="downloadLeadsExcel()">⬇ Download Excel</button>
+    </div>${kpiRow([
+      { num: s.total || 0, lbl: 'Total Leads', col: 'brand', onClick: callCenterMetricClick({ bucket: 'total' }, 'Total leads') },
+      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn', onClick: callCenterMetricClick({ bucket: 'untouched' }, 'Untouched leads') },
+      { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand', onClick: callCenterMetricClick({ bucket: 'followup' }, 'Leads under follow-up') },
+      { num: s.overdue || 0, lbl: 'Overdue', col: 'bad', onClick: callCenterMetricClick({ bucket: 'overdue' }, 'Overdue leads') },
+      { num: s.booked || 0, lbl: 'Booked', col: 'ok', onClick: callCenterMetricClick({ bucket: 'booked' }, 'Booked leads') },
+      { num: s.retailed || 0, lbl: 'Retail', col: 'ok', onClick: callCenterMetricClick({ bucket: 'retailed' }, 'Retail leads') },
+      { num: s.lost || 0, lbl: 'Lost', col: 'bad', onClick: callCenterMetricClick({ bucket: 'lost' }, 'Lost leads') },
       { num: (d.flagged || []).length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" },
     ])}
     <div class="card"><h2>Call Executive Performance</h2>${tblHtml(
       ['Call Executive','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
-      d.byCallGuy.map(r => [esc(r.call_guy), r.total, r.untouched, r.followup, r.due, r.booked, r.retailed, r.lost]),
+      d.byCallGuy.map(r => [
+        esc(r.call_guy),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'total' }, `${r.call_guy} total leads`, r.total),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'untouched' }, `${r.call_guy} untouched leads`, r.untouched),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'followup' }, `${r.call_guy} follow-up leads`, r.followup),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'due' }, `${r.call_guy} due leads`, r.due),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'booked' }, `${r.call_guy} booked leads`, r.booked),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'retailed' }, `${r.call_guy} retail leads`, r.retailed),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'lost' }, `${r.call_guy} lost leads`, r.lost),
+      ]),
       'No Call Executives found'
     )}</div>
+    <div class="card"><h2>Follow-up stages</h2>${tblHtml(
+      ['Call Executive','F1','F2','F3','F4','F5+'],
+      d.byCallGuy.map(r => [
+        esc(r.call_guy),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f1' }, `${r.call_guy} F1 leads`, r.f1),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f2' }, `${r.call_guy} F2 leads`, r.f2),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f3' }, `${r.call_guy} F3 leads`, r.f3),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f4' }, `${r.call_guy} F4 leads`, r.f4),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f5plus' }, `${r.call_guy} F5 and later leads`, r.f5plus),
+      ]),
+      'No follow-up stages found'
+    )}</div>
     <div class="card"><h2>Performance by Branch</h2>${tblHtml(
-      ['Branch','Total','Open','Won'], d.byBranch.map(r => [esc(r.branch), r.total, r.open, r.won]), 'No branch data'
+      ['Branch','Total','Open','Won'], d.byBranch.map(r => [
+        esc(r.branch),
+        callCenterMetricLink({ branch_id: r.branch_id, bucket: 'total' }, `${r.branch} total leads`, r.total),
+        callCenterMetricLink({ branch_id: r.branch_id, bucket: 'open' }, `${r.branch} open leads`, r.open),
+        callCenterMetricLink({ branch_id: r.branch_id, bucket: 'won' }, `${r.branch} won leads`, r.won),
+      ]), 'No branch data'
     )}</div>
     <div class="card"><h2>Call Outcomes</h2>${tblHtml(
       ['Call Status','Outcome','Count'], d.outcomes.map(r => [esc(r.call_status), esc(r.outcome), outcomeLink(r.call_status, r.outcome, r.count)]), 'No calls logged'
