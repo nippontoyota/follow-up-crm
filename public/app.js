@@ -689,7 +689,8 @@ async function openOutcomeLeads(callStatus, outcome, label) {
   sheet.querySelector('#olx').onclick = () => sheet.remove();
 
   try {
-    const leads = await api(`/manager/leads?call_status=${callStatus}&outcome=${outcome}`);
+    const scope = tab === 'callCenter' ? '&scope=call_center' : '';
+    const leads = await api(`/manager/leads?call_status=${callStatus}&outcome=${outcome}${scope}`);
     const card = sheet.querySelector('#olCard');
     card.innerHTML = `<h2>${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
@@ -749,7 +750,8 @@ async function openOverdueLeads(callGuyId, label) {
   sheet.querySelector('#odx').onclick = () => sheet.remove();
 
   try {
-    const leads = await api(`/manager/leads?overdue=1&call_guy_id=${callGuyId}`);
+    const scope = tab === 'callCenter' ? '&scope=call_center' : '';
+    const leads = await api(`/manager/leads?overdue=1&call_guy_id=${callGuyId}${scope}`);
     const card = sheet.querySelector('#odCard');
     card.innerHTML = `<h2>Overdue — ${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">

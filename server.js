@@ -809,7 +809,8 @@ ${remarksText}`;
 app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), async (req, res, next) => {
   try {
     const branchId = req.user.branch_id;
-    const isCallCenter = req.user.role === 'call_center_manager';
+    const isCallCenter = req.user.role === 'call_center_manager' ||
+      (req.user.role === 'admin' && req.query.scope === 'call_center');
     if (!isCallCenter && !branchId) return bad(res, 'No branch assigned');
     const scopeSql = isCallCenter
       ? `l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`
