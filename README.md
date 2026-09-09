@@ -42,9 +42,14 @@ Call status → outcome:
 | Showroom Visit | Switch Off |
 | Booking Done | Call Me Back |
 | Retail Done | |
+| Customer Busy | |
+| Details Received | |
 | Not Interested | |
 
 - **Next follow-up date** is mandatory and restricted to **today … today + 3** (the n+3 rule), enforced on both the date input and the server.
+- **Test Drive Date** is shown for **Need Test Drive** and is optional.
+- **Call Me Back** is available for both Connected and Not Connected calls.
+- Tally Receipt No. and Order ID are not requested when logging a new follow-up. Existing historical values remain available in lead history.
 - **Booking Done / Retail Done / Not Interested** close the lead — no next date is asked for and it drops out of the follow-up tabs. Every other outcome requires the date.
 - Model and Activity dropdowns appear on Connected outcomes and are optional.
 - Each entry is numbered F1, F2, F3… and the full history is shown on the lead.

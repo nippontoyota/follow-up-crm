@@ -28,7 +28,7 @@ if (!existsSync('.secret')) writeFileSync('.secret', randomBytes(32).toString('h
 const SECRET = process.env.SESSION_SECRET || readFileSync('.secret', 'utf8').trim();
 
 export const OUTCOMES = {
-  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
+  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
   'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number'],
 };
 const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
@@ -640,6 +640,8 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
         COUNT(f.id) FILTER (WHERE f.outcome = 'Showroom Visit')::int                                                       AS showroom_visit,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Booking Done')::int                                                         AS booking_done,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Retail Done')::int                                                          AS retail_done,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Customer Busy')::int                                                        AS customer_busy,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'Details Received')::int                                                     AS details_received,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Need time')::int                                                            AS need_time,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Need SO Call')::int                                                         AS need_so_call,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Need More Details')::int                                                    AS need_more_details,
@@ -999,8 +1001,6 @@ app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (r
     if (!OUTCOMES[call_status]) return bad(res, 'Select Connected or Not Connected');
     if (!OUTCOMES[call_status].includes(outcome)) return bad(res, 'Select a valid outcome');
 
-    if (outcome === 'Retail Done' && !String(tally_receipt || '').trim()) return bad(res, 'Tally Receipt No. is required');
-    if (outcome === 'Need Test Drive' && !String(test_drive_date || '').trim()) return bad(res, 'Test drive date is required');
     if (outcome === 'Exchange Issue' && !String(exchange_expected_price || '').trim()) return bad(res, 'Expected price is required');
     if (outcome === 'Exchange Issue' && !String(exchange_offered_price || '').trim()) return bad(res, 'Offered price is required');
 
@@ -1024,7 +1024,7 @@ app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (r
       model_id ? Number(model_id) : null, activity_id ? Number(activity_id) : null,
       nd, remarks?.trim() || null, other_so_called?.trim() || null,
       order_id?.trim() || null, tally_receipt?.trim() || null,
-      outcome === 'Need Test Drive' ? String(test_drive_date).trim() : null,
+      outcome === 'Need Test Drive' ? String(test_drive_date || '').trim() || null : null,
       outcome === 'Exchange Issue' ? String(exchange_expected_price).trim() : null,
       outcome === 'Exchange Issue' ? String(exchange_offered_price).trim() : null,
     );

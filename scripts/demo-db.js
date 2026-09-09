@@ -90,7 +90,7 @@ async function seed() {
   const activityRows = await all('SELECT id, name FROM activities ORDER BY id');
   const sampleNames = ['Akhil Nair', 'Amal Varghese', 'Anju Mathew', 'Arjun Das', 'Basil Jose', 'Devika S', 'Firoz Khan', 'Greeshma R', 'Hari Krishnan', 'Irene Paul', 'Jithin Joseph', 'Kavya Menon', 'Lijo Thomas', 'Meera Nair', 'Nikhil Raj', 'Olivia George', 'Pranav P', 'Rakesh Kumar', 'Saniya Ali', 'Thomas Mathew'];
   const soNames = ['Anil Menon', 'Binu Thomas', 'Catherine Paul', 'Dinesh Kumar', 'Fathima Rahman', 'George Joseph'];
-  const outcomes = ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Not Interested', 'RNR', 'Call Me Back', 'Need More Details'];
+  const outcomes = ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Not Interested', 'RNR', 'Need More Details'];
   for (let i = 0; i < sampleNames.length; i++) {
     const branchId = branchByName.get(branches[i % branches.length]);
     const sourceId = sourceRows[i % sourceRows.length].id;

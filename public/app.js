@@ -1084,12 +1084,14 @@ async function managerView() {
       <h2>Salesforce Officer — Call Outcome Analysis</h2>
       ${tblHtml(
         ['SF Sales Officer','Total Leads','Total Calls','Connected','Not Connected',
-         'Test Drive','Showroom','Exchange','Booking Done','Retail Done','Need Time','Need SO Call',
+         'Test Drive','Showroom','Exchange','Booking Done','Retail Done','Customer Busy','Details Received',
+         'Need Time','Need SO Call',
          'More Details','Discount','Not Interested','Already Booked','Lost',
          'RNR','Switch Off','Call Back','Call Fwd','Line Busy','Invalid No.'],
         officerOutcomes.map(r => [
           esc(r.so_name), r.total, r.total_calls, r.connected, r.not_connected,
           r.need_test_drive, r.showroom_visit, r.exchange_issue, r.booking_done, r.retail_done,
+          r.customer_busy, r.details_received,
           r.need_time, r.need_so_call, r.need_more_details, r.discount_issue,
           r.not_interested, r.already_booked, r.lost_calls,
           r.rnr, r.switch_off, r.call_me_back, r.call_forwarding, r.line_busy, r.invalid_number,
@@ -2173,16 +2175,8 @@ async function openLead(id) {
         <label>Outcome <span class="req">*</span></label>
         <div class="chips" id="out"></div>
       </div>
-      <div id="orderWrap" class="hide">
-        <label>Order ID <span style="color:var(--muted)">(optional — can be added later)</span></label>
-        <input id="orderId" placeholder="Enter order ID">
-      </div>
-      <div id="tallyWrap" class="hide">
-        <label>Tally Receipt No. <span class="req">*</span></label>
-        <input id="tallyNo" placeholder="Enter tally receipt number">
-      </div>
       <div id="testDriveWrap" class="hide">
-        <label>Test Drive Date <span class="req">*</span></label>
+        <label>Test Drive Date <span style="color:var(--muted)">(optional)</span></label>
         <input id="testDriveDate" type="date" min="${me.today}" max="${me.maxDate}">
       </div>
       <div id="exchangeWrap" class="hide">
@@ -2196,7 +2190,7 @@ async function openLead(id) {
         <input id="nd" type="date" min="${me.today}" max="${me.maxDate}" value="${me.today}">
       </div>
       <div id="oscWrap" class="hide">
-        <label>Did any other SO call the customer?</label>
+        <label>Did SO Call The Customer</label>
         <select id="osc">
           <option value="">Select…</option>
           <option value="Yes">Yes</option>
@@ -2262,7 +2256,7 @@ async function openLead(id) {
   if (!canAct) return;
 
   const NO_DATE   = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
-  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Already Booked': 'red', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue', 'Exchange Issue': 'blue' };
+  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Already Booked': 'red', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue', 'Exchange Issue': 'blue', 'Customer Busy': 'blue', 'Call Me Back': 'blue', 'Details Received': 'blue' };
   let call = '', outcome = '';
 
   const pick = (wrap, onPick) => {
@@ -2285,16 +2279,12 @@ async function openLead(id) {
     sheet.querySelector('#outWrap').classList.remove('hide');
     sheet.querySelector('#oscWrap').classList.toggle('hide', v !== 'Connected');
     sheet.querySelector('#dateWrap').classList.add('hide');
-    sheet.querySelector('#orderWrap').classList.add('hide');
-    sheet.querySelector('#tallyWrap').classList.add('hide');
     sheet.querySelector('#testDriveWrap').classList.add('hide');
     sheet.querySelector('#exchangeWrap').classList.add('hide');
     pick(out, (o) => {
       outcome = o;
       const skipDate = NO_DATE.has(o);
       sheet.querySelector('#dateWrap').classList.toggle('hide', skipDate);
-      sheet.querySelector('#orderWrap').classList.toggle('hide', o !== 'Booking Done');
-      sheet.querySelector('#tallyWrap').classList.toggle('hide', o !== 'Retail Done');
       sheet.querySelector('#testDriveWrap').classList.toggle('hide', o !== 'Need Test Drive');
       sheet.querySelector('#exchangeWrap').classList.toggle('hide', o !== 'Exchange Issue');
     });
@@ -2306,8 +2296,6 @@ async function openLead(id) {
     const skipDate = NO_DATE.has(outcome);
     const nd = sheet.querySelector('#nd').value;
     if (!skipDate && !nd) return say('Next follow-up date is required');
-    if (outcome === 'Retail Done'    && !sheet.querySelector('#tallyNo').value.trim())     return say('Tally Receipt No. is required');
-    if (outcome === 'Need Test Drive'&& !sheet.querySelector('#testDriveDate').value)      return say('Test drive date is required');
     if (outcome === 'Exchange Issue' && !sheet.querySelector('#exExpected').value.trim())  return say('Expected price is required');
     if (outcome === 'Exchange Issue' && !sheet.querySelector('#exOffered').value.trim())   return say('Offered price is required');
 
@@ -2321,9 +2309,7 @@ async function openLead(id) {
       await api(`/leads/${l.id}/followup`, 'POST', {
         call_status: call, outcome,
         next_date:     skipDate ? null : nd,
-        order_id:      outcome === 'Booking Done'    ? sheet.querySelector('#orderId').value.trim()     : undefined,
-        tally_receipt: outcome === 'Retail Done'     ? sheet.querySelector('#tallyNo').value.trim()     : undefined,
-        test_drive_date:          outcome === 'Need Test Drive' ? sheet.querySelector('#testDriveDate').value           : undefined,
+        test_drive_date:          outcome === 'Need Test Drive' ? sheet.querySelector('#testDriveDate').value || null    : undefined,
         exchange_expected_price:  outcome === 'Exchange Issue'  ? sheet.querySelector('#exExpected').value.trim()      : undefined,
         exchange_offered_price:   outcome === 'Exchange Issue'  ? sheet.querySelector('#exOffered').value.trim()       : undefined,
         remarks:       sheet.querySelector('#rm').value.trim(),

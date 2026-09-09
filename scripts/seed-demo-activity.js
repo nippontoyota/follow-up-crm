@@ -8,7 +8,7 @@ if (process.env.DEMO_MODE !== '1' || process.env.DB_NAME !== 'followup_crm_demo'
 }
 
 const OUTCOMES = {
-  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
+  'Connected':     ['Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
   'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number'],
 };
 const CALL_STATUS_OF = {};
@@ -26,7 +26,9 @@ const FINAL_OUTCOME_POOL = [
   ...Array(2).fill('Lost to co-dealer'),
   ...Array(14).fill('Need Test Drive'),
   ...Array(10).fill('Showroom Visit'),
+  ...Array(3).fill('Customer Busy'),
   ...Array(10).fill('Call Me Back'),
+  ...Array(3).fill('Details Received'),
   ...Array(6).fill('RNR'),
   ...Array(5).fill('Switch Off'),
   ...Array(4).fill('Need More Details'),
@@ -40,6 +42,8 @@ const INTERMEDIATE_POOL = ['RNR', 'Switch Off', 'Line Busy', 'Call Me Back', 'Ne
 const REMARKS = {
   'Need Test Drive': ['Interested, wants to try the vehicle first', 'Booked a test drive slot', 'Will visit showroom for test drive this week'],
   'Showroom Visit': ['Visited showroom, checking variants', 'Walked in, comparing with competitor model', 'Came in with family to see the car'],
+  'Customer Busy': ['Customer was busy, requested a later call', 'Asked to continue the discussion another time'],
+  'Details Received': ['Customer shared the requested details', 'Collected the required information from customer'],
   'Booking Done': ['Booking confirmed, advance paid', 'Finalized variant and color, booking done', 'Happy customer, booked on the spot'],
   'Retail Done': ['Delivery completed', 'Vehicle handed over to customer', 'Retail closed successfully'],
   'Not Interested': ['Changed mind, not buying a car now', 'Budget did not work out', 'Postponing purchase indefinitely'],
