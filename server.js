@@ -1146,7 +1146,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
   try {
     const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
     if (!branchId) return bad(res, 'Select a branch');
-    const [bySalesOfficer, summary, flagged, leadStatusCounts, lostStatusCounts] = await Promise.all([
+    const [bySalesOfficer, summary, flagged] = await Promise.all([
       all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
@@ -1171,6 +1171,16 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
         WHERE l.branch_id = ? AND l.is_flagged = 1
         ORDER BY l.id DESC`, branchId),
 
+    ]);
+    res.json({ branchId, summary, bySalesOfficer, flagged });
+  } catch (e) { next(e); }
+});
+
+app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'admin'), async (req, res, next) => {
+  try {
+    const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
+    if (!branchId) return bad(res, 'Select a branch');
+    const [leadStatusCounts, lostStatusCounts] = await Promise.all([
       all(`SELECT COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END) AS status,
           COUNT(*)::int AS count
         FROM leads l
@@ -1192,7 +1202,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
         GROUP BY COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown')
         ORDER BY count DESC, status`, branchId),
     ]);
-    res.json({ branchId, summary, bySalesOfficer, flagged, leadStatusCounts, lostStatusCounts });
+    res.json({ branchId, leadStatusCounts, lostStatusCounts });
   } catch (e) { next(e); }
 });
 

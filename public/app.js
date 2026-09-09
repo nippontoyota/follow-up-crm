@@ -245,13 +245,13 @@ function loginView() {
 /* -------------------------------------------------------------------- shell */
 
 const TABS = {
-  admin:   [['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['salesPerf', 'Sales Officers', '👥'], ['flagged', 'Flagged Leads', '🚩'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
+  admin:   [['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
   sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   call_guy: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   manager: [['dashboard', 'Dashboard', '📊']],
   call_center_manager: [['callCenter', 'Call Center', '☎️'], ['flagged', 'Flagged Leads', '🚩']],
-  sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['flagged', 'Flagged Leads', '🚩']],
+  sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
 };
 
 async function boot() {
@@ -289,7 +289,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -1223,8 +1223,6 @@ async function salesPerformanceView() {
     const s = d.summary || {};
     const flagged = d.flagged || [];
     const officers = d.bySalesOfficer || [];
-    const leadStatusCounts = d.leadStatusCounts || [];
-    const lostStatusCounts = d.lostStatusCounts || [];
 
     const sorters = {
       total: (a, b) => b.total - a.total,
@@ -1271,22 +1269,6 @@ async function salesPerformanceView() {
       </div>
       <div class="sop-rows" id="sopRows">${sorted.map(rowHtml).join('')}</div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
-    </div>
-    <div class="card">
-      <h2>Lead Status Analysis</h2>
-      ${tblHtml(
-        ['Lead Status', 'Count'],
-        leadStatusCounts.map(r => [esc(r.status), r.count]),
-        'No lead status data'
-      )}
-    </div>
-    <div class="card" style="border-color:var(--bad)">
-      <h2 style="color:var(--bad)">Lost Lead Analysis</h2>
-      ${tblHtml(
-        ['Lost Lead Status', 'Count'],
-        lostStatusCounts.map(r => [esc(r.status), r.count]),
-        'No lost leads yet'
-      )}
     </div>`;
 
     if (me.role === 'admin') {
@@ -1314,6 +1296,83 @@ async function salesPerformanceView() {
         });
       };
       view.querySelectorAll('.sop-pill').forEach(b => b.onclick = () => openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket));
+    }
+  } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+}
+
+async function leadAnalysisView() {
+  view.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    let branchId = '';
+    let branchName = '';
+    if (me.role === 'sales_manager') branchId = me.branch_id;
+    else if (me.role === 'admin') {
+      const hashQuery = location.hash.includes('?') ? location.hash.slice(location.hash.indexOf('?') + 1) : '';
+      branchId = new URLSearchParams(hashQuery).get('branch_id') || '';
+    }
+
+    if (!branchId && me.role === 'admin') {
+      const branches = await api('/analytics');
+      view.innerHTML = `
+        <div class="card sop-pick-card">
+          <h2>Lead Analysis</h2>
+          <p class="sop-pick-desc">Pick a branch to review its lead status and lost lead breakdown.</p>
+          <div class="sop-pick-list">${branches.map(b => `
+            <button type="button" class="sop-pick-row" data-id="${b.id}">
+              <span class="sop-pick-name">${esc(b.name)}</span>
+              <span class="sop-pick-stats"><span>${b.total} total</span><span>${b.open} open</span><span class="sop-pick-won">${b.won} won</span></span>
+            </button>`).join('')}
+          </div>
+        </div>`;
+      view.querySelectorAll('.sop-pick-row').forEach(row => {
+        row.onclick = () => { location.hash = 'leadAnalysis?branch_id=' + row.dataset.id; leadAnalysisView(); };
+      });
+      return;
+    }
+
+    branchName = masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
+    const d = await api(`/sales-manager/lead-analysis?branch_id=${encodeURIComponent(branchId)}`);
+    const leadStatusCounts = d.leadStatusCounts || [];
+    const lostStatusCounts = d.lostStatusCounts || [];
+
+    view.innerHTML = `
+      <div class="card">
+        <div class="sop-head">
+          <h2>Lead Analysis${branchName ? ` · ${esc(branchName)}` : ''}</h2>
+          ${me.role === 'admin' ? `<div class="sop-head-actions">
+            <button type="button" class="btn ghost sop-back" id="leadAnalysisBack">← All branches</button>
+            <label class="sop-switch-wrap">Branch<select id="leadAnalysisBranch" class="sop-switch">${options(masters.branches, Number(branchId))}</select></label>
+          </div>` : ''}
+        </div>
+      </div>
+      <div class="card">
+        <h2>Lead Status Analysis</h2>
+        ${tblHtml(
+          ['Lead Status', 'Count'],
+          leadStatusCounts.map(r => [esc(r.status), r.count]),
+          'No lead status data'
+        )}
+      </div>
+      <div class="card" style="border-color:var(--bad)">
+        <h2 style="color:var(--bad)">Lost Lead Analysis</h2>
+        ${tblHtml(
+          ['Lost Lead Status', 'Count'],
+          lostStatusCounts.map(r => [esc(r.status), r.count]),
+          'No lost leads yet'
+        )}
+      </div>`;
+
+    if (me.role === 'admin') {
+      document.getElementById('leadAnalysisBranch').onchange = (e) => {
+        const id = e.target.value;
+        if (!id) return;
+        location.hash = 'leadAnalysis?branch_id=' + id;
+        leadAnalysisView();
+      };
+      document.getElementById('leadAnalysisBack').onclick = () => {
+        location.hash = 'leadAnalysis';
+        leadAnalysisView();
+      };
     }
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
