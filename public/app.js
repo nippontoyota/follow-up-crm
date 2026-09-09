@@ -1775,7 +1775,9 @@ const GROUP_FIELDS = [
   { kind: 'models', errField: 'err_model', idField: 'model_id', title: 'Model', valueOf: l => l.model },
   { kind: 'activities', errField: 'err_activity', idField: 'activity_id', title: 'Activity', valueOf: l => l.activity },
 ];
-const isRowReady = l => !l.err_branch && !l.err_source && !l.err_model && !l.err_activity && !l.err_missing && !l.err_so_name && !l.err_so_mobile;
+// Officer phone is useful context but is not required to import the lead.
+// Branch, source, model, activity and customer identity errors remain blocking.
+const isRowReady = l => !l.err_branch && !l.err_source && !l.err_model && !l.err_activity && !l.err_missing && !l.err_so_name;
 
 const officerKey = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 const officerBranchKey = value => String(value || '').toLowerCase().replace(/^nippon\s+toyota\s*[-:]?\s*/i, '').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1855,7 +1857,7 @@ async function showBulkReviewSheet(duplicates = 0) {
 
   const groupsHtml = GROUP_FIELDS.map(groupSectionHtml).join('');
   const contactsHtml = contacts.size ? `<div class="resolve-section" data-kind="contacts">
-      <h3 class="resolve-section-title">Sales Officer phone <span>${contacts.size} contact${contacts.size !== 1 ? 's' : ''} to resolve</span></h3>
+      <h3 class="resolve-section-title">Sales Officer phone <span>optional · ${contacts.size} contact${contacts.size !== 1 ? 's' : ''} to resolve</span></h3>
       ${[...contacts.entries()].map(([key, g]) => `
         <div class="contact-resolve-row" data-contact-key="${esc(key)}">
           <div class="resolve-row-main"><div class="resolve-row-sub">Branch: ${esc(g.branch)}</div><div class="resolve-row-label">Sales Officer: ${esc(g.name)}</div></div>
@@ -1868,7 +1870,12 @@ async function showBulkReviewSheet(duplicates = 0) {
       `).join('')}
     </div>` : '';
   const readyCount = () => bulkValid.length + bulkInvalid.filter(isRowReady).length;
-  const issueCount = () => GROUP_FIELDS.reduce((n, f) => n + groups[f.kind].size, 0) + contacts.size;
+  const issueCount = () => GROUP_FIELDS.reduce((n, f) => n + groups[f.kind].size, 0);
+  const reviewHint = groupsHtml
+    ? `Resolve each required issue below once — Sales Officer phone numbers are optional; unresolved phones import as blank.`
+    : contactsHtml
+      ? 'Sales Officer phone resolution is optional — unresolved phones import as blank.'
+      : 'Everything matched existing branches, sources, models and activities.';
 
   const sheet = el(`<div class="sheet"><div>
     <div class="close bulk-toolbar">
@@ -1883,7 +1890,7 @@ async function showBulkReviewSheet(duplicates = 0) {
     <div class="card">
       <h2>Bulk Upload Review</h2>
       <p style="color:var(--muted);font-size:13px;margin:0">${bulkValid.length + bulkInvalid.length} lead${bulkValid.length + bulkInvalid.length !== 1 ? 's' : ''} parsed.
-        ${groupsHtml || contactsHtml ? 'Resolve each issue below once — every matching row updates automatically.' : 'Everything matched existing branches, sources, models and activities.'}</p>
+        ${reviewHint}</p>
       ${noSalesOfficer.length ? `<p class="bulk-no-so-note">${noSalesOfficer.length} lead${noSalesOfficer.length !== 1 ? 's have' : ' has'} no Sales Officer name attached — they will be imported without one.</p>` : ''}
     </div>
 
