@@ -694,6 +694,12 @@ function lostCaseLink(outcome, count) {
   return `<button class="tbl-link" style="color:var(--bad)" onclick="openLostLeads('${oc}','${esc(outcome)}')">${count}</button>`;
 }
 
+function leadAnalysisLink(kind, status, count) {
+  if (!count) return `<span style="color:var(--muted)">0</span>`;
+  const tone = kind === 'lost' ? ' style="color:var(--bad)"' : '';
+  return `<button type="button" class="tbl-link lead-analysis-link"${tone} data-kind="${esc(kind)}" data-status="${esc(status)}">${count}</button>`;
+}
+
 async function openOutcomeLeads(callStatus, outcome, label) {
   const sheet = el(`<div class="sheet"><div>
     <div class="close"><button class="btn ghost" id="olx">← Back</button></div>
@@ -1349,7 +1355,7 @@ async function leadAnalysisView() {
         <h2>Lead Status Analysis</h2>
         ${tblHtml(
           ['Lead Status', 'Count'],
-          leadStatusCounts.map(r => [esc(r.status), r.count]),
+          leadStatusCounts.map(r => [esc(r.status), leadAnalysisLink('status', r.status, r.count)]),
           'No lead status data'
         )}
       </div>
@@ -1357,7 +1363,7 @@ async function leadAnalysisView() {
         <h2 style="color:var(--bad)">Lost Lead Analysis</h2>
         ${tblHtml(
           ['Lost Lead Status', 'Count'],
-          lostStatusCounts.map(r => [esc(r.status), r.count]),
+          lostStatusCounts.map(r => [esc(r.status), leadAnalysisLink('lost', r.status, r.count)]),
           'No lost leads yet'
         )}
       </div>`;
@@ -1374,7 +1380,45 @@ async function leadAnalysisView() {
         leadAnalysisView();
       };
     }
+    view.querySelectorAll('.lead-analysis-link').forEach(button => {
+      button.onclick = () => openLeadAnalysisLeads(button.dataset.kind, button.dataset.status);
+    });
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+}
+
+async function openLeadAnalysisLeads(kind, status) {
+  const label = String(status || 'Selected leads');
+  const branchId = me.role === 'sales_manager'
+    ? me.branch_id
+    : new URLSearchParams(location.hash.includes('?') ? location.hash.slice(location.hash.indexOf('?') + 1) : '').get('branch_id') || '';
+  const sheet = el(`<div class="sheet"><div>
+    <div class="close"><button class="btn ghost" id="lalx">← Back</button></div>
+    <div class="card" id="laLeadsCard"><div class="empty">Loading…</div></div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  sheet.querySelector('#lalx').onclick = () => sheet.remove();
+
+  try {
+    const query = new URLSearchParams({ branch_id: String(branchId), kind, value: label });
+    const leads = await api(`/sales-manager/lead-analysis/leads?${query}`);
+    const card = sheet.querySelector('#laLeadsCard');
+    const heading = kind === 'lost' ? `Lost · ${label}` : label;
+    card.innerHTML = `<h2>${esc(heading)} · ${leads.length}</h2>
+      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+          <td>${esc(l.customer_name)}</td>
+          <td>${esc(l.mobile)}</td>
+          <td>${esc(l.sales_officer)}</td>
+          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
+          <td>F${l.fcount}</td>
+          <td>${esc(l.stage || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+    card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
+  } catch (e) {
+    sheet.querySelector('#laLeadsCard').innerHTML = `<p style="color:var(--bad);padding:16px">${esc(e.message)}</p>`;
+  }
 }
 
 async function openOfficerLeads(branchId, officer, bucket) {

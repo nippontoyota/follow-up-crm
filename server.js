@@ -1206,6 +1206,51 @@ app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'admin'), asyn
   } catch (e) { next(e); }
 });
 
+app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'admin'), async (req, res, next) => {
+  try {
+    const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
+    if (!branchId) return bad(res, 'Select a branch');
+    const kind = String(req.query.kind || '').trim();
+    const value = String(req.query.value || '').trim();
+    if (!['status', 'lost'].includes(kind) || !value) return bad(res, 'A valid analysis filter is required');
+
+    const stageExpr = `COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END)`;
+    const officerExpr = `COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')`;
+    const select = `SELECT l.id, l.customer_name, l.mobile, ${officerExpr} AS sales_officer,
+        l.fcount, l.stage, l.status, l.next_date`;
+
+    if (kind === 'status') {
+      const leads = await all(
+        `${select}
+         FROM leads l
+         WHERE l.branch_id = ? AND ${stageExpr} = ?
+         ORDER BY l.id DESC LIMIT 200`,
+        branchId, value,
+      );
+      return res.json(leads);
+    }
+
+    const leads = await all(
+      `${select}
+       FROM leads l
+       LEFT JOIN LATERAL (
+         SELECT f.outcome
+         FROM followups f
+         WHERE f.lead_id = l.id
+         ORDER BY f.created_at DESC, f.id DESC
+         LIMIT 1
+       ) latest ON true
+       WHERE l.branch_id = ?
+         AND l.stage = 'Lost Lead'
+         AND l.status = 'closed'
+         AND COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown') = ?
+       ORDER BY l.id DESC LIMIT 200`,
+      branchId, value,
+    );
+    res.json(leads);
+  } catch (e) { next(e); }
+});
+
 const SO_BUCKET_FILTERS = {
   untouched: 'l.fcount = 0 AND l.status = \'open\'',
   followup:  'l.fcount > 0 AND l.status = \'open\'',
