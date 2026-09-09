@@ -70,6 +70,14 @@ for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
   const override = await api('/api/sales-manager/analytics?branch_id=1', cookie);
   assert.equal(override.status, 200, `${manager.username} override request failed`);
   assert.deepEqual(override.data.branchIds, expectedIds, `${manager.username} branch override escaped scope`);
+
+  if (manager.legacyUsername) {
+    const oldLogin = await fetch(`${base}/api/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: manager.legacyUsername, password: `${manager.name.split(' ')[0]}Cluster#2026!` }),
+    });
+    assert.equal(oldLogin.status, 401, `${manager.legacyUsername} should no longer work`);
+  }
 }
 
 const users = await api('/api/users?limit=100', admin);

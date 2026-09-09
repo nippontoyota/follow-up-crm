@@ -163,6 +163,35 @@ export async function seedClusterManagers() {
   }
 
   for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
+    const existing = await get(
+      `SELECT id, password FROM users WHERE username = ?`,
+      manager.username,
+    );
+    if (!existing && manager.legacyUsername) {
+      const legacy = await get(
+        `SELECT id FROM users WHERE username = ?`,
+        manager.legacyUsername,
+      );
+      if (legacy) {
+        await pool.query(
+          `UPDATE users SET username = $1, password = $2 WHERE id = $3`,
+          [manager.username, hash(manager.password), legacy.id],
+        );
+      }
+    }
+
+    const current = existing || await get(
+      `SELECT id, password FROM users WHERE username = ?`,
+      manager.username,
+    );
+    if (current && !verify(manager.password, current.password)) {
+      await pool.query(
+        `UPDATE users SET password = $1 WHERE id = $2`,
+        [hash(manager.password), current.id],
+      );
+      continue;
+    }
+
     await pool.query(
       `INSERT INTO users (username, password, name, role, branch_id)
        VALUES ($1, $2, $3, 'cluster_manager', NULL)
