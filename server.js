@@ -1164,7 +1164,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
   try {
     const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
     if (!branchId) return bad(res, 'Select a branch');
-    const [bySalesOfficer, summary, flagged, bySalesOfficerStatus] = await Promise.all([
+    const [bySalesOfficer, summary, flagged] = await Promise.all([
       all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
@@ -1189,24 +1189,8 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
         WHERE l.branch_id = ? AND l.is_flagged = 1
         ORDER BY l.id DESC`, branchId),
 
-      all(`WITH latest AS (
-          SELECT DISTINCT ON (l.id)
-            COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
-            CASE WHEN l.fcount = 0 THEN 'Fresh'
-              ELSE COALESCE(NULLIF(TRIM(f.outcome), ''), NULLIF(TRIM(l.stage), ''), 'Unknown')
-            END AS status
-          FROM leads l
-          LEFT JOIN followups f ON f.lead_id = l.id
-          WHERE l.branch_id = ?
-          ORDER BY l.id, f.created_at DESC NULLS LAST, f.id DESC NULLS LAST
-        )
-        SELECT sales_officer, status, COUNT(*)::int AS count
-        FROM latest
-        GROUP BY sales_officer, status
-        ORDER BY sales_officer, status`, branchId),
-
     ]);
-    res.json({ branchId, summary, bySalesOfficer, flagged, bySalesOfficerStatus });
+    res.json({ branchId, summary, bySalesOfficer, flagged });
   } catch (e) { next(e); }
 });
 
@@ -1312,6 +1296,7 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'admin')
 });
 
 const SO_BUCKET_FILTERS = {
+  total:    '1 = 1',
   untouched: 'l.fcount = 0 AND l.status = \'open\'',
   followup:  'l.fcount > 0 AND l.status = \'open\'',
   due:       'l.status = \'open\' AND l.next_date <= ?',

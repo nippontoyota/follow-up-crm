@@ -773,6 +773,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .sop-row:hover { border-color: var(--brand); }
 .sop-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .sop-row-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.sop-row-name-btn { border: 0; padding: 0; background: transparent; cursor: pointer; text-align: left; }
+.sop-row-name-btn:hover { color: var(--brand-dark); text-decoration: underline; }
 .sop-row-total { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 
 .sop-row-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--bg); margin-bottom: 10px; }

@@ -1282,7 +1282,6 @@ async function salesPerformanceView() {
     const s = d.summary || {};
     const flagged = d.flagged || [];
     const officers = d.bySalesOfficer || [];
-    const statusRows = d.bySalesOfficerStatus || [];
 
     const sorters = {
       total: (a, b) => b.total - a.total,
@@ -1293,7 +1292,7 @@ async function salesPerformanceView() {
     const rowHtml = o => `
       <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}">
         <div class="sop-row-top">
-          <span class="sop-row-name">${esc(o.sales_officer)}</span>
+          <button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>
           <span class="sop-row-total">${o.total} lead${o.total !== 1 ? 's' : ''}</span>
         </div>
         <div class="sop-row-bar">${SO_BUCKETS.map(b => o[b.key] ? `<span class="sop-seg sop-seg-${b.key}" style="flex:${o[b.key]}" title="${esc(b.label)}: ${o[b.key]}"></span>` : '').join('')}</div>
@@ -1329,8 +1328,7 @@ async function salesPerformanceView() {
       </div>
       <div class="sop-rows" id="sopRows">${sorted.map(rowHtml).join('')}</div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
-    </div>
-    <div id="soStatusPanel"></div>`;
+    </div>`;
 
     if (me.role === 'admin') {
       document.getElementById('salesBranchSwitch').onchange = (e) => {
@@ -1357,9 +1355,8 @@ async function salesPerformanceView() {
         });
       };
       view.querySelectorAll('.sop-pill').forEach(b => b.onclick = () => openOfficerLeads(branchId, b.dataset.officer, b.dataset.bucket));
+      view.querySelectorAll('.sop-row-name-btn').forEach(b => b.onclick = () => openOfficerLeads(branchId, b.dataset.officer, 'total'));
     }
-    salesStatusPage = 1;
-    renderSalesOfficerStatusTable(document.getElementById('soStatusPanel'), statusRows, sorted, branchId);
   } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
 }
 
@@ -1484,7 +1481,7 @@ async function openLeadAnalysisLeads(kind, status) {
 }
 
 async function openOfficerLeads(branchId, officer, bucket) {
-  const label = { untouched: 'Untouched', due: 'Due' }[bucket] || bucket;
+  const label = { total: 'Total', untouched: 'Untouched', due: 'Due' }[bucket] || bucket;
   const sheet = el(`<div class="sheet"><div>
     <div class="close"><button class="btn ghost" id="solx">← Back</button></div>
     <div class="card" id="solCard"><div class="empty">Loading…</div></div>
