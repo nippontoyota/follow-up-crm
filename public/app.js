@@ -1298,7 +1298,6 @@ async function salesPerformanceView() {
         </div>
         <div class="sop-row-bar">${SO_BUCKETS.map(b => o[b.key] ? `<span class="sop-seg sop-seg-${b.key}" style="flex:${o[b.key]}" title="${esc(b.label)}: ${o[b.key]}"></span>` : '').join('')}</div>
         <div class="sop-row-pills">
-          <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="untouched">${o.untouched} untouched</button>
           <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button>
           <span class="sop-row-outcome">${o.booked}B · ${o.retailed}R · ${o.lost}L</span>
         </div>
@@ -1306,7 +1305,6 @@ async function salesPerformanceView() {
 
     view.innerHTML = `${kpiRow([
       { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
-      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn' },
       { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
       { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
       { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
@@ -1517,26 +1515,32 @@ async function openOfficerStatusLeads(branchId, officer, status) {
   document.body.appendChild(sheet);
   sheet.querySelector('#soslx').onclick = () => sheet.remove();
 
-  try {
-    const query = new URLSearchParams({ branch_id: String(branchId), officer, status });
-    const leads = await api(`/sales-manager/officer-status-leads?${query}`);
-    const card = sheet.querySelector('#soslCard');
-    card.innerHTML = `<h2>${esc(status)} — ${esc(officer)} · ${leads.length}</h2>
-      ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
-        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
-          <td>${esc(l.customer_name)}</td>
-          <td>${esc(l.mobile)}</td>
-          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
-          <td>F${l.fcount}</td>
-          <td>${esc(l.latest_outcome || (l.fcount === 0 ? 'Fresh' : '—'))}</td>
-          <td>${esc(l.stage || '—')}</td>
-        </tr>`).join('')}</tbody>
-      </table></div>` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
-    card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
-  } catch (e) {
-    sheet.querySelector('#soslCard').innerHTML = `<p style="color:var(--bad);padding:16px">${esc(e.message)}</p>`;
-  }
+  const card = sheet.querySelector('#soslCard');
+  const loadPage = async (page = 1) => {
+    card.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const query = new URLSearchParams({ branch_id: String(branchId), officer, status, page: String(page), limit: '25' });
+      const data = await api(`/sales-manager/officer-status-leads?${query}`);
+      const leads = data.leads || [];
+      card.innerHTML = `<h2>${esc(status)} — ${esc(officer)} · ${data.total || 0}</h2>
+        ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
+          <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
+            <td>${esc(l.customer_name)}</td>
+            <td>${esc(l.mobile)}</td>
+            <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
+            <td>F${l.fcount}</td>
+            <td>${esc(l.latest_outcome || (l.fcount === 0 ? 'Fresh' : '—'))}</td>
+            <td>${esc(l.stage || '—')}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>${renderPager(data.page, data.pages, data.total)}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
+      card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
+      bindPager(nextPage => loadPage(nextPage), card);
+    } catch (e) {
+      card.innerHTML = `<p style="color:var(--bad);padding:16px">${esc(e.message)}</p>`;
+    }
+  };
+  await loadPage();
 }
 
 async function flaggedLeadsView() {
@@ -1560,7 +1564,7 @@ async function flaggedLeadsView() {
     const ids = flagged.map(r => r.id);
     view.innerHTML = `<div class="card flag-card">
       <h2 class="flag-card-h2">🚩 Flagged Leads · ${flagged.length}</h2>
-      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}</p>` : ''}
+      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}${me.role === 'admin' && flagged.some(r => !r.sales_manager) ? ' Some flagged leads have no active Branch Sales Manager and need assignment.' : ''}</p>` : ''}
       <div class="tbl-wrap"><table class="tbl tbl-flag">
         <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((r, i) => `<tr class="lead-row" data-id="${ids[i]}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -2346,7 +2350,7 @@ async function openLead(id) {
   if (!canAct) return;
 
   const NO_DATE   = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
-  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Already Booked': 'red', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue', 'Exchange Issue': 'blue', 'Customer Busy': 'blue', 'Call Me Back': 'blue', 'Details Received': 'blue' };
+  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Already Booked': 'blue', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue', 'Exchange Issue': 'blue', 'Customer Busy': 'blue', 'Call Me Back': 'blue', 'Details Received': 'blue' };
   let call = '', outcome = '';
 
   const pick = (wrap, onPick) => {

@@ -112,6 +112,8 @@ const DDL = [
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS original_so_mobile TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_leads_original_so ON leads(original_so_name, branch_id)`,
   `CREATE INDEX IF NOT EXISTS idx_leads_call_guy ON leads(assigned_to, status, next_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_followups_lead_created ON followups(lead_id, created_at DESC, id DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_leads_branch_flagged ON leads(branch_id, is_flagged, id DESC)`,
   `CREATE TABLE IF NOT EXISTS sales_officer_contacts (
     id           SERIAL PRIMARY KEY,
     name_key     TEXT NOT NULL UNIQUE,

@@ -552,7 +552,7 @@ app.get('/api/leads', auth(), async (req, res, next) => {
 
     if (['sales', 'call_guy'].includes(req.user.role)) { where.push('l.assigned_to = ?'); args.push(req.user.id); }
     else if (req.user.role === 'marketing') { where.push('l.created_by = ?'); args.push(req.user.id); }
-    else if (req.user.role === 'sales_manager') { where.push('l.branch_id = ?'); args.push(req.user.branch_id); }
+    else if (['manager', 'sales_manager'].includes(req.user.role)) { where.push('l.branch_id = ?'); args.push(req.user.branch_id); }
 
     if (tab === 'fresh') where.push(`l.status = 'open' AND l.fcount = 0`);
     else if (tab === 'today') { where.push(`l.status = 'open' AND l.fcount > 0 AND l.next_date <= ?`); args.push(today()); }
@@ -570,7 +570,10 @@ app.get('/api/leads', auth(), async (req, res, next) => {
       `${LEAD_SELECT} ${whereSql} ORDER BY l.next_date NULLS FIRST, l.id DESC LIMIT ? OFFSET ?`,
       ...args, limit, offset,
     );
-    res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
+    const visibleLeads = req.user.role === 'call_center_manager'
+      ? leads.map(({ is_flagged, flag_remarks, ...lead }) => lead)
+      : leads;
+    res.json({ leads: visibleLeads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 
@@ -607,7 +610,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
          FROM followups f2
          JOIN leads l2 ON l2.id = f2.lead_id
          WHERE l2.branch_id = ?
-         ORDER BY f2.lead_id, f2.created_at DESC
+        ORDER BY f2.lead_id, f2.created_at DESC, f2.id DESC
        ) f
        GROUP BY f.call_status, f.outcome
        ORDER BY f.call_status, cnt DESC`, branchId),
@@ -676,7 +679,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
              FROM followups f2
              JOIN leads l2 ON l2.id = f2.lead_id
              WHERE l2.branch_id = ?
-             ORDER BY f2.lead_id, f2.created_at DESC
+           ORDER BY f2.lead_id, f2.created_at DESC, f2.id DESC
            ) f
            WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer')
            GROUP BY f.outcome
@@ -713,7 +716,7 @@ app.get('/api/manager/leads/export', auth('manager', 'admin'), async (req, res, 
       LEFT JOIN LATERAL (
         SELECT call_status, outcome, remarks, created_at
         FROM followups WHERE lead_id = l.id
-        ORDER BY created_at DESC LIMIT 1
+        ORDER BY created_at DESC, id DESC LIMIT 1
       ) f ON true
       WHERE l.branch_id = ? AND l.fcount > 0
       ORDER BY l.next_date NULLS FIRST, l.id DESC
@@ -742,7 +745,7 @@ app.get('/api/manager/ai-lost-summary', auth('manager', 'admin'), async (req, re
       WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer')
         AND f.remarks IS NOT NULL
         ${branchFilter}
-      ORDER BY f.created_at DESC
+      ORDER BY f.created_at DESC, f.id DESC
       LIMIT 100
     `, ...branchArgs);
 
@@ -824,7 +827,7 @@ app.get('/api/call-center/leads/export', auth('call_center_manager', 'admin'), a
       LEFT JOIN LATERAL (
         SELECT call_status, outcome, remarks, created_at
         FROM followups WHERE lead_id = l.id
-        ORDER BY created_at DESC LIMIT 1
+        ORDER BY created_at DESC, id DESC LIMIT 1
       ) f ON true
       WHERE l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
         AND l.fcount > 0
@@ -847,10 +850,13 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
     const { officer_id, stage, call_status, outcome, latest_outcome, flagged, overdue, call_guy_id, branch_id, bucket } = req.query;
     if (req.user.role === 'call_center_manager' && flagged === '1')
       return res.status(403).json({ error: 'Flag review is handled by Sales Managers' });
+    const flagFields = req.user.role === 'call_center_manager'
+      ? ''
+      : 'l.is_flagged, l.flag_remarks,';
 
     const BASE = `
       SELECT l.id, l.customer_name, l.mobile, l.fcount, l.next_date, l.stage,
-             l.location, l.remarks, l.created_at, l.is_flagged, l.flag_remarks,
+             l.location, l.remarks, l.created_at, ${flagFields}
              u.name AS officer, b.name AS branch, s.name AS source
       FROM leads l
       LEFT JOIN users    u ON u.id = l.assigned_to
@@ -912,14 +918,14 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
     } else if (call_status && outcome) {
       leads = await all(`${BASE}
         WHERE ${scopeSql}
-          AND (SELECT f.call_status FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
-          AND (SELECT f.outcome     FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
+          AND (SELECT f.call_status FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC, f.id DESC LIMIT 1) = ?
+          AND (SELECT f.outcome     FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC, f.id DESC LIMIT 1) = ?
         ORDER BY l.next_date NULLS FIRST, l.id DESC
       `, ...scopeArgs, call_status, outcome);
     } else if (latest_outcome) {
       leads = await all(`${BASE}
         WHERE ${scopeSql}
-          AND (SELECT f.outcome FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC LIMIT 1) = ?
+          AND (SELECT f.outcome FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC, f.id DESC LIMIT 1) = ?
         ORDER BY l.next_date NULLS FIRST, l.id DESC
       `, ...scopeArgs, latest_outcome);
     } else {
@@ -971,7 +977,7 @@ app.get('/api/leads/:id', auth(), async (req, res, next) => {
       return res.status(403).json({ error: 'Not your lead' });
     if (req.user.role === 'marketing' && lead.created_by !== req.user.id)
       return res.status(403).json({ error: 'Not your lead' });
-    if (req.user.role === 'sales_manager' && lead.branch_id !== req.user.branch_id)
+    if (['manager', 'sales_manager'].includes(req.user.role) && lead.branch_id !== req.user.branch_id)
       return res.status(403).json({ error: 'Not your branch' });
 
     lead.followups = await all(
@@ -987,6 +993,10 @@ app.get('/api/leads/:id', auth(), async (req, res, next) => {
       `SELECT so_name, so_mobile, created_at FROM salesforce_calls WHERE mobile = ? ORDER BY id DESC`,
       lead.mobile
     );
+    if (req.user.role === 'call_center_manager') {
+      delete lead.is_flagged;
+      delete lead.flag_remarks;
+    }
     res.json(lead);
   } catch (e) { next(e); }
 });
@@ -1005,6 +1015,11 @@ app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (r
 
     if (outcome === 'Exchange Issue' && !String(exchange_expected_price || '').trim()) return bad(res, 'Expected price is required');
     if (outcome === 'Exchange Issue' && !String(exchange_offered_price || '').trim()) return bad(res, 'Offered price is required');
+
+    const testDriveDate = String(test_drive_date || '').trim();
+    if (outcome === 'Need Test Drive' && testDriveDate &&
+        (!/^\d{4}-\d{2}-\d{2}$/.test(testDriveDate) || testDriveDate < today() || testDriveDate > addDays(today(), MAX_DAYS_AHEAD)))
+      return bad(res, `Test Drive Date must be between ${today()} and ${addDays(today(), MAX_DAYS_AHEAD)}`);
 
     const closing = CLOSING.has(outcome);
     const isLost  = LOST.has(outcome);
@@ -1026,7 +1041,7 @@ app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (r
       model_id ? Number(model_id) : null, activity_id ? Number(activity_id) : null,
       nd, remarks?.trim() || null, other_so_called?.trim() || null,
       order_id?.trim() || null, tally_receipt?.trim() || null,
-      outcome === 'Need Test Drive' ? String(test_drive_date || '').trim() || null : null,
+      outcome === 'Need Test Drive' ? testDriveDate || null : null,
       outcome === 'Exchange Issue' ? String(exchange_expected_price).trim() : null,
       outcome === 'Exchange Issue' ? String(exchange_offered_price).trim() : null,
     );
@@ -1076,7 +1091,7 @@ app.post('/api/leads/:id/close-flag', auth('manager', 'sales_manager', 'admin'),
   try {
     const id = Number(req.params.id);
     const { remarks } = req.body || {};
-    if (req.user.role === 'sales_manager') {
+    if (['manager', 'sales_manager'].includes(req.user.role)) {
       const lead = await get(`SELECT branch_id FROM leads WHERE id = ?`, id);
       if (!lead) return res.status(404).json({ error: 'Not found' });
       if (lead.branch_id !== req.user.branch_id) return res.status(403).json({ error: 'Not your branch' });
@@ -1138,7 +1153,7 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
         FROM leads l
         LEFT JOIN users u ON u.id = l.assigned_to
         LEFT JOIN branches b ON b.id = l.branch_id
-        WHERE l.is_flagged = 1 AND l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
+        WHERE l.is_flagged = 1
         ORDER BY l.id DESC LIMIT 200`) : Promise.resolve([]),
     ]);
     res.json({ kpi, byCallGuy, outcomes, byBranch, overdue, flagged });
@@ -1152,7 +1167,6 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
     const [bySalesOfficer, summary, flagged, bySalesOfficerStatus] = await Promise.all([
       all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           COUNT(*)::int AS total,
-          COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
           COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
           COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
           COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
@@ -1162,7 +1176,6 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
         ORDER BY total DESC, sales_officer`, today(), branchId),
 
       get(`SELECT COUNT(*)::int AS total,
-          COUNT(*) FILTER (WHERE fcount = 0 AND status = 'open')::int AS untouched,
           COUNT(*) FILTER (WHERE fcount > 0 AND status = 'open')::int AS followup,
           COUNT(*) FILTER (WHERE stage = 'Booking Done' AND status = 'closed')::int AS booked,
           COUNT(*) FILTER (WHERE stage = 'Retail Done' AND status = 'closed')::int AS retailed,
@@ -1310,27 +1323,37 @@ app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'admin'
     const officer = String(req.query.officer || '').trim();
     const status = String(req.query.status || '').trim();
     if (!officer || !status) return bad(res, 'officer and status are required');
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
 
     const officerExpr = `COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')`;
     const statusExpr = `CASE WHEN l.fcount = 0 THEN 'Fresh'
       ELSE COALESCE(NULLIF(TRIM(latest.outcome), ''), NULLIF(TRIM(l.stage), ''), 'Unknown') END`;
-    const leads = await all(
-      `SELECT l.id, l.customer_name, l.mobile, ${officerExpr} AS sales_officer,
-          l.fcount, l.stage, l.status, l.next_date,
-          NULLIF(TRIM(latest.outcome), '') AS latest_outcome
-       FROM leads l
-       LEFT JOIN LATERAL (
-         SELECT f.outcome
-         FROM followups f
-         WHERE f.lead_id = l.id
-         ORDER BY f.created_at DESC NULLS LAST, f.id DESC NULLS LAST
-         LIMIT 1
-       ) latest ON true
-       WHERE l.branch_id = ? AND ${officerExpr} = ? AND ${statusExpr} = ?
-       ORDER BY l.id DESC LIMIT 200`,
-      branchId, officer, status,
+    const rows = await all(
+      `WITH filtered AS (
+         SELECT l.id, l.customer_name, l.mobile, ${officerExpr} AS sales_officer,
+             l.fcount, l.stage, l.status, l.next_date,
+             NULLIF(TRIM(latest.outcome), '') AS latest_outcome
+         FROM leads l
+         LEFT JOIN LATERAL (
+           SELECT f.outcome
+           FROM followups f
+           WHERE f.lead_id = l.id
+           ORDER BY f.created_at DESC NULLS LAST, f.id DESC NULLS LAST
+           LIMIT 1
+         ) latest ON true
+         WHERE l.branch_id = ? AND ${officerExpr} = ? AND ${statusExpr} = ?
+       )
+       SELECT filtered.*, COUNT(*) OVER()::int AS total_count
+       FROM filtered
+       ORDER BY filtered.id DESC
+       LIMIT ? OFFSET ?`,
+      branchId, officer, status, limit, offset,
     );
-    res.json(leads);
+    const total = rows[0]?.total_count || 0;
+    const leads = rows.map(({ total_count, ...lead }) => lead);
+    res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
   } catch (e) { next(e); }
 });
 
