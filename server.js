@@ -1146,30 +1146,53 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'admin'), async (r
   try {
     const branchId = req.user.role === 'sales_manager' ? req.user.branch_id : Number(req.query.branch_id || 0);
     if (!branchId) return bad(res, 'Select a branch');
-    const rows = await all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
-        COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
-        COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
-        COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
-        COUNT(*) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
-        COUNT(*) FILTER (WHERE l.status = 'open' AND l.next_date <= ?)::int AS due
-      FROM leads l WHERE l.branch_id = ? GROUP BY COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
-      ORDER BY total DESC, sales_officer`, today(), branchId);
-    const summary = await get(`SELECT COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE fcount = 0 AND status = 'open')::int AS untouched,
-        COUNT(*) FILTER (WHERE fcount > 0 AND status = 'open')::int AS followup,
-        COUNT(*) FILTER (WHERE stage = 'Booking Done' AND status = 'closed')::int AS booked,
-        COUNT(*) FILTER (WHERE stage = 'Retail Done' AND status = 'closed')::int AS retailed,
-        COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
-      FROM leads WHERE branch_id = ?`, branchId);
-    const flagged = await all(`SELECT l.id, l.customer_name, l.mobile,
-        COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
-        l.fcount, l.stage, l.status, u.name AS call_guy, l.flag_remarks
-      FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
-      WHERE l.branch_id = ? AND l.is_flagged = 1
-      ORDER BY l.id DESC`, branchId);
-    res.json({ branchId, summary, bySalesOfficer: rows, flagged });
+    const [bySalesOfficer, summary, flagged, leadStatusCounts, lostStatusCounts] = await Promise.all([
+      all(`SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+          COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+          COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
+          COUNT(*) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
+          COUNT(*) FILTER (WHERE l.status = 'open' AND l.next_date <= ?)::int AS due
+        FROM leads l WHERE l.branch_id = ? GROUP BY COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
+        ORDER BY total DESC, sales_officer`, today(), branchId),
+
+      get(`SELECT COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE fcount > 0 AND status = 'open')::int AS followup,
+          COUNT(*) FILTER (WHERE stage = 'Booking Done' AND status = 'closed')::int AS booked,
+          COUNT(*) FILTER (WHERE stage = 'Retail Done' AND status = 'closed')::int AS retailed,
+          COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
+        FROM leads WHERE branch_id = ?`, branchId),
+
+      all(`SELECT l.id, l.customer_name, l.mobile,
+          COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+          l.fcount, l.stage, l.status, u.name AS call_guy, l.flag_remarks
+        FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
+        WHERE l.branch_id = ? AND l.is_flagged = 1
+        ORDER BY l.id DESC`, branchId),
+
+      all(`SELECT COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END) AS status,
+          COUNT(*)::int AS count
+        FROM leads l
+        WHERE l.branch_id = ?
+        GROUP BY COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END)
+        ORDER BY count DESC, status`, branchId),
+
+      all(`SELECT COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown') AS status,
+          COUNT(*)::int AS count
+        FROM leads l
+        LEFT JOIN LATERAL (
+          SELECT f.outcome
+          FROM followups f
+          WHERE f.lead_id = l.id
+          ORDER BY f.created_at DESC, f.id DESC
+          LIMIT 1
+        ) latest ON true
+        WHERE l.branch_id = ? AND l.stage = 'Lost Lead' AND l.status = 'closed'
+        GROUP BY COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown')
+        ORDER BY count DESC, status`, branchId),
+    ]);
+    res.json({ branchId, summary, bySalesOfficer, flagged, leadStatusCounts, lostStatusCounts });
   } catch (e) { next(e); }
 });
 

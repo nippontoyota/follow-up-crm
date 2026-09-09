@@ -1178,7 +1178,6 @@ async function callCenterView() {
 }
 
 const SO_BUCKETS = [
-  { key: 'untouched', label: 'Untouched' },
   { key: 'followup',  label: 'Follow-up' },
   { key: 'booked',    label: 'Booked' },
   { key: 'retailed',  label: 'Retail' },
@@ -1224,10 +1223,11 @@ async function salesPerformanceView() {
     const s = d.summary || {};
     const flagged = d.flagged || [];
     const officers = d.bySalesOfficer || [];
+    const leadStatusCounts = d.leadStatusCounts || [];
+    const lostStatusCounts = d.lostStatusCounts || [];
 
     const sorters = {
       total: (a, b) => b.total - a.total,
-      untouched: (a, b) => b.untouched - a.untouched,
       due: (a, b) => b.due - a.due,
     };
     const sorted = [...officers].sort(sorters[salesPerfSort] || sorters.total);
@@ -1240,7 +1240,6 @@ async function salesPerformanceView() {
         </div>
         <div class="sop-row-bar">${SO_BUCKETS.map(b => o[b.key] ? `<span class="sop-seg sop-seg-${b.key}" style="flex:${o[b.key]}" title="${esc(b.label)}: ${o[b.key]}"></span>` : '').join('')}</div>
         <div class="sop-row-pills">
-          <button type="button" class="sop-pill sop-pill-warn" data-officer="${esc(o.sales_officer)}" data-bucket="untouched">${o.untouched} untouched</button>
           <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button>
           <span class="sop-row-outcome">${o.booked}B · ${o.retailed}R · ${o.lost}L</span>
         </div>
@@ -1248,7 +1247,6 @@ async function salesPerformanceView() {
 
     view.innerHTML = `${kpiRow([
       { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
-      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn' },
       { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
       { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
       { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
@@ -1267,13 +1265,28 @@ async function salesPerformanceView() {
       <div class="sop-controls">
         <div class="sop-sort" id="sopSort">
           <button type="button" class="sop-sort-opt${salesPerfSort === 'total' ? ' on' : ''}" data-sort="total">Total</button>
-          <button type="button" class="sop-sort-opt${salesPerfSort === 'untouched' ? ' on' : ''}" data-sort="untouched">Untouched</button>
           <button type="button" class="sop-sort-opt${salesPerfSort === 'due' ? ' on' : ''}" data-sort="due">Due</button>
         </div>
         <input id="sopFilter" class="sop-filter" placeholder="Filter officers…">
       </div>
       <div class="sop-rows" id="sopRows">${sorted.map(rowHtml).join('')}</div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
+    </div>
+    <div class="card">
+      <h2>Lead Status Analysis</h2>
+      ${tblHtml(
+        ['Lead Status', 'Count'],
+        leadStatusCounts.map(r => [esc(r.status), r.count]),
+        'No lead status data'
+      )}
+    </div>
+    <div class="card" style="border-color:var(--bad)">
+      <h2 style="color:var(--bad)">Lost Lead Analysis</h2>
+      ${tblHtml(
+        ['Lost Lead Status', 'Count'],
+        lostStatusCounts.map(r => [esc(r.status), r.count]),
+        'No lost leads yet'
+      )}
     </div>`;
 
     if (me.role === 'admin') {
