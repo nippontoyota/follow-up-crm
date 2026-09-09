@@ -1649,37 +1649,6 @@ async function openLeadAnalysisLeads(kind, status) {
   await loadPage();
 }
 
-async function openOfficerLeadsLegacy(branchId, officer, bucket) {
-  const label = { total: 'Total', untouched: 'Untouched', due: 'Due' }[bucket] || bucket;
-  const sheet = el(`<div class="sheet"><div>
-    <div class="close"><button class="btn ghost" id="solx">← Back</button></div>
-    <div class="card" id="solCard"><div class="empty">Loading…</div></div>
-  </div></div>`);
-  document.body.appendChild(sheet);
-  sheet.querySelector('#solx').onclick = () => sheet.remove();
-
-  try {
-    const data = await api(`/sales-manager/officer-leads?branch_id=${encodeURIComponent(branchId)}&officer=${encodeURIComponent(officer)}&bucket=${bucket}`);
-    const leads = data.leads || [];
-    const card = sheet.querySelector('#solCard');
-     card.innerHTML = `<h2>${esc(label)} — ${esc(officer)} · ${leads.length}</h2>
-       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-        <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
-        <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
-          ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
-          <td>${esc(l.customer_name)}</td>
-          <td>${esc(l.mobile)}</td>
-          <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
-          <td>F${l.fcount}</td>
-          <td>${esc(l.stage || '—')}</td>
-        </tr>`).join('')}</tbody>
-       </table></div>${data.hasMore ? `<p class="limit-note">Showing the first ${data.limit} leads for latency. Refine the result to narrow it.</p>` : ''}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
-    card.querySelectorAll('.lead-row').forEach(row => { row.onclick = () => openLead(Number(row.dataset.id)); });
-  } catch (e) {
-    sheet.querySelector('#solCard').innerHTML = `<p style="color:var(--bad);padding:16px">${e.message}</p>`;
-  }
-}
-
 async function openOfficerLeads(branchId, officer, bucket) {
   const label = { total: 'Total', untouched: 'Untouched', due: 'Due' }[bucket] || bucket;
   const sheet = el(`<div class="sheet"><div>
