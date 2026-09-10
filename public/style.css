@@ -992,7 +992,12 @@ input, select, textarea {
 /* ---------------------------------------------------------- call center desk */
 
 .cc-mode { background-image: none; background-color: #F5F7FB; }
-.cc-mode .app-wrap { background: #F5F7FB; }
+.cc-mode .app-wrap {
+  background:
+    radial-gradient(circle at 93% 0%, rgba(63,114,175,.14), transparent 28rem),
+    radial-gradient(circle at 0% 66%, rgba(233,119,74,.07), transparent 30rem),
+    #F5F7FB;
+}
 .cc-mode header {
   background: #fff;
   border-bottom: 1px solid #DCE3ED;
@@ -1037,7 +1042,7 @@ input, select, textarea {
 .cc-command-main {
   min-height: 214px; padding: 27px 30px;
   border-radius: 16px;
-  background: var(--brand-dark);
+  background: linear-gradient(135deg, #3F72AF 0%, #2B5D98 58%, #112D4E 100%);
   color: #fff;
   box-shadow: 0 12px 24px rgba(17,45,78,.16);
 }
@@ -1106,17 +1111,30 @@ input, select, textarea {
   background: #F8FAFD; color: var(--text); text-align: left;
   transition: border-color 160ms ease-out, background-color 160ms ease-out, box-shadow 160ms ease-out, transform 160ms ease-out;
 }
-.cc-stage-card:hover { border-color: #8EADD0; background: #F2F7FD; box-shadow: 0 8px 16px rgba(63,114,175,.1); transform: translateY(-1px); }
+.cc-stage-card:hover { box-shadow: 0 8px 16px rgba(63,114,175,.14); transform: translateY(-1px); }
 .cc-stage-card:active { transform: scale(.98); }
 .cc-stage-label { color: var(--brand-dark); font-size: 12px; font-weight: 800; letter-spacing: .04em; }
 .cc-stage-card strong { margin-top: 14px; color: var(--text); font-size: 32px; font-weight: 780; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
 .cc-stage-caption { margin-top: 4px; color: var(--muted); font-size: 12px; }
 .cc-stage-action { margin-top: auto; color: var(--brand); font-size: 12px; font-weight: 750; }
-.cc-stage-f4 .cc-stage-label, .cc-stage-f5 .cc-stage-label { color: #9A4318; }
-.cc-stage-f4:hover, .cc-stage-f5:hover { border-color: #E5B18C; background: #FFF9F4; }
-.cc-stage-f6plus { border-color: #E4C0B8; background: #FFF8F7; }
+.cc-stage-f1 { border-color: #B9D5F4; background: #EAF3FF; }
+.cc-stage-f1 .cc-stage-label, .cc-stage-f1 .cc-stage-action { color: #1D4ED8; }
+.cc-stage-f1:hover { border-color: #79A9DF; background: #DDEBFF; }
+.cc-stage-f2 { border-color: #A8DDD7; background: #E5F7F4; }
+.cc-stage-f2 .cc-stage-label, .cc-stage-f2 .cc-stage-action { color: #0F766E; }
+.cc-stage-f2:hover { border-color: #65BDB4; background: #D6F0EC; }
+.cc-stage-f3 { border-color: #CDBCF0; background: #F1EBFF; }
+.cc-stage-f3 .cc-stage-label, .cc-stage-f3 .cc-stage-action { color: #6D28D9; }
+.cc-stage-f3:hover { border-color: #A88BDC; background: #E9DEFF; }
+.cc-stage-f4 { border-color: #F1D19A; background: #FFF4DC; }
+.cc-stage-f4 .cc-stage-label, .cc-stage-f4 .cc-stage-action { color: #A14C05; }
+.cc-stage-f4:hover { border-color: #E4B969; background: #FFEDC1; }
+.cc-stage-f5 { border-color: #F0B89E; background: #FFF0E9; }
+.cc-stage-f5 .cc-stage-label, .cc-stage-f5 .cc-stage-action { color: #C2410C; }
+.cc-stage-f5:hover { border-color: #E08E6D; background: #FFE5DA; }
+.cc-stage-f6plus { border-color: #E4A9A9; background: #FFF0F0; }
 .cc-stage-f6plus .cc-stage-label, .cc-stage-f6plus .cc-stage-action { color: var(--bad); }
-.cc-stage-f6plus:hover { border-color: #D99588; background: #FFF2F0; }
+.cc-stage-f6plus:hover { border-color: #D77D7D; background: #FFE1E1; }
 .cc-stage-card:focus-visible,
 .cc-command-link:focus-visible,
 .cc-command-alert:focus-visible,
@@ -1140,6 +1158,11 @@ input, select, textarea {
 .cc-stat-value span { color: var(--brand); font-size: 13px; }
 .cc-stat-value:hover { color: var(--brand); }
 .cc-stat-value.is-zero { color: #9CAFC3; cursor: default; }
+.cc-stat:nth-child(1) .cc-stat-value { color: var(--brand-dark); }
+.cc-stat:nth-child(2) .cc-stat-value { color: #B45309; }
+.cc-stat:nth-child(3) .cc-stat-value { color: var(--ok); }
+.cc-stat:nth-child(4) .cc-stat-value { color: #16805C; }
+.cc-stat:nth-child(5) .cc-stat-value { color: var(--bad); }
 .cc-table-panel .tbl-wrap { margin-top: 12px; border-color: #DCE4EE; }
 .cc-table-panel .tbl th { background: #F3F6FA; color: #47627F; }
 .cc-table-panel .tbl td { background: #fff; }

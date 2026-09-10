@@ -24,8 +24,9 @@ The manager should be able to answer three questions immediately:
 ## Visual system
 
 - Use the existing light background, navy text, and Nippon Toyota blue as the main accent.
-- Remove the background grid and saturated seven-color KPI wall from this surface.
-- Use color for meaning only: blue for the active workload, amber for attention, and red for overdue or high follow-up count.
+- Remove the background grid and equal-weight KPI wall from this surface.
+- Keep the page colorful through a deliberate follow-up progression: blue, teal, violet, amber, orange, and red. The colors belong to the queue stages and help the manager scan them as distinct work buckets.
+- Keep the strongest red reserved for overdue work and the highest follow-up bucket.
 - Use one soft radius family and shallow, tinted elevation. Avoid nested card stacks.
 - Use the existing font stack and plain sentence-case copy. No new dependencies or imagery.
 
