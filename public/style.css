@@ -1150,7 +1150,7 @@ input, select, textarea {
   border: 1px solid #DCE4EE; border-radius: 12px; background: #DCE4EE;
 }
 .cc-stat { min-width: 0; padding: 13px 15px; background: #fff; }
-.cc-stat > span { display: block; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .035em; text-transform: uppercase; }
+.cc-stat > span:first-child { display: block; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .035em; text-transform: uppercase; }
 .cc-stat-value {
   display: inline-flex; align-items: center; gap: 7px; width: auto; margin-top: 6px;
   color: var(--text); font-size: 22px; font-weight: 780; line-height: 1; font-variant-numeric: tabular-nums;
@@ -1208,6 +1208,12 @@ input, select, textarea {
   .cc-lower-grid { grid-template-columns: 1fr; gap: 0; }
   .cc-loading-main { height: 250px; }
   .cc-loading-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 380px) {
+  .cc-stats { grid-template-columns: 1fr; }
+  .cc-stat { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .cc-stat > span:first-child { margin: 0; }
+  .cc-stat-value { margin-top: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cc-loading-head, .cc-loading-main, .cc-loading-grid span { animation: none; }
