@@ -1584,7 +1584,7 @@ app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'cluster_manag
           FROM leads l
           LEFT JOIN followups f ON f.lead_id = l.id
           LEFT JOIN branches b ON b.id = l.branch_id
-          WHERE ${leadFilter.sql}
+          WHERE ${leadFilter.sql} AND l.fcount > 0
           ORDER BY l.id, f.created_at DESC NULLS LAST, f.id DESC NULLS LAST
         )
          SELECT branch_id, branch, sales_officer, status, COUNT(*)::int AS count
@@ -1612,6 +1612,7 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster
     const kind = String(req.query.kind || '').trim();
     const value = String(req.query.value || '').trim();
     if (!['status', 'lost'].includes(kind) || !value) return bad(res, 'A valid analysis filter is required');
+    if (kind === 'status' && value === 'Fresh') return res.status(403).json({ error: 'Fresh lead status is restricted to Call Center Managers and Call Executives' });
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
     const offset = (page - 1) * limit;
@@ -1619,7 +1620,7 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster
     const stageExpr = `COALESCE(NULLIF(TRIM(l.stage), ''), CASE WHEN l.status = 'open' THEN 'Open' ELSE 'Closed' END)`;
     const officerExpr = `COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')`;
     const select = `SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
-        ${officerExpr} AS sales_officer, l.fcount, l.stage, l.status, l.next_date`;
+        ${officerExpr} AS sales_officer, l.stage, l.status, l.next_date`;
 
     if (kind === 'status') {
       const rows = await all(
@@ -1693,6 +1694,7 @@ app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manag
     const officer = String(req.query.officer || '').trim();
     const bucket = String(req.query.bucket || '');
     if (!officer || !SO_BUCKET_FILTERS[bucket]) return bad(res, 'officer and a valid bucket are required');
+    if (bucket === 'untouched') return res.status(403).json({ error: 'Fresh lead status is restricted to Call Center Managers and Call Executives' });
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
     const offset = (page - 1) * limit;
@@ -1701,7 +1703,7 @@ app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manag
     const rows = await all(
       `WITH filtered AS (
          SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
-            l.stage, l.status, l.fcount, l.next_date
+             l.stage, l.status, l.next_date
          FROM leads l
          LEFT JOIN branches b ON b.id = l.branch_id
          WHERE ${leadFilter.sql}
@@ -1728,6 +1730,7 @@ app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'cluste
     const officer = String(req.query.officer || '').trim();
     const status = String(req.query.status || '').trim();
     if (!officer || !status) return bad(res, 'officer and status are required');
+    if (status === 'Fresh') return res.status(403).json({ error: 'Fresh lead status is restricted to Call Center Managers and Call Executives' });
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
     const offset = (page - 1) * limit;
@@ -1739,7 +1742,7 @@ app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'cluste
       `WITH filtered AS (
          SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch,
              ${officerExpr} AS sales_officer,
-             l.fcount, l.stage, l.status, l.next_date,
+              l.stage, l.status, l.next_date,
              NULLIF(TRIM(latest.outcome), '') AS latest_outcome
          FROM leads l
          LEFT JOIN LATERAL (

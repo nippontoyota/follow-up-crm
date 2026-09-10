@@ -1535,7 +1535,7 @@ async function sourceQualityView(branchId = sourceQualityBranchId) {
 }
 
 const SO_STATUS_ORDER = [
-  'Fresh', 'RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number',
+  'RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number',
   'Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done',
   'Customer Busy', 'Details Received', 'Need time', 'Need SO Call', 'Need More Details',
   'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected',
@@ -1551,6 +1551,7 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
   statusRows.forEach(row => {
     const officer = String(row.sales_officer || 'Unknown Sales Officer');
     const status = String(row.status || 'Unknown');
+    if (status === 'Fresh') return;
     const key = officerKey(row.branch_id, officer);
     if (!statusByOfficer.has(key)) statusByOfficer.set(key, new Map());
     statusByOfficer.get(key).set(status, Number(row.count) || 0);
@@ -2028,14 +2029,13 @@ async function openLeadAnalysisLeads(kind, status) {
       const heading = kind === 'lost' ? `Lost · ${label}` : label;
       card.innerHTML = `<h2>${esc(heading)} · ${data.total || 0}</h2>
         ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>Stage</th></tr></thead>
          <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
            ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
            <td>${esc(l.customer_name)}</td>
            <td>${esc(l.mobile)}</td>
            <td>${esc(l.sales_officer)}</td>
            <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
-           <td>F${l.fcount}</td>
            <td>${esc(l.stage || '—')}</td>
          </tr>`).join('')}</tbody>
         </table></div>${renderPager(data.page, data.pages, data.total)}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
@@ -2067,13 +2067,12 @@ async function openOfficerLeads(branchId, officer, bucket) {
       const leads = data.leads || [];
       card.innerHTML = `<h2>${esc(label)} — ${esc(officer)} · ${data.total || 0}</h2>
         ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Stage</th></tr></thead>
+         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>Stage</th></tr></thead>
          <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
            ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
            <td>${esc(l.customer_name)}</td>
            <td>${esc(l.mobile)}</td>
            <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
-           <td>F${l.fcount}</td>
            <td>${esc(l.stage || '—')}</td>
          </tr>`).join('')}</tbody>
         </table></div>${renderPager(data.page, data.pages, data.total)}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
@@ -2105,14 +2104,13 @@ async function openOfficerStatusLeads(branchId, officer, status) {
       const drillBranch = masters.branches.find(branch => String(branch.id) === String(branchId));
       card.innerHTML = `<h2>${esc(status)} — ${esc(officer)}${me.role === 'cluster_manager' && drillBranch ? ` · ${esc(branchLabel(drillBranch.name))}` : ''} · ${data.total || 0}</h2>
         ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-          <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>F#</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
+           <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
           <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
             ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || drillBranch?.name || '—'))}</td>` : ''}
             <td>${esc(l.customer_name)}</td>
             <td>${esc(l.mobile)}</td>
             <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
-            <td>F${l.fcount}</td>
-            <td>${esc(l.latest_outcome || (l.fcount === 0 ? 'Fresh' : '—'))}</td>
+            <td>${esc(l.latest_outcome || '—')}</td>
             <td>${esc(l.stage || '—')}</td>
           </tr>`).join('')}</tbody>
         </table></div>${renderPager(data.page, data.pages, data.total)}` : '<p style="color:var(--muted);padding:16px;text-align:center">No leads</p>'}`;
