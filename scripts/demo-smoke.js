@@ -111,6 +111,8 @@ assert.ok(tkm, 'TKM group should exist');
 assert.ok(tkm.raw_sources.includes('TKM Website'));
 const unknown = sourceRows.find(row => row.source_group === 'Unknown');
 assert.ok(unknown && unknown.leads > 0, 'Unknown source group should include blank source leads');
+assert.ok(summary.leads > 0, 'Source quality summary should contain leads');
+assert.ok(sourceRows.every(row => row.leads > 0), 'Source quality rows should contain leads');
 assert.equal(summary.leads, sourceRows.reduce((sum, row) => sum + row.leads, 0));
 for (const row of sourceRows) {
   assert.ok(row.connected <= row.attempted && row.attempted <= row.leads, `${row.source_group} funnel counts must be ordered`);

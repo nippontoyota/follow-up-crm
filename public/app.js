@@ -769,7 +769,7 @@ async function openOutcomeLeads(callStatus, outcome, label) {
     const scope = tab === 'callCenter' ? '&scope=call_center' : '';
     const leads = await api(`/manager/leads?call_status=${callStatus}&outcome=${outcome}${scope}`);
     const card = sheet.querySelector('#olCard');
-    card.innerHTML = `<h2>${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+    card.innerHTML = `<h2>${esc(decodeURIComponent(label))} · ${leadCountText(leads.length)}</h2>
       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Customer</th><th>Mobile</th><th>Officer</th><th>Next Date</th><th>Stage</th></tr></thead>
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
@@ -799,7 +799,7 @@ async function openLostLeads(outcome, label) {
   try {
     const leads = await api(`/manager/leads?latest_outcome=${outcome}`);
     const card = sheet.querySelector('#llCard');
-    card.innerHTML = `<h2 style="color:var(--bad)">Lost — ${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+    card.innerHTML = `<h2 style="color:var(--bad)">Lost — ${esc(decodeURIComponent(label))} · ${leadCountText(leads.length)}</h2>
       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Customer</th><th>Mobile</th><th>Officer</th><th>F#</th><th>Stage</th></tr></thead>
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
@@ -830,7 +830,7 @@ async function openOverdueLeads(callGuyId, label) {
     const scope = tab === 'callCenter' ? '&scope=call_center' : '';
     const leads = await api(`/manager/leads?overdue=1&call_guy_id=${callGuyId}${scope}`);
     const card = sheet.querySelector('#odCard');
-    card.innerHTML = `<h2>Overdue — ${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+    card.innerHTML = `<h2>Overdue — ${esc(decodeURIComponent(label))} · ${leadCountText(leads.length)}</h2>
       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Customer</th><th>Mobile</th><th>Call Executive</th><th>Next Date</th><th>Stage</th></tr></thead>
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
@@ -860,7 +860,7 @@ async function openMetricLeads(query, label) {
   try {
     const leads = await api(`/manager/leads?${query}`);
     const card = sheet.querySelector('#mlCard');
-    card.innerHTML = `<h2>${esc(decodeURIComponent(label))} · ${leads.length} leads</h2>
+    card.innerHTML = `<h2>${esc(decodeURIComponent(label))} · ${leadCountText(leads.length)}</h2>
       ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Customer</th><th>Mobile</th><th>Branch</th><th>Call Executive</th><th>Next Date</th><th>Stage</th></tr></thead>
         <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
@@ -1190,6 +1190,7 @@ async function callCenterView() {
   </div>`;
   try {
     const d = await api('/call-center/analytics');
+    if (tab !== 'callCenter') return;
     analyticsUpdatedAt.callCenter = new Date();
     const s = d.summary || d.kpi || {};
     const byCallGuy = d.byCallGuy || [];
@@ -1311,6 +1312,7 @@ async function callCenterView() {
     document.getElementById('callCenterRefresh').onclick = () => callCenterView();
     document.getElementById('exportBtn').onclick = () => downloadLeadsExcel();
   } catch (e) {
+    if (tab !== 'callCenter') return;
     view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'callCenterRetry')}`;
     document.getElementById('callCenterRetry').onclick = () => callCenterView();
   }
@@ -1322,16 +1324,22 @@ function qualityPercent(value) {
   return value == null ? 'N/A' : `${(Number(value) * 100).toFixed(1)}%`;
 }
 
+function leadCountText(value) {
+  const count = Number(value) || 0;
+  return `${count} lead${count === 1 ? '' : 's'}`;
+}
+
 function sourceQualityMetricLink(row, metric, label, branchId = '') {
   const filters = { quality_metric: metric };
   if (row.source_group) filters.source_group = row.source_group;
   if (branchId) filters.branch_id = branchId;
-  return callCenterMetricLink(filters, label, row[metric]);
+  const valueKey = metric === 'total' ? 'leads' : metric;
+  return callCenterMetricLink(filters, label, row[valueKey]);
 }
 
 function sourceQualitySourceCell(row) {
   const raw = row.raw_sources || [];
-  return `<div class="cc-quality-source-name"><b>${esc(row.source_group || 'Unknown')}</b>${raw.length
+  return `<div class="cc-quality-source-name"><b>${esc(row.source_group || 'All sources')}</b>${raw.length
     ? `<details><summary>${raw.length} raw source${raw.length === 1 ? '' : 's'}</summary><span>${esc(raw.join(', '))}</span></details>`
     : ''}</div>`;
 }
@@ -1385,11 +1393,11 @@ async function sourceQualityView(branchId = sourceQualityBranchId) {
     const sourceLink = item => item ? callCenterMetricClick({ source_group: item.source_group, quality_metric: 'total', ...(sourceQualityBranchId ? { branch_id: sourceQualityBranchId } : {}) }, `${item.source_group} leads`) : '';
     const overdueLink = item => item ? callCenterMetricClick({ source_group: item.source_group, quality_metric: 'overdue', ...(sourceQualityBranchId ? { branch_id: sourceQualityBranchId } : {}) }, `${item.source_group} overdue leads`) : '';
     const attentionCards = [];
-    if (attention.volume) attentionCards.push(sourceQualityAttentionCard('Highest volume', `${esc(attention.volume.source_group)} · ${attention.volume.leads}`, 'volume', sourceLink(attention.volume)));
-    if (attention.conversion) attentionCards.push(sourceQualityAttentionCard('Best won rate', `${esc(attention.conversion.source_group)} · ${qualityPercent(attention.conversion.won_rate)} <small>(${attention.conversion.leads} leads)</small>`, 'conversion', sourceLink(attention.conversion)));
+    if (attention.volume) attentionCards.push(sourceQualityAttentionCard('Highest volume', `${esc(attention.volume.source_group)} · ${leadCountText(attention.volume.leads)}`, 'volume', sourceLink(attention.volume)));
+    if (attention.conversion) attentionCards.push(sourceQualityAttentionCard('Best won rate', `${esc(attention.conversion.source_group)} · ${qualityPercent(attention.conversion.won_rate)} <small>(${leadCountText(attention.conversion.leads)})</small>`, 'conversion', sourceLink(attention.conversion)));
     else attentionCards.push(sourceQualityAttentionCard('Best won rate', 'Not enough data <small>(20 leads needed)</small>', 'conversion', ''));
-    if (attention.overdue) attentionCards.push(sourceQualityAttentionCard('Most overdue', `${esc(attention.overdue.source_group)} · ${attention.overdue.overdue}`, 'overdue', overdueLink(attention.overdue)));
-    if (attention.unknown) attentionCards.push(sourceQualityAttentionCard('Unknown source', `${attention.unknown.leads} leads`, 'unknown', sourceLink(attention.unknown)));
+    if (attention.overdue) attentionCards.push(sourceQualityAttentionCard('Most overdue', `${esc(attention.overdue.source_group)} · ${leadCountText(attention.overdue.overdue)}`, 'overdue', overdueLink(attention.overdue)));
+    if (attention.unknown) attentionCards.push(sourceQualityAttentionCard('Unknown source', leadCountText(attention.unknown.leads), 'unknown', sourceLink(attention.unknown)));
 
     view.innerHTML = `${routeNotice()}<div class="cc-page cc-quality-page">
       <section class="cc-page-head" aria-labelledby="source-quality-title">
