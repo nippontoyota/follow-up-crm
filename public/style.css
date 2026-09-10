@@ -780,25 +780,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .sop-pick-stats { display: flex; gap: 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .sop-pick-won { color: var(--ok); }
 
-.sop-overview {
-  display: grid; grid-template-columns: 1.55fr 1fr .8fr .8fr; gap: 1px;
-  margin-bottom: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--line);
-}
-.sop-overview-title, .sop-overview-result, .sop-overview-stat { min-width: 0; padding: 20px; background: #fff; }
-.sop-overview-title { display: flex; flex-direction: column; justify-content: center; }
-.sop-overview-title > span, .sop-overview-stat > span, .sop-overview-result > span { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
-.sop-overview-title strong { margin-top: 5px; overflow-wrap: anywhere; color: var(--text); font-size: 20px; line-height: 1.2; }
-.sop-overview-title p { max-width: 42ch; margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
-.sop-overview-result { background: var(--brand-dark); color: #fff; }
-.sop-overview-result > span { color: #C9D8EC; }
-.sop-overview-result strong { display: block; margin-top: 6px; font-size: 43px; line-height: 1; }
-.sop-overview-result strong small { color: #C9D8EC; font-size: 20px; font-weight: 600; }
-.sop-overview-result b { display: block; margin-top: 7px; color: #fff; font-size: 19px; line-height: 1; }
-.sop-overview-stat { display: flex; flex-direction: column; justify-content: center; }
-.sop-overview-stat strong { margin-top: 6px; color: var(--brand-dark); font-size: 32px; line-height: 1; }
-.sop-overview-stat small { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.35; }
-.sop-overview-due strong { color: var(--warn); }
-
 .sop-card { padding: 22px; }
 .sop-board-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 17px; }
 .sop-board-head h2 { margin: 0 0 5px; }
@@ -870,8 +851,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .sop-pill-brand { background: var(--brand-light); color: var(--brand-dark); }
 
 @media (max-width: 1100px) {
-  .sop-overview { grid-template-columns: repeat(2, 1fr); }
-  .sop-overview-title { grid-column: 1 / -1; }
   .sop-attention { grid-template-columns: 1fr; gap: 12px; }
   .sop-score-legend { display: none; }
   .sop-score-top { grid-template-columns: 30px minmax(0, 1fr) 106px; align-items: start; gap: 12px; }
@@ -883,10 +862,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 }
 @media (max-width: 599px) {
   .sop-card { padding: 16px 13px; }
-  .sop-overview { grid-template-columns: 1fr 1fr; border-radius: 12px; }
-  .sop-overview-title, .sop-overview-result, .sop-overview-stat { padding: 15px 13px; }
-  .sop-overview-result strong { font-size: 34px; }
-  .sop-overview-stat strong { font-size: 26px; }
   .sop-board-head { display: block; }
   .sop-board-head .sop-head-actions { margin-top: 12px; }
   .sop-attention-grid { grid-template-columns: 1fr; gap: 9px; }

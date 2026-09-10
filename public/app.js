@@ -1623,7 +1623,6 @@ async function salesPerformanceView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
   try {
     let branchId = '';
-    let branchName = '';
     if (me.role === 'sales_manager') branchId = me.branch_id;
     else if (me.role === 'admin') {
       const hashQuery = location.hash.includes('?') ? location.hash.slice(location.hash.indexOf('?') + 1) : '';
@@ -1651,18 +1650,12 @@ async function salesPerformanceView() {
       return;
     }
 
-    branchName = me.role === 'cluster_manager'
-      ? clusterScopeLabel()
-      : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     const d = await api(`/sales-manager/analytics${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
     analyticsUpdatedAt.salesPerf = new Date();
     const s = d.summary || {};
     const totalLeads = Number(s.total) || 0;
     const booked = Number(s.booked) || 0;
     const retailed = Number(s.retailed) || 0;
-    const totalOutcomes = booked + retailed;
-    const overallOutcomeRate = totalLeads ? totalOutcomes / totalLeads : null;
-    const overallRetailRate = totalLeads ? retailed / totalLeads : null;
     const officers = (d.bySalesOfficer || []).map(salesOfficerMetric);
     const flaggedByOfficer = d.flaggedByOfficer || [];
 
@@ -1736,14 +1729,14 @@ async function salesPerformanceView() {
       </table></div>
     </div>` : '';
 
-    const scopeTitle = branchName || 'Selected branch';
     view.innerHTML = `${routeNotice()}${clusterScopeNotice()}${analyticsToolbar('salesPerf')}
-    <section class="sop-overview" aria-label="Branch overview">
-      <div class="sop-overview-title"><span>Branch overview</span><strong>${esc(scopeTitle)}</strong><p>A lead counts as converted when it reaches Booking Done or Retail Done.</p></div>
-      <div class="sop-overview-result"><span>Converted leads</span><strong>${totalOutcomes}<small> / ${totalLeads}</small></strong><b>${salesPerfRateText(overallOutcomeRate)}</b></div>
-      <div class="sop-overview-stat"><span>Final sales</span><strong>${retailed}</strong><small>${salesPerfRateText(overallRetailRate)} of all leads</small></div>
-      <div class="sop-overview-stat sop-overview-due"><span>Due now</span><strong>${overdueCount}</strong><small>open leads needing contact</small></div>
-    </section>
+    ${kpiRow([
+      { num: totalLeads, lbl: 'Total Leads', col: 'brand' },
+      { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
+      { num: booked, lbl: 'Booked', col: 'ok' },
+      { num: retailed, lbl: 'Retail', col: 'ok' },
+      { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
+    ])}
     <div class="card sop-card">
       <div class="sop-board-head">
         <div><h2>Who is converting leads?</h2><p>One converted lead equals one booking or one retail sale. Longer bars mean a larger share of leads converted.</p></div>
