@@ -30,10 +30,11 @@ const SECRET = process.env.SESSION_SECRET || readFileSync('.secret', 'utf8').tri
 
 export const OUTCOMES = {
   'Connected':     ['Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
-  'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number'],
+  'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number', 'LOST RNR'],
 };
-const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
-const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
+const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer', 'LOST RNR']);
+const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer', 'LOST RNR']);
+const LOST_RNR = 'LOST RNR';
 const MAX_DAYS_AHEAD = 3;
 const clusterManagerScopes = new Map();
 const clusterManagerScopeDetails = new Map();
@@ -720,6 +721,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
         COUNT(f.id) FILTER (WHERE f.outcome = 'Not Interested')::int                                                       AS not_interested,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Already Booked')::int                                                       AS already_booked,
         COUNT(f.id) FILTER (WHERE f.outcome IN ('Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer'))::int AS lost_calls,
+        COUNT(f.id) FILTER (WHERE f.outcome = 'LOST RNR')::int                                                               AS lost_rnr,
         COUNT(f.id) FILTER (WHERE f.outcome = 'RNR')::int                                                                  AS rnr,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Switch Off')::int                                                           AS switch_off,
         COUNT(f.id) FILTER (WHERE f.outcome = 'Call Me Back')::int                                                         AS call_me_back,
@@ -748,7 +750,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
              WHERE l2.branch_id = ?
            ORDER BY f2.lead_id, f2.created_at DESC, f2.id DESC
            ) f
-           WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer')
+           WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer','LOST RNR')
            GROUP BY f.outcome
            ORDER BY cnt DESC`, branchId),
 
@@ -809,7 +811,7 @@ app.get('/api/manager/ai-lost-summary', auth('manager', 'admin'), async (req, re
       SELECT f.remarks, f.outcome, l.customer_name
       FROM followups f
       JOIN leads l ON l.id = f.lead_id
-      WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer')
+      WHERE f.outcome IN ('Not Interested','Lost to Competition','Finance Rejected','Dropped','Lost to co-dealer','LOST RNR')
         AND f.remarks IS NOT NULL
         ${branchFilter}
       ORDER BY f.created_at DESC, f.id DESC
@@ -1083,6 +1085,12 @@ app.post('/api/leads/:id/followup', auth('sales', 'call_guy', 'admin'), async (r
     const { call_status, outcome, next_date, remarks, model_id, activity_id, other_so_called, order_id, tally_receipt, test_drive_date, exchange_expected_price, exchange_offered_price } = req.body || {};
     if (!OUTCOMES[call_status]) return bad(res, 'Select Connected or Not Connected');
     if (!OUTCOMES[call_status].includes(outcome)) return bad(res, 'Select a valid outcome');
+    if (outcome === LOST_RNR && !['call_guy', 'admin'].includes(req.user.role))
+      return res.status(403).json({ error: 'Only Call Executives can close a lead as LOST RNR' });
+    if (outcome === LOST_RNR && call_status !== 'Not Connected')
+      return bad(res, 'LOST RNR is only valid for a Not Connected call');
+    if (outcome === LOST_RNR && lead.fcount < 3)
+      return bad(res, 'LOST RNR is available only after three follow-ups');
 
     if (outcome === 'Exchange Issue' && !String(exchange_expected_price || '').trim()) return bad(res, 'Expected price is required');
     if (outcome === 'Exchange Issue' && !String(exchange_offered_price || '').trim()) return bad(res, 'Offered price is required');

@@ -9,11 +9,11 @@ if (process.env.DEMO_MODE !== '1' || process.env.DB_NAME !== 'followup_crm_demo'
 
 const OUTCOMES = {
   'Connected':     ['Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Need time', 'Need SO Call', 'Need More Details', 'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer'],
-  'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number'],
+  'Not Connected': ['RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number', 'LOST RNR'],
 };
 const CALL_STATUS_OF = {};
 for (const [status, list] of Object.entries(OUTCOMES)) for (const o of list) CALL_STATUS_OF[o] = status;
-const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
+const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer', 'LOST RNR']);
 
 // weighted final-outcome pool: repeats = relative frequency
 const FINAL_OUTCOME_POOL = [
@@ -35,6 +35,7 @@ const FINAL_OUTCOME_POOL = [
   ...Array(4).fill('Need time'),
   ...Array(3).fill('Discount Issue'),
   ...Array(2).fill('Already Booked'),
+  ...Array(2).fill('LOST RNR'),
   ...Array(1).fill('Exchange Issue'),
 ];
 const INTERMEDIATE_POOL = ['RNR', 'Switch Off', 'Line Busy', 'Call Me Back', 'Need Test Drive', 'Showroom Visit', 'Need SO Call', 'Need More Details', 'Call Forwarding'];
@@ -63,6 +64,7 @@ const REMARKS = {
   'Call Forwarding': ['Call forwarded, could not reach', 'Number on call forwarding'],
   'Line Busy': ['Line busy, will retry', 'Could not connect, busy tone'],
   'Invalid Number': ['Number does not exist', 'Invalid contact number'],
+  'LOST RNR': ['No response after three follow-ups', 'Could not connect after repeated attempts'],
 };
 const remarkFor = o => { const list = REMARKS[o] || ['Follow-up done']; return list[Math.floor(Math.random() * list.length)]; };
 
@@ -85,7 +87,9 @@ for (const lead of leads) {
 
   const finalOutcome = pick(FINAL_OUTCOME_POOL);
   const closing = CLOSING.has(finalOutcome);
-  const fcount = closing ? Math.floor(Math.random() * 3) + 1 : Math.floor(Math.random() * 5) + 1;
+  const fcount = finalOutcome === 'LOST RNR'
+    ? 4
+    : closing ? Math.floor(Math.random() * 3) + 1 : Math.floor(Math.random() * 5) + 1;
 
   // build seq history: intermediate attempts, then the final outcome as the last row
   const created = addDays(todayDate, -Math.floor(Math.random() * 25) - 1);
@@ -113,7 +117,7 @@ for (const lead of leads) {
 }
 
 // stage should read "Lost Lead" for the lost-but-not-"Not Interested" outcomes, matching server.js LOST semantics
-const LOST = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
+const LOST = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer', 'LOST RNR']);
 for (const u of leadUpdates) {
   const finalOutcome = u[2];
   if (LOST.has(finalOutcome)) u[2] = 'Lost Lead';

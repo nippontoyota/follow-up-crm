@@ -90,7 +90,7 @@ async function seed() {
   const activityRows = await all('SELECT id, name FROM activities ORDER BY id');
   const sampleNames = ['Akhil Nair', 'Amal Varghese', 'Anju Mathew', 'Arjun Das', 'Basil Jose', 'Devika S', 'Firoz Khan', 'Greeshma R', 'Hari Krishnan', 'Irene Paul', 'Jithin Joseph', 'Kavya Menon', 'Lijo Thomas', 'Meera Nair', 'Nikhil Raj', 'Olivia George', 'Pranav P', 'Rakesh Kumar', 'Saniya Ali', 'Thomas Mathew'];
   const soNames = ['Anil Menon', 'Binu Thomas', 'Catherine Paul', 'Dinesh Kumar', 'Fathima Rahman', 'George Joseph'];
-  const outcomes = ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Not Interested', 'RNR', 'Need More Details'];
+  const outcomes = ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Not Interested', 'RNR', 'LOST RNR', 'Need More Details'];
   for (let i = 0; i < sampleNames.length; i++) {
     const branchId = branchByName.get(branches[i % branches.length]);
     const sourceId = sourceRows[i % sourceRows.length].id;
@@ -100,8 +100,8 @@ async function seed() {
     const soName = soNames[i % soNames.length];
     const mobile = String(8520001000 + i);
     const outcome = outcomes[i % outcomes.length];
-    const closing = ['Booking Done', 'Retail Done', 'Not Interested'].includes(outcome);
-    const lost = outcome === 'Not Interested';
+    const closing = ['Booking Done', 'Retail Done', 'Not Interested', 'LOST RNR'].includes(outcome);
+    const lost = ['Not Interested', 'LOST RNR'].includes(outcome);
     const count = i === 0 ? 0 : (i % 5) + 1;
     const nextDate = closing || count === 0 ? null : (i % 3 === 0 ? '2026-09-02' : '2026-09-05');
     await run(`INSERT INTO leads(customer_name,mobile,source_id,branch_id,location,remarks,created_by,assigned_to,model_id,activity_id,original_so_name,original_so_mobile,stage,status,next_date,fcount)
@@ -109,10 +109,10 @@ async function seed() {
     if (count) {
       for (let seq = 1; seq <= count; seq++) {
         const fuOutcome = seq === count ? outcome : 'Call Me Back';
-        const fuClosing = ['Booking Done', 'Retail Done', 'Not Interested'].includes(fuOutcome);
+        const fuClosing = ['Booking Done', 'Retail Done', 'Not Interested', 'LOST RNR'].includes(fuOutcome);
         await run(`INSERT INTO followups(lead_id,user_id,seq,call_status,outcome,next_date,remarks)
           VALUES((SELECT id FROM leads WHERE mobile=?),?,?,?,?,?,?)`, mobile, callGuyId, seq,
-          fuOutcome === 'RNR' ? 'Not Connected' : 'Connected', fuOutcome,
+          ['RNR', 'LOST RNR'].includes(fuOutcome) ? 'Not Connected' : 'Connected', fuOutcome,
           fuClosing ? null : (seq === count ? nextDate : '2026-09-04'),
           `Demo follow-up F${seq}`);
       }

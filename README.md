@@ -43,6 +43,8 @@ Data lives in PostgreSQL. `.secret` holds the cookie signing key — keep it out
 - **Today's follow-up** — open leads whose next follow-up date is today or earlier (overdue leads stay visible instead of disappearing). This is where F2…F5 and beyond happen.
 - **All** — everything assigned to them, including closed leads.
 
+After three prior follow-ups, Call Executives can close a lead with the red `LOST RNR` outcome. It is available from F4 onward only for a `Not Connected` call. The lead moves to `Lost Lead`, leaves the active follow-up queues, and remains visible in history and reports.
+
 ## Follow-up form
 
 Call status → outcome:
@@ -62,6 +64,7 @@ Call status → outcome:
 - **Call Me Back** is available for both Connected and Not Connected calls.
 - Tally Receipt No. and Order ID are not requested when logging a new follow-up. Existing historical values remain available in lead history.
 - **Booking Done / Retail Done / Not Interested** close the lead — no next date is asked for and it drops out of the follow-up tabs. Every other outcome requires the date.
+- **LOST RNR** also closes the lead, but only after three prior follow-ups and only from a `Not Connected` call.
 - Model and Activity dropdowns appear on Connected outcomes and are optional.
 - Each entry is numbered F1, F2, F3… and the full history is shown on the lead.
 

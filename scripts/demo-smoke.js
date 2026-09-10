@@ -58,6 +58,25 @@ const followup = await api(`/api/leads/${lead.id}/followup`, callGuy, 'POST', {
 });
 assert.equal(followup.status, 200, followup.data.error);
 
+let followupCount = Number(followup.data.seq ?? lead.fcount ?? 1);
+while (followupCount < 3) {
+  const rnr = await api(`/api/leads/${lead.id}/followup`, callGuy, 'POST', {
+    call_status: 'Not Connected', outcome: 'RNR', next_date: today, remarks: 'Smoke test RNR',
+  });
+  assert.equal(rnr.status, 200, rnr.data.error);
+  followupCount = Number(rnr.data.seq ?? followupCount + 1);
+}
+const lostRnr = await api(`/api/leads/${lead.id}/followup`, callGuy, 'POST', {
+  call_status: 'Not Connected', outcome: 'LOST RNR', next_date: null, remarks: 'Smoke test LOST RNR',
+});
+assert.equal(lostRnr.status, 200, lostRnr.data.error);
+assert.equal(lostRnr.data.closed, true);
+const closedLead = await api(`/api/leads/${lead.id}`, callGuy);
+assert.equal(closedLead.status, 200, closedLead.data.error);
+assert.equal(closedLead.data.stage, 'Lost Lead');
+assert.equal(closedLead.data.status, 'closed');
+assert.equal(closedLead.data.next_date, null);
+
 const callAnalytics = await api('/api/call-center/analytics', callManager);
 assert.equal(callAnalytics.status, 200, callAnalytics.data.error);
 assert.equal(callAnalytics.data.byCallGuy.length, 5);
@@ -75,4 +94,4 @@ assert.equal(adminSales.status, 200, adminSales.data.error);
 const adminCall = await api('/api/call-center/analytics', admin);
 assert.equal(adminCall.status, 200, adminCall.data.error);
 
-console.log('Demo smoke test passed: import, five-person assignment, Call Guy follow-up, Call Center Manager analytics, Sales Manager scope, and Admin analytics.');
+console.log('Demo smoke test passed: import, five-person assignment, Call Guy follow-up, LOST RNR close, Call Center Manager analytics, Sales Manager scope, and Admin analytics.');

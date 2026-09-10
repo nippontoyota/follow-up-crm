@@ -1143,14 +1143,14 @@ async function managerView() {
         ['SF Sales Officer','Total Leads','Total Calls','Connected','Not Connected',
          'Test Drive','Showroom','Exchange','Booking Done','Retail Done','Customer Busy','Details Received',
          'Need Time','Need SO Call',
-         'More Details','Discount','Not Interested','Already Booked','Lost',
+         'More Details','Discount','Not Interested','Already Booked','Lost','LOST RNR',
          'RNR','Switch Off','Call Back','Call Fwd','Line Busy','Invalid No.'],
         officerOutcomes.map(r => [
           esc(r.so_name), r.total, r.total_calls, r.connected, r.not_connected,
           r.need_test_drive, r.showroom_visit, r.exchange_issue, r.booking_done, r.retail_done,
           r.customer_busy, r.details_received,
           r.need_time, r.need_so_call, r.need_more_details, r.discount_issue,
-          r.not_interested, r.already_booked, r.lost_calls,
+          r.not_interested, r.already_booked, r.lost_calls, r.lost_rnr,
           r.rnr, r.switch_off, r.call_me_back, r.call_forwarding, r.line_busy, r.invalid_number,
         ]),
         'No Salesforce data uploaded for this branch'
@@ -1328,7 +1328,7 @@ const SO_STATUS_ORDER = [
   'Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done',
   'Customer Busy', 'Details Received', 'Need time', 'Need SO Call', 'Need More Details',
   'Discount Issue', 'Not Interested', 'Already Booked', 'Lost to Competition', 'Finance Rejected',
-  'Dropped', 'Lost to co-dealer', 'Lost Lead', 'Unknown',
+  'Dropped', 'Lost to co-dealer', 'LOST RNR', 'Lost Lead', 'Unknown',
 ];
 const SO_STATUS_PAGE_SIZE = 10;
 let salesStatusPage = 1;
@@ -2648,8 +2648,10 @@ async function openLead(id) {
 
   if (!canAct) return;
 
-  const NO_DATE   = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer']);
-  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', 'Already Booked': 'blue', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue', 'Exchange Issue': 'blue', 'Customer Busy': 'blue', 'Call Me Back': 'blue', 'Details Received': 'blue' };
+  const LOST_RNR = 'LOST RNR';
+  const canUseLostRnr = ['call_guy', 'admin'].includes(me.role);
+  const NO_DATE   = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer', LOST_RNR]);
+  const OUT_COLOR = { 'Lost to Competition': 'red', 'Finance Rejected': 'red', 'Dropped': 'red', 'Lost to co-dealer': 'red', 'Not Interested': 'red', LOST_RNR: 'red', 'Already Booked': 'blue', 'Booking Done': 'green', 'Retail Done': 'green', 'Need time': 'blue', 'Need SO Call': 'blue', 'Need More Details': 'blue', 'Discount Issue': 'blue', 'Exchange Issue': 'blue', 'Customer Busy': 'blue', 'Call Me Back': 'blue', 'Details Received': 'blue' };
   let call = '', outcome = '';
 
   const pick = (wrap, onPick) => {
@@ -2665,7 +2667,7 @@ async function openLead(id) {
   pick(sheet.querySelector('#cs'), (v) => {
     call = v; outcome = '';
     const out = sheet.querySelector('#out');
-    out.innerHTML = me.outcomes[v].map(o => {
+    out.innerHTML = me.outcomes[v].filter(o => o !== LOST_RNR || (canUseLostRnr && l.fcount >= 3)).map(o => {
       const c = OUT_COLOR[o] || '';
       return `<button data-v="${esc(o)}"${c ? ` data-color="${c}"` : ''}>${esc(o)}</button>`;
     }).join('');
@@ -2691,6 +2693,7 @@ async function openLead(id) {
     if (!skipDate && !nd) return say('Next follow-up date is required');
     if (outcome === 'Exchange Issue' && !sheet.querySelector('#exExpected').value.trim())  return say('Expected price is required');
     if (outcome === 'Exchange Issue' && !sheet.querySelector('#exOffered').value.trim())   return say('Offered price is required');
+    if (outcome === LOST_RNR && !confirm('Close this lead as LOST RNR after three prior follow-ups?')) return;
 
     let oscValue = '';
     if (call === 'Connected') {
