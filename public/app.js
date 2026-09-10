@@ -1611,6 +1611,12 @@ function salesOfficerMetric(row) {
   };
 }
 
+function salesModelMetric(row) {
+  const metric = salesOfficerMetric({ ...row, sales_officer: row.model });
+  const { sales_officer, ...modelMetric } = metric;
+  return modelMetric;
+}
+
 const salesPerfRateText = rate => rate == null ? 'N/A' : `${(rate * 100).toFixed(1)}%`;
 const salesPerfWonText = (won, total) => total ? `${won} / ${total}` : 'N/A';
 
@@ -1657,6 +1663,7 @@ async function salesPerformanceView() {
     const booked = Number(s.booked) || 0;
     const retailed = Number(s.retailed) || 0;
     const officers = (d.bySalesOfficer || []).map(salesOfficerMetric);
+    const models = (d.byModel || []).map(salesModelMetric);
     const flaggedByOfficer = d.flaggedByOfficer || [];
 
     const sorters = {
@@ -1668,6 +1675,10 @@ async function salesPerformanceView() {
       due: (a, b) => b.due - a.due || b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
     };
     const sorted = [...officers].sort(sorters[salesPerfSort] || sorters.total);
+    const sortedModels = [...models].sort((a, b) => b.retailed - a.retailed
+      || b.outcomes - a.outcomes
+      || b.total - a.total
+      || String(a.model || '').localeCompare(String(b.model || '')));
 
     const overdueCount = officers.reduce((sum, o) => sum + o.due, 0);
     const highVolumeNoOutcome = officers.filter(o => o.total >= 10 && o.outcomes === 0).length;
@@ -1681,6 +1692,22 @@ async function salesPerformanceView() {
       <div class="sop-attention-head"><h3 id="sopAttentionTitle">Start here</h3><p>The clearest actions from this branch.</p></div>
       ${attentionCards.length ? `<div class="sop-attention-grid">${attentionCards.map(card => `<div class="sop-attention-item sop-attention-${card.kind}"><strong>${card.num}</strong><span>${esc(card.label)}</span><small>${esc(card.note)}</small></div>`).join('')}</div>` : '<p class="sop-attention-clear">Nothing needs immediate review from this view.</p>'}
     </section>`;
+
+    const modelHtml = models.length ? `<section class="sop-model-panel" aria-labelledby="sopModelTitle">
+      <div class="sop-model-head"><div><h2 id="sopModelTitle">Which models are selling?</h2><p>Final sales come first. Conversion includes a booking or a retail sale.</p></div><span class="sop-model-count">${models.length} model${models.length === 1 ? '' : 's'}</span></div>
+      <div class="sop-model-grid">${sortedModels.map((m, index) => {
+        const modelOpen = Math.max(0, m.total - m.outcomes - m.lost);
+        const modelRatePosition = Math.min(100, Math.max(0, (m.outcomeRate || 0) * 100));
+        const modelName = m.model || 'Unknown model';
+        return `<article class="sop-model-card ${m.retailed ? 'has-sale' : 'no-sale'}">
+          <div class="sop-model-card-head"><span class="sop-model-rank">${index + 1}</span><h3>${esc(modelName)}</h3>${m.total > 0 && m.total < 5 ? '<span class="sop-sample-tag">Small sample</span>' : ''}</div>
+          <div class="sop-model-main"><div class="sop-model-sales"><strong>${m.retailed}</strong><span>final sale${m.retailed === 1 ? '' : 's'}</span></div><div class="sop-model-converted"><strong>${salesPerfWonText(m.outcomes, m.total)}</strong><span>converted</span></div></div>
+          <div class="sop-model-rate"><span>${m.total} lead${m.total === 1 ? '' : 's'}</span><b>${salesPerfRateText(m.outcomeRate)}</b></div>
+          <div class="sop-model-bar" role="img" aria-label="${esc(salesPerfRateText(m.outcomeRate))} of ${esc(modelName)} leads converted"><span style="width:${modelRatePosition}%"></span></div>
+          <div class="sop-model-status"><span class="sop-model-open"><b>${modelOpen}</b> open</span><span class="sop-model-booked"><b>${m.booked}</b> booked</span><span class="sop-model-retail"><b>${m.retailed}</b> retail</span><span class="sop-model-lost"><b>${m.lost}</b> lost</span></div>
+        </article>`;
+      }).join('')}</div>
+    </section>` : '';
 
     const rowHtml = (o, rank) => {
       const open = Math.max(0, o.total - o.outcomes - o.lost);
@@ -1734,6 +1761,7 @@ async function salesPerformanceView() {
       { num: retailed, lbl: 'Retail', col: 'ok' },
       { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
     ])}
+    ${modelHtml}
     <div class="card sop-card">
       <div class="sop-board-head">
         <div><h2>Sales officer performance</h2><p>See who is turning leads into bookings and retail sales.</p></div>

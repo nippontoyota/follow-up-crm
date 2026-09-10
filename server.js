@@ -1422,7 +1422,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
     const branchIds = managerBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
     const leadFilter = branchFilter('l.branch_id', branchIds);
-    const [bySalesOfficer, summary, flaggedRows] = await Promise.all([
+    const [bySalesOfficer, byModel, summary, flaggedRows] = await Promise.all([
       all(`SELECT l.branch_id, b.name AS branch,
           COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           COUNT(*)::int AS total,
@@ -1435,6 +1435,18 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
         WHERE ${leadFilter.sql}
         GROUP BY l.branch_id, b.name, COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
         ORDER BY total DESC, branch, sales_officer`, today(), ...leadFilter.args),
+
+      all(`SELECT COALESCE(NULLIF(TRIM(m.name), ''), 'Unknown model') AS model,
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+          COUNT(*) FILTER (WHERE l.stage = 'Booking Done' AND l.status = 'closed')::int AS booked,
+          COUNT(*) FILTER (WHERE l.stage = 'Retail Done' AND l.status = 'closed')::int AS retailed,
+          COUNT(*) FILTER (WHERE l.stage = 'Lost Lead' AND l.status = 'closed')::int AS lost,
+          COUNT(*) FILTER (WHERE l.status = 'open' AND l.next_date <= ?)::int AS due
+        FROM leads l LEFT JOIN models m ON m.id = l.model_id
+        WHERE ${leadFilter.sql}
+        GROUP BY COALESCE(NULLIF(TRIM(m.name), ''), 'Unknown model')
+        ORDER BY retailed DESC, booked DESC, total DESC, model`, today(), ...leadFilter.args),
 
       get(`SELECT COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE fcount > 0 AND status = 'open')::int AS followup,
@@ -1484,6 +1496,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
       branches: req.user.role === 'cluster_manager' ? clusterScopeFor(req.user.username).assigned : [],
       summary,
       bySalesOfficer,
+      byModel,
     };
     if (req.user.role !== 'cluster_manager') {
       response.flagged = flaggedRows;

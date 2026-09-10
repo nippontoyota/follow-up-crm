@@ -95,6 +95,17 @@ assert.ok(salesAnalytics.data.bySalesOfficer.every(r => {
     && total >= 0 && booked >= 0 && retailed >= 0 && due >= 0
     && booked + retailed <= total;
 }), 'Sales Officer outcome counts must be non-negative and fit within total leads');
+assert.ok(Array.isArray(salesAnalytics.data.byModel), 'Sales analytics must include model performance');
+assert.ok(salesAnalytics.data.byModel.every(r => r.model));
+assert.ok(salesAnalytics.data.byModel.every(r => {
+  const total = Number(r.total);
+  const booked = Number(r.booked);
+  const retailed = Number(r.retailed);
+  const due = Number(r.due);
+  return [total, booked, retailed, due].every(Number.isFinite)
+    && total >= 0 && booked >= 0 && retailed >= 0 && due >= 0
+    && booked + retailed <= total;
+}), 'Model outcome counts must be non-negative and fit within total leads');
 const crossBranch = await api('/api/sales-manager/analytics?branch_id=999999', salesManager);
 assert.equal(crossBranch.status, 200);
 assert.equal(crossBranch.data.branchId, salesAnalytics.data.branchId, 'Sales Manager must not override branch scope');
