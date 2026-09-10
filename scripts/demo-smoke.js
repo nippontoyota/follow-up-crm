@@ -86,6 +86,15 @@ assert.ok(callAnalytics.data.kpi.total >= records.length);
 const salesAnalytics = await api('/api/sales-manager/analytics', salesManager);
 assert.equal(salesAnalytics.status, 200, salesAnalytics.data.error);
 assert.ok(salesAnalytics.data.bySalesOfficer.every(r => r.sales_officer));
+assert.ok(salesAnalytics.data.bySalesOfficer.every(r => {
+  const total = Number(r.total);
+  const booked = Number(r.booked);
+  const retailed = Number(r.retailed);
+  const due = Number(r.due);
+  return [total, booked, retailed, due].every(Number.isFinite)
+    && total >= 0 && booked >= 0 && retailed >= 0 && due >= 0
+    && booked + retailed <= total;
+}), 'Sales Officer outcome counts must be non-negative and fit within total leads');
 const crossBranch = await api('/api/sales-manager/analytics?branch_id=999999', salesManager);
 assert.equal(crossBranch.status, 200);
 assert.equal(crossBranch.data.branchId, salesAnalytics.data.branchId, 'Sales Manager must not override branch scope');
