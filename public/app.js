@@ -1943,7 +1943,7 @@ async function leadsView({ preserveShell = false } = {}) {
 
   const t = tab === 'leads' ? 'all' : tab;
   const isBulkAdmin = (me.role === 'admin' && t === 'all');
-  const shellReady = preserveShell && document.getElementById('leadSearch') && document.getElementById('leadResults');
+  const shellReady = preserveShell && document.getElementById('leadSearch') && document.getElementById('leadKpi') && document.getElementById('leadResults');
   const searchHtml = `
     <div class="search-bar-wrap">
       <div class="search-bar-inner">
@@ -1957,7 +1957,7 @@ async function leadsView({ preserveShell = false } = {}) {
     </div>`;
 
   if (!shellReady) {
-    view.innerHTML = searchHtml + '<div id="leadResults"><div class="empty">Loading…</div></div>';
+    view.innerHTML = '<div id="leadKpi"></div>' + searchHtml + '<div id="leadResults"><div class="empty">Loading…</div></div>';
     const sInput = document.getElementById('leadSearch');
     if (sInput) {
       sInput.oninput = () => {
@@ -2025,7 +2025,9 @@ async function leadsView({ preserveShell = false } = {}) {
   }[t] || '';
 
   const results = document.getElementById('leadResults');
+  const kpiRoot = document.getElementById('leadKpi');
   if (!results) return;
+  if (kpiRoot) kpiRoot.innerHTML = kpi;
 
   if (!leads.length) {
     const blank = {
@@ -2033,9 +2035,9 @@ async function leadsView({ preserveShell = false } = {}) {
       today: leadsQ ? 'No matching follow-ups.' : 'Nothing due today. Nice work.',
       all: leadsQ ? 'No matching leads.' : 'No leads yet.',
     };
-    results.innerHTML = kpi + pg + `<div class="empty">${blank[t]}</div>`;
+    results.innerHTML = pg + `<div class="empty">${blank[t]}</div>`;
   } else {
-    results.innerHTML = kpi + pg + `
+    results.innerHTML = pg + `
       <div id="leadList">${leads.map((l, i) => {
         const num = (page - 1) * LEADS_PER_PAGE + i + 1;
         return `
