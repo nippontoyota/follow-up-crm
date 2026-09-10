@@ -1695,18 +1695,31 @@ async function salesPerformanceView() {
 
     const modelHtml = models.length ? `<section class="sop-model-panel" aria-labelledby="sopModelTitle">
       <div class="sop-model-head"><div><h2 id="sopModelTitle">Which models are selling?</h2><p>Final sales come first. Conversion includes a booking or a retail sale.</p></div><span class="sop-model-count">${models.length} model${models.length === 1 ? '' : 's'}</span></div>
-      <div class="sop-model-grid">${sortedModels.map((m, index) => {
-        const modelOpen = Math.max(0, m.total - m.outcomes - m.lost);
-        const modelRatePosition = Math.min(100, Math.max(0, (m.outcomeRate || 0) * 100));
-        const modelName = m.model || 'Unknown model';
-        return `<article class="sop-model-card ${m.retailed ? 'has-sale' : 'no-sale'}">
-          <div class="sop-model-card-head"><span class="sop-model-rank">${index + 1}</span><h3>${esc(modelName)}</h3>${m.total > 0 && m.total < 5 ? '<span class="sop-sample-tag">Small sample</span>' : ''}</div>
-          <div class="sop-model-main"><div class="sop-model-sales"><strong>${m.retailed}</strong><span>final sale${m.retailed === 1 ? '' : 's'}</span></div><div class="sop-model-converted"><strong>${salesPerfWonText(m.outcomes, m.total)}</strong><span>converted</span></div></div>
-          <div class="sop-model-rate"><span>${m.total} lead${m.total === 1 ? '' : 's'}</span><b>${salesPerfRateText(m.outcomeRate)}</b></div>
-          <div class="sop-model-bar" role="img" aria-label="${esc(salesPerfRateText(m.outcomeRate))} of ${esc(modelName)} leads converted"><span style="width:${modelRatePosition}%"></span></div>
-          <div class="sop-model-status"><span class="sop-model-open"><b>${modelOpen}</b> open</span><span class="sop-model-booked"><b>${m.booked}</b> booked</span><span class="sop-model-retail"><b>${m.retailed}</b> retail</span><span class="sop-model-lost"><b>${m.lost}</b> lost</span></div>
-        </article>`;
-      }).join('')}</div>
+      <div class="sop-model-grid">
+        ${sortedModels.map((m, index) => {
+          const modelOpen = Math.max(0, m.total - m.outcomes - m.lost);
+          const modelName = m.model || 'Unknown model';
+          const rateText = salesPerfRateText(m.outcomeRate);
+          const aria = `${modelName}: ${m.total} leads, ${modelOpen} open, ${m.booked} booked, ${m.retailed} retail, ${m.lost} lost, ${rateText} converted`;
+          return `<article class="sop-model-row ${m.retailed ? 'has-sale' : 'no-sale'}">
+            <div class="sop-model-identity">
+              <span class="sop-model-rank" aria-hidden="true">${index + 1}</span>
+              <div class="sop-model-name"><h3>${esc(modelName)}</h3><span>${m.total} lead${m.total === 1 ? '' : 's'}</span>${m.total > 0 && m.total < 5 ? '<small class="sop-sample-tag">Small sample</small>' : ''}</div>
+            </div>
+            <div class="sop-model-funnel">
+              <div class="sop-model-outcome-bar" role="img" aria-label="${esc(aria)}">
+                <span class="sop-model-segment open" style="flex:${modelOpen}" aria-hidden="true"></span>
+                <span class="sop-model-segment booked" style="flex:${m.booked}" aria-hidden="true"></span>
+                <span class="sop-model-segment retail" style="flex:${m.retailed}" aria-hidden="true"></span>
+                <span class="sop-model-segment lost" style="flex:${m.lost}" aria-hidden="true"></span>
+              </div>
+              <div class="sop-model-outcome-meta" aria-hidden="true"><span><b>${modelOpen}</b> open · <b>${m.booked}</b> booked · <b>${m.retailed}</b> retail · <b>${m.lost}</b> lost</span><strong>${rateText} converted</strong></div>
+            </div>
+            <div class="sop-model-sales ${m.retailed ? 'has-sale' : 'no-sale'}"><strong>${m.retailed}</strong><span>retail</span></div>
+          </article>`;
+        }).join('')}
+        <div class="sop-model-legend" aria-label="Outcome legend"><span class="open">Open</span><span class="booked">Booked</span><span class="retail">Retail</span><span class="lost">Lost</span></div>
+      </div>
     </section>` : '';
 
     const rowHtml = (o, rank) => {
