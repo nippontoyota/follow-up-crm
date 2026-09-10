@@ -1612,7 +1612,7 @@ function salesOfficerMetric(row) {
 }
 
 const salesPerfRateText = rate => rate == null ? 'N/A' : `${(rate * 100).toFixed(1)}%`;
-const salesPerfWonText = (won, total) => total ? `${won} / ${total}` : '—';
+const salesPerfWonText = (won, total) => total ? `${won} / ${total}` : 'N/A';
 
 let salesPerfSort = 'conversion';
 const SO_PERFORMANCE_PAGE_SIZE = 10;
@@ -1689,7 +1689,7 @@ async function salesPerformanceView() {
       <span>${attentionItems.length ? attentionItems.map(esc).join(' · ') : 'No immediate pattern'}</span>
     </div>`;
 
-    const rowHtml = o => {
+    const rowHtml = (o, rank) => {
       const open = Math.max(0, o.total - o.outcomes - o.lost);
       const resultSegments = [
         ['open', open],
@@ -1698,26 +1698,28 @@ async function salesPerformanceView() {
         ['lost', o.lost],
       ].filter(([, value]) => value > 0);
       return `
-      <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}${o.branch ? ` in ${esc(branchLabel(o.branch))}` : ''}">
-        <div class="sop-row-top">
-          <span><button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>${me.role === 'cluster_manager' && o.branch ? `<span class="sop-row-branch">${esc(branchLabel(o.branch))}</span>` : ''}</span>
-          <span class="sop-row-total">${o.total} lead${o.total !== 1 ? 's' : ''}</span>
+      <article class="sop-score-row" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}${o.branch ? ` in ${esc(branchLabel(o.branch))}` : ''}">
+        <div class="sop-score-top">
+          <span class="sop-rank" aria-hidden="true">${rank}</span>
+          <div class="sop-officer">
+            <button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>
+            ${me.role === 'cluster_manager' && o.branch ? `<span class="sop-row-branch">${esc(branchLabel(o.branch))}</span>` : ''}
+            ${o.total > 0 && o.total < 5 ? '<span class="sop-sample-tag">Small sample</span>' : ''}
+          </div>
+          <div class="sop-score-rate">
+            <div class="sop-score-label">Outcome conversion</div>
+            <div class="sop-rate-main"><strong>${salesPerfRateText(o.outcomeRate)}</strong><span>${salesPerfWonText(o.outcomes, o.total)} outcomes</span></div>
+        <div class="sop-rate-plot" role="img" aria-label="${esc(salesPerfRateText(o.outcomeRate))} outcome conversion for ${esc(o.sales_officer)}"><span style="--rate-position:${Math.min(100, Math.max(0, (o.outcomeRate || 0) * 100))}%"></span></div>
+          </div>
+          <div class="sop-score-final"><span>Retail conversion</span><strong>${salesPerfRateText(o.retailRate)}</strong><small>${o.retailed} final sale${o.retailed === 1 ? '' : 's'}</small></div>
+          <div class="sop-score-volume"><span>Leads</span><strong>${o.total}</strong></div>
+          <div class="sop-score-due"><button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button></div>
         </div>
-        <div class="sop-conversion-line">
-          <span class="sop-conversion-label">Outcome conversion</span>
-          <strong>${salesPerfRateText(o.outcomeRate)}</strong>
-          <span>${salesPerfWonText(o.outcomes, o.total)} outcomes</span>
+        <div class="sop-score-mix">
+          <div class="sop-mix-head"><span>Lead outcome mix</span><span>${open} open · ${o.booked} booked · ${o.retailed} retail · ${o.lost} lost</span></div>
+          <div class="sop-result-bar" aria-hidden="true">${resultSegments.map(([key, value]) => `<span class="sop-result-seg sop-result-${key}" style="flex:${value}"></span>`).join('')}</div>
         </div>
-        <div class="sop-conversion-track" role="img" aria-label="${esc(salesPerfRateText(o.outcomeRate))} outcome conversion for ${esc(o.sales_officer)}">
-          <span style="width:${Math.min(100, Math.max(0, (o.outcomeRate || 0) * 100))}%"></span>
-        </div>
-        <div class="sop-result-bar" aria-hidden="true">${resultSegments.map(([key, value]) => `<span class="sop-result-seg sop-result-${key}" style="flex:${value}"></span>`).join('')}</div>
-        <div class="sop-row-detail">
-          <span>${salesPerfRateText(o.retailRate)} retail · ${o.retailed} final sale${o.retailed === 1 ? '' : 's'}</span>
-          <span>${open} open · ${o.booked} booked · ${o.lost} lost</span>
-          <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button>
-        </div>
-      </div>`;
+      </article>`;
     };
 
     const flaggedByOfficerHtml = flaggedByOfficer.length ? `<div class="card flag-card">
@@ -1727,37 +1729,44 @@ async function salesPerformanceView() {
         <thead><tr><th>Sales Officer</th>${me.role === 'admin' ? '<th>Branch</th>' : ''}<th>Total</th><th>Active</th><th>Closed</th></tr></thead>
         <tbody>${flaggedByOfficer.map(r => `<tr>
           <td>${esc(r.sales_officer)}</td>
-          ${me.role === 'admin' ? `<td>${esc(branchLabel(r.branch || '—'))}</td>` : ''}
+          ${me.role === 'admin' ? `<td>${esc(branchLabel(r.branch || 'Unknown branch'))}</td>` : ''}
           <td><b>${r.flagged}</b></td><td>${r.active}</td><td>${r.closed}</td>
         </tr>`).join('')}</tbody>
       </table></div>
     </div>` : '';
 
-    view.innerHTML = `${routeNotice()}${clusterScopeNotice()}${analyticsToolbar('salesPerf')}${kpiRow([
-      { num: totalLeads, lbl: 'Total Leads', col: 'brand' },
-      { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
-      { num: salesPerfRateText(overallOutcomeRate), lbl: 'Outcome Conversion', col: 'ok' },
-      { num: salesPerfRateText(overallRetailRate), lbl: 'Retail Conversion', col: 'ok' },
-      { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
-    ])}
+    const scopeTitle = branchName || 'Selected branch';
+    view.innerHTML = `${routeNotice()}${clusterScopeNotice()}${analyticsToolbar('salesPerf')}
+    <section class="sop-summary" aria-label="Branch snapshot">
+      <div class="sop-summary-title"><span>Branch snapshot</span><strong>${esc(scopeTitle)}</strong><small>${totalLeads} leads in this view</small></div>
+      <div class="sop-summary-stat"><span>Outcome conversion</span><strong>${salesPerfRateText(overallOutcomeRate)}</strong><small>${totalOutcomes} booked or retail outcomes</small></div>
+      <div class="sop-summary-stat"><span>Retail conversion</span><strong>${salesPerfRateText(overallRetailRate)}</strong><small>${retailed} final sale${retailed === 1 ? '' : 's'}</small></div>
+      <div class="sop-summary-stat"><span>Due now</span><strong>${overdueCount}</strong><small>open leads needing contact</small></div>
+    </section>
     <div class="card sop-card">
-      <div class="sop-head">
-        <h2>Sales Officer Performance${branchName && me.role !== 'cluster_manager' ? ` · ${esc(branchName)}` : ''}</h2>
+      <div class="sop-board-head">
+        <div><h2>Sales Officer Scoreboard</h2><p>Outcome means a booking or a retail sale. Every rate shows its lead count.</p></div>
         ${me.role === 'admin' ? `<div class="sop-head-actions">
           <button type="button" class="btn ghost sop-back" id="salesBranchBack">← All branches</button>
           <label class="sop-switch-wrap">Branch<select id="salesBranchSwitch" class="sop-switch">${options(masters.branches, Number(branchId))}</select></label>
         </div>` : ''}
       </div>
-      <p class="sop-explainer">Outcome conversion = booked + retail ÷ total leads. Retail conversion is final-sale rate.</p>
+      <div class="sop-rate-axis" aria-hidden="true"><span>Outcome conversion</span><span><b>0%</b><i></i><b>100%</b></span></div>
+      <div class="sop-legend" aria-label="Lead outcome legend">
+        <span><i class="sop-legend-swatch sop-legend-open"></i>Open</span>
+        <span><i class="sop-legend-swatch sop-legend-booked"></i>Booked</span>
+        <span><i class="sop-legend-swatch sop-legend-retailed"></i>Retail</span>
+        <span><i class="sop-legend-swatch sop-legend-lost"></i>Lost</span>
+      </div>
       ${attentionHtml}
       ${officers.length ? `
       <div class="sop-controls">
-        <div class="sop-sort" id="sopSort">
+        <div class="sop-sort" id="sopSort" aria-label="Sort Sales Officers">
           <button type="button" class="sop-sort-opt${salesPerfSort === 'conversion' ? ' on' : ''}" data-sort="conversion">Conversion</button>
           <button type="button" class="sop-sort-opt${salesPerfSort === 'total' ? ' on' : ''}" data-sort="total">Total</button>
           <button type="button" class="sop-sort-opt${salesPerfSort === 'due' ? ' on' : ''}" data-sort="due">Due</button>
         </div>
-        <input id="sopFilter" class="sop-filter" placeholder="Filter officers…">
+        <input id="sopFilter" class="sop-filter" placeholder="Filter officers…" aria-label="Filter Sales Officers">
       </div>
       <div class="sop-rows" id="sopRows"></div>
       <div id="sopPager"></div>
@@ -1797,18 +1806,18 @@ async function salesPerformanceView() {
         const start = (salesPerfPage - 1) * SO_PERFORMANCE_PAGE_SIZE;
         const visible = filtered.slice(start, start + SO_PERFORMANCE_PAGE_SIZE);
         document.getElementById('sopRows').innerHTML = visible.length
-          ? visible.map(rowHtml).join('')
+          ? visible.map((officer, index) => rowHtml(officer, start + index + 1)).join('')
           : '<div class="empty">No matching Sales Officers</div>';
         const pager = document.getElementById('sopPager');
         pager.innerHTML = renderPager(salesPerfPage, pages, filtered.length);
-        view.querySelectorAll('#sopRows .sop-row').forEach(row => {
+        view.querySelectorAll('#sopRows .sop-score-row').forEach(row => {
           const openTotal = () => openOfficerLeads(row.dataset.branchId || branchId, row.dataset.officer, 'total');
           row.onclick = openTotal;
           row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTotal(); } };
         });
         view.querySelectorAll('#sopRows .sop-pill').forEach(b => b.onclick = (e) => {
           e.stopPropagation();
-          const row = b.closest('.sop-row');
+          const row = b.closest('.sop-score-row');
           openOfficerLeads(row?.dataset.branchId || branchId, b.dataset.officer, b.dataset.bucket);
         });
         bindPager(nextPage => { salesPerfPage = nextPage; renderRows(); }, pager);
