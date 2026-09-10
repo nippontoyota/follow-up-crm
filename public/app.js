@@ -1673,26 +1673,20 @@ async function salesPerformanceView() {
     const highVolumeNoOutcome = officers.filter(o => o.total >= 10 && o.outcomes === 0).length;
     const smallSampleWinners = officers.filter(o => o.total > 0 && o.total < 5 && o.outcomes > 0).length;
     const attentionCards = [
-      { num: overdueCount, label: `overdue lead${overdueCount === 1 ? '' : 's'}`, note: 'Open these first', kind: 'due' },
-      { num: highVolumeNoOutcome, label: `officer${highVolumeNoOutcome === 1 ? '' : 's'} with 10+ leads and 0 converted`, note: 'Check follow-up coverage', kind: 'risk' },
-      { num: smallSampleWinners, label: `small-sample result${smallSampleWinners === 1 ? '' : 's'}`, note: 'Treat rate as an early signal', kind: 'sample' },
+      { num: overdueCount, label: `lead${overdueCount === 1 ? '' : 's'} need${overdueCount === 1 ? 's' : ''} a call`, note: 'Call these first', kind: 'due' },
+      { num: highVolumeNoOutcome, label: `officer${highVolumeNoOutcome === 1 ? '' : 's'} have 10+ leads and 0 converted`, note: 'Review follow-up', kind: 'risk' },
+      { num: smallSampleWinners, label: `early result${smallSampleWinners === 1 ? '' : 's'} to watch`, note: 'Small sample', kind: 'sample' },
     ].filter(card => card.num > 0);
     const attentionHtml = `<section class="sop-attention" aria-labelledby="sopAttentionTitle">
-      <div class="sop-attention-head"><h3 id="sopAttentionTitle">What to look at first</h3><p>These patterns are worth opening before comparing the rest.</p></div>
+      <div class="sop-attention-head"><h3 id="sopAttentionTitle">Start here</h3><p>The clearest actions from this branch.</p></div>
       ${attentionCards.length ? `<div class="sop-attention-grid">${attentionCards.map(card => `<div class="sop-attention-item sop-attention-${card.kind}"><strong>${card.num}</strong><span>${esc(card.label)}</span><small>${esc(card.note)}</small></div>`).join('')}</div>` : '<p class="sop-attention-clear">Nothing needs immediate review from this view.</p>'}
     </section>`;
 
     const rowHtml = (o, rank) => {
       const open = Math.max(0, o.total - o.outcomes - o.lost);
-      const resultSegments = [
-        ['open', open],
-        ['booked', o.booked],
-        ['retailed', o.retailed],
-        ['lost', o.lost],
-      ].filter(([, value]) => value > 0);
       const ratePosition = Math.min(100, Math.max(0, (o.outcomeRate || 0) * 100));
       return `
-      <article class="sop-score-row" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}${o.branch ? ` in ${esc(branchLabel(o.branch))}` : ''}">
+      <article class="sop-score-row ${o.outcomes ? 'has-conversion' : 'needs-attention'}" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}${o.branch ? ` in ${esc(branchLabel(o.branch))}` : ''}">
         <div class="sop-score-top">
           <span class="sop-rank" aria-hidden="true">${rank}</span>
           <div class="sop-officer">
@@ -1701,17 +1695,20 @@ async function salesPerformanceView() {
             ${o.total > 0 && o.total < 5 ? '<span class="sop-sample-tag">Small sample</span>' : ''}
           </div>
           <div class="sop-score-rate">
-            <div class="sop-score-label">Converted leads</div>
-            <div class="sop-rate-main"><strong>${salesPerfRateText(o.outcomeRate)}</strong><span>${salesPerfWonText(o.outcomes, o.total)} leads</span></div>
+            <div class="sop-score-label">Converted</div>
+            <div class="sop-rate-main"><strong>${salesPerfWonText(o.outcomes, o.total)}</strong><span>leads converted</span><b>${salesPerfRateText(o.outcomeRate)}</b></div>
             <div class="sop-rate-plot" role="img" aria-label="${esc(salesPerfRateText(o.outcomeRate))} of leads converted for ${esc(o.sales_officer)}"><span style="width:${ratePosition}%"></span></div>
+            <small class="sop-rate-note">Booking or retail sale</small>
           </div>
-          <div class="sop-score-final ${o.retailed ? 'has-sale' : 'no-sale'}"><span>Final sales</span><strong>${o.retailed}</strong><small>${salesPerfRateText(o.retailRate)} of leads</small></div>
-          <div class="sop-score-volume"><span>Leads</span><strong>${o.total}</strong></div>
-          <div class="sop-score-due"><button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button></div>
+          <div class="sop-big-stat sop-lead-stat"><span>Leads</span><strong>${o.total}</strong></div>
+          <div class="sop-big-stat sop-sale-stat ${o.retailed ? 'has-sale' : 'no-sale'}"><span>Final sales</span><strong>${o.retailed}</strong></div>
+          <div class="sop-big-stat sop-due-stat"><span>Due</span><button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due}</button></div>
         </div>
-        <div class="sop-score-mix">
-          <div class="sop-mix-head"><span>Where the leads are</span><span>${open} open, ${o.booked} booked, ${o.retailed} retail, ${o.lost} lost</span></div>
-          <div class="sop-result-bar" aria-hidden="true">${resultSegments.map(([key, value]) => `<span class="sop-result-seg sop-result-${key}" style="flex:${value}"></span>`).join('')}</div>
+        <div class="sop-breakdown" aria-label="Lead status breakdown">
+          <span class="sop-status-box sop-status-open"><b>${open}</b><small>Open</small></span>
+          <span class="sop-status-box sop-status-booked"><b>${o.booked}</b><small>Booked</small></span>
+          <span class="sop-status-box sop-status-retailed"><b>${o.retailed}</b><small>Retail</small></span>
+          <span class="sop-status-box sop-status-lost"><b>${o.lost}</b><small>Lost</small></span>
         </div>
       </article>`;
     };
@@ -1739,25 +1736,22 @@ async function salesPerformanceView() {
     ])}
     <div class="card sop-card">
       <div class="sop-board-head">
-        <div><h2>Who is converting leads?</h2><p>One converted lead equals one booking or one retail sale. Longer bars mean a larger share of leads converted.</p></div>
+        <div><h2>Sales officer performance</h2><p>See who is turning leads into bookings and retail sales.</p></div>
         ${me.role === 'admin' ? `<div class="sop-head-actions">
           <button type="button" class="btn ghost sop-back" id="salesBranchBack">← All branches</button>
           <label class="sop-switch-wrap">Branch<select id="salesBranchSwitch" class="sop-switch">${options(masters.branches, Number(branchId))}</select></label>
         </div>` : ''}
       </div>
-      <div class="sop-state-key" aria-label="Lead state legend"><span>Lead states</span><span><i class="sop-state-swatch sop-state-open"></i>Open</span><span><i class="sop-state-swatch sop-state-booked"></i>Booked</span><span><i class="sop-state-swatch sop-state-retailed"></i>Retail</span><span><i class="sop-state-swatch sop-state-lost"></i>Lost</span></div>
       ${attentionHtml}
       ${officers.length ? `
       <div class="sop-controls">
-        <div class="sop-sort" id="sopSort" aria-label="Rank Sales Officers by">
-          <span class="sop-sort-label">Rank by</span>
-          <button type="button" class="sop-sort-opt${salesPerfSort === 'conversion' ? ' on' : ''}" data-sort="conversion">Conversion</button>
-          <button type="button" class="sop-sort-opt${salesPerfSort === 'total' ? ' on' : ''}" data-sort="total">Leads</button>
-          <button type="button" class="sop-sort-opt${salesPerfSort === 'due' ? ' on' : ''}" data-sort="due">Due</button>
+        <div class="sop-sort" id="sopSort" aria-label="Sort Sales Officers">
+          <button type="button" class="sop-sort-opt${salesPerfSort === 'conversion' ? ' on' : ''}" data-sort="conversion">Best conversion</button>
+          <button type="button" class="sop-sort-opt${salesPerfSort === 'total' ? ' on' : ''}" data-sort="total">Most leads</button>
+          <button type="button" class="sop-sort-opt${salesPerfSort === 'due' ? ' on' : ''}" data-sort="due">Most due</button>
         </div>
         <input id="sopFilter" class="sop-filter" placeholder="Filter officers…" aria-label="Filter Sales Officers">
       </div>
-      <div class="sop-score-legend"><span></span><span>Officer</span><span>Converted leads</span><span>Final sales</span><span>Lead volume</span><span>Due work</span></div>
       <div class="sop-rows" id="sopRows"></div>
       <div id="sopPager"></div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
