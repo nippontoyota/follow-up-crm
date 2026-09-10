@@ -1761,7 +1761,6 @@ async function salesPerformanceView() {
       { num: retailed, lbl: 'Retail', col: 'ok' },
       { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
     ])}
-    ${modelHtml}
     <div class="card sop-card">
       <div class="sop-board-head">
         <div><h2>Sales officer performance</h2><p>See who is turning leads into bookings and retail sales.</p></div>
@@ -1784,6 +1783,7 @@ async function salesPerformanceView() {
       <div id="sopPager"></div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
     </div>
+    ${modelHtml}
     ${flaggedByOfficerHtml}`;
 
     if (me.role === 'admin') {

@@ -780,32 +780,33 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .sop-pick-stats { display: flex; gap: 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .sop-pick-won { color: var(--ok); }
 
-.sop-model-panel { padding: 22px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
-.sop-model-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.sop-model-head h2 { margin: 0 0 4px; }
-.sop-model-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
-.sop-model-count { flex: 0 0 auto; padding: 6px 9px; border-radius: 7px; background: var(--brand-light); color: var(--brand-dark); font-size: 11px; font-weight: 800; }
-.sop-model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 10px; }
-.sop-model-card { min-width: 0; padding: 14px; border: 1px solid #D7E0EC; border-radius: 11px; background: #F8FAFD; }
+.sop-model-panel { padding: 20px 22px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.sop-model-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.sop-model-head h2 { margin: 0 0 3px; }
+.sop-model-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.sop-model-count { flex: 0 0 auto; color: var(--muted); font-size: 11px; font-weight: 700; }
+.sop-model-grid { display: flex; flex-direction: column; gap: 7px; }
+.sop-model-card { display: grid; grid-template-columns: 30px minmax(140px, 1.1fr) 90px minmax(200px, 1.7fr) 58px minmax(230px, 1.5fr); align-items: center; gap: 12px; min-width: 0; padding: 10px 12px; border: 1px solid #D7E0EC; border-radius: 10px; background: #F8FAFD; }
 .sop-model-card.has-sale { border-color: #B8DEC6; background: #F5FCF7; }
 .sop-model-card.no-sale { border-color: #E5CBD0; }
-.sop-model-card-head { display: flex; align-items: center; gap: 8px; min-height: 30px; }
-.sop-model-card-head h3 { min-width: 0; margin: 0; color: var(--text); font-size: 15px; line-height: 1.2; overflow-wrap: anywhere; }
-.sop-model-rank { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: var(--brand-light); color: var(--brand-dark); font-size: 12px; font-weight: 800; }
+.sop-model-card-head { display: contents; }
+.sop-model-card-head h3 { min-width: 0; margin: 0; color: var(--text); font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
+.sop-model-rank { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: var(--brand-light); color: var(--brand-dark); font-size: 12px; font-weight: 800; }
 .sop-model-card.has-sale .sop-model-rank { background: #D8F0DF; color: #166534; }
-.sop-model-main { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 13px; }
-.sop-model-sales, .sop-model-converted { display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px; background: #fff; }
-.sop-model-sales strong, .sop-model-converted strong { color: var(--text); font-size: 27px; line-height: 1; }
+.sop-model-card-head .sop-sample-tag { grid-column: 2; grid-row: 2; justify-self: start; margin-top: -8px; }
+.sop-model-main { display: contents; }
+.sop-model-sales, .sop-model-converted { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sop-model-sales strong, .sop-model-converted strong { color: var(--text); font-size: 22px; line-height: 1; }
 .sop-model-card.has-sale .sop-model-sales strong { color: var(--ok); }
 .sop-model-card.no-sale .sop-model-sales strong { color: var(--bad); }
-.sop-model-sales span, .sop-model-converted span { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
-.sop-model-rate { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 11px; font-weight: 700; }
-.sop-model-rate b { color: var(--brand-dark); font-size: 15px; }
-.sop-model-bar { height: 9px; margin-top: 5px; overflow: hidden; border: 1px solid #D5DEEA; border-radius: 5px; background: #E8EDF4; }
+.sop-model-sales span, .sop-model-converted span { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.sop-model-rate { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.sop-model-rate b { color: var(--brand-dark); font-size: 14px; }
+.sop-model-bar { height: 8px; overflow: hidden; border: 1px solid #D5DEEA; border-radius: 5px; background: #E8EDF4; }
 .sop-model-bar span { display: block; height: 100%; border-radius: 4px; background: var(--brand); }
 .sop-model-card.has-sale .sop-model-bar span { background: var(--ok); }
-.sop-model-status { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; margin-top: 12px; color: var(--muted); font-size: 10px; font-weight: 700; }
-.sop-model-status b { margin-right: 2px; font-size: 13px; }
+.sop-model-status { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.sop-model-status b { margin-right: 2px; font-size: 12px; }
 .sop-model-open b { color: #52647A; }
 .sop-model-booked b { color: #B45309; }
 .sop-model-retail b { color: #15803D; }
@@ -890,6 +891,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
   .sop-model-panel { padding: 16px 13px; }
   .sop-model-head { display: block; }
   .sop-model-count { display: inline-flex; margin-top: 10px; }
+  .sop-model-card { grid-template-columns: 28px minmax(0, 1fr) 72px; gap: 9px; }
+  .sop-model-card-head h3 { grid-column: 2 / -1; grid-row: 1; }
+  .sop-model-card-head .sop-sample-tag { grid-column: 2 / -1; grid-row: 2; margin-top: -6px; }
+  .sop-model-rank { grid-row: 1 / span 2; }
+  .sop-model-sales { grid-column: 2; grid-row: 3; }
+  .sop-model-converted { grid-column: 3; grid-row: 3; }
+  .sop-model-rate { grid-column: 2 / -1; grid-row: 4; margin-top: 2px; }
+  .sop-model-bar { grid-column: 2 / -1; grid-row: 5; }
+  .sop-model-status { grid-column: 2 / -1; grid-row: 6; }
   .sop-card { padding: 16px 13px; }
   .sop-board-head { display: block; }
   .sop-board-head .sop-head-actions { margin-top: 12px; }
