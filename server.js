@@ -35,6 +35,12 @@ export const OUTCOMES = {
 const CLOSING = new Set(['Booking Done', 'Retail Done', 'Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer', 'LOST RNR']);
 const LOST    = new Set(['Not Interested', 'Lost to Competition', 'Finance Rejected', 'Dropped', 'Lost to co-dealer', 'LOST RNR']);
 const LOST_RNR = 'LOST RNR';
+const SOURCE_GROUP_SQL = `CASE
+  WHEN LOWER(COALESCE(NULLIF(TRIM(s.name), ''), '')) LIKE '%referral%' THEN 'Referral'
+  WHEN LOWER(COALESCE(NULLIF(TRIM(s.name), ''), '')) LIKE '%tkm%' THEN 'TKM'
+  WHEN NULLIF(TRIM(s.name), '') IS NULL THEN 'Unknown'
+  ELSE TRIM(s.name)
+END`;
 const MAX_DAYS_AHEAD = 3;
 const clusterManagerScopes = new Map();
 const clusterManagerScopeDetails = new Map();
@@ -916,7 +922,7 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
       ? `l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`
       : `l.branch_id = ?`;
     const scopeArgs = isCallCenter ? [] : [branchId];
-    const { officer_id, stage, call_status, outcome, latest_outcome, flagged, overdue, call_guy_id, branch_id, bucket } = req.query;
+    const { officer_id, stage, call_status, outcome, latest_outcome, flagged, overdue, call_guy_id, branch_id, bucket, source_group, quality_metric } = req.query;
     if (req.user.role === 'call_center_manager' && flagged === '1')
       return res.status(403).json({ error: 'Flag review is handled by Sales Managers' });
     const flagFields = req.user.role === 'call_center_manager'
@@ -940,7 +946,7 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
         WHERE ${scopeSql} AND l.assigned_to = ? AND l.status = 'open' AND l.next_date < ?
         ORDER BY l.next_date ASC, l.id DESC
       `, ...scopeArgs, Number(call_guy_id), today());
-    } else if (isCallCenter && (bucket || call_guy_id || branch_id)) {
+    } else if (isCallCenter && (bucket || call_guy_id || branch_id || source_group || quality_metric)) {
       const BUCKET_FILTERS = {
         total:    '1 = 1',
         open:     `l.status = 'open'`,
@@ -960,6 +966,18 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
         f6plus:    `l.fcount >= 6 AND l.status = 'open'`,
         f5plus:    `l.fcount >= 5 AND l.status = 'open'`,
       };
+      const QUALITY_FILTERS = {
+        total:        '1 = 1',
+        attempted:    'l.fcount > 0',
+        connected:    `EXISTS (SELECT 1 FROM followups f WHERE f.lead_id = l.id AND f.call_status = 'Connected')`,
+        open_followup:`l.status = 'open' AND l.fcount > 0`,
+        booked:       `l.stage = 'Booking Done' AND l.status = 'closed'`,
+        retailed:     `l.stage = 'Retail Done' AND l.status = 'closed'`,
+        won:          `l.stage IN ('Booking Done', 'Retail Done')`,
+        lost:         `l.stage = 'Lost Lead' AND l.status = 'closed'`,
+        lost_rnr:     `EXISTS (SELECT 1 FROM followups f WHERE f.lead_id = l.id AND f.outcome = 'LOST RNR')`,
+        overdue:      `l.status = 'open' AND l.fcount > 0 AND l.next_date < ?`,
+      };
       const bucketSql = BUCKET_FILTERS[bucket || 'total'];
       if (!bucketSql) return bad(res, 'Invalid Call Center filter');
       const filters = [scopeSql, bucketSql];
@@ -976,6 +994,19 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
           return bad(res, 'Invalid branch');
         filters.push('l.branch_id = ?');
         args.push(Number(branch_id));
+      }
+      if (source_group !== undefined) {
+        const sourceGroup = String(source_group).trim();
+        if (!sourceGroup || sourceGroup.length > 80)
+          return bad(res, 'Invalid source group');
+        filters.push(`${SOURCE_GROUP_SQL} = ?`);
+        args.push(sourceGroup);
+      }
+      if (quality_metric !== undefined) {
+        const qualitySql = QUALITY_FILTERS[String(quality_metric)];
+        if (!qualitySql) return bad(res, 'Invalid source quality metric');
+        filters.push(qualitySql);
+        if (quality_metric === 'overdue') args.push(today());
       }
       leads = await all(`${BASE}
         WHERE ${filters.join(' AND ')}
@@ -1181,6 +1212,144 @@ app.post('/api/leads/:id/close-flag', auth('manager', 'sales_manager', 'admin'),
 });
 
 /* -------------------------------------------------------- repurposed dashboards */
+
+function sourceQualityRow(row) {
+  const leads = Number(row.leads) || 0;
+  const attempted = Number(row.attempted) || 0;
+  const connected = Number(row.connected) || 0;
+  const booked = Number(row.booked) || 0;
+  const retailed = Number(row.retailed) || 0;
+  return {
+    branch_id: row.branch_id == null ? null : Number(row.branch_id),
+    branch: row.branch || null,
+    source_group: row.source_group || null,
+    raw_sources: Array.isArray(row.raw_sources) ? row.raw_sources : [],
+    leads,
+    attempted,
+    connected,
+    contact_rate: leads ? connected / leads : null,
+    open_followup: Number(row.open_followup) || 0,
+    booked,
+    retailed,
+    won_rate: leads ? (booked + retailed) / leads : null,
+    lost: Number(row.lost) || 0,
+    lost_rnr: Number(row.lost_rnr) || 0,
+    average_followups: row.average_followups == null ? 0 : Number(row.average_followups) || 0,
+    overdue: Number(row.overdue) || 0,
+  };
+}
+
+function highestSourceQualityRow(rows, key) {
+  return [...rows].sort((a, b) =>
+    Number(b[key] || 0) - Number(a[key] || 0) ||
+    Number(b.leads || 0) - Number(a.leads || 0) ||
+    String(a.source_group || '').localeCompare(String(b.source_group || ''))
+  )[0] || null;
+}
+
+function sourceQualityAttention(sources) {
+  const eligible = sources.filter(row => row.leads >= 20);
+  const volume = highestSourceQualityRow(sources, 'leads');
+  const conversion = eligible.length ? highestSourceQualityRow(eligible, 'won_rate') : null;
+  const overdue = highestSourceQualityRow(sources, 'overdue');
+  const unknown = sources.find(row => row.source_group === 'Unknown') || null;
+  return {
+    volume: volume ? { source_group: volume.source_group, leads: volume.leads } : null,
+    conversion: conversion ? {
+      source_group: conversion.source_group,
+      leads: conversion.leads,
+      won_rate: conversion.won_rate,
+    } : null,
+    conversion_unavailable: !conversion,
+    overdue: overdue?.overdue ? { source_group: overdue.source_group, overdue: overdue.overdue } : null,
+    unknown: unknown?.leads ? { source_group: unknown.source_group, leads: unknown.leads } : null,
+  };
+}
+
+app.get('/api/call-center/source-quality', auth('call_center_manager', 'admin'), async (req, res, next) => {
+  try {
+    const rawBranchId = String(req.query.branch_id ?? '').trim();
+    let branchId = null;
+    if (rawBranchId) {
+      if (!/^\d+$/.test(rawBranchId) || Number(rawBranchId) < 1)
+        return bad(res, 'Invalid branch');
+      branchId = Number(rawBranchId);
+    }
+
+    const rows = await all(`
+      WITH requested_branch AS (
+        SELECT id, name FROM branches WHERE id = ?
+      ),
+      params AS (
+        SELECT (SELECT id FROM requested_branch) AS requested_id,
+               (SELECT name FROM requested_branch) AS requested_name
+      ),
+      scoped AS (
+        SELECT l.id, l.branch_id, b.name AS branch, l.fcount, l.status, l.stage, l.next_date,
+               NULLIF(TRIM(s.name), '') AS raw_source,
+               ${SOURCE_GROUP_SQL} AS source_group
+        FROM leads l
+        LEFT JOIN branches b ON b.id = l.branch_id
+        LEFT JOIN sources s ON s.id = l.source_id
+        CROSS JOIN params
+        WHERE l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
+          AND (params.requested_id IS NULL OR l.branch_id = params.requested_id)
+      ),
+      history AS (
+        SELECT f.lead_id,
+               BOOL_OR(f.call_status = 'Connected') AS connected,
+               BOOL_OR(f.outcome = 'LOST RNR') AS lost_rnr
+        FROM followups f
+        JOIN scoped s ON s.id = f.lead_id
+        GROUP BY f.lead_id
+      ),
+      grouped AS (
+        SELECT GROUPING(s.branch_id)::int AS all_branches,
+               GROUPING(s.source_group)::int AS all_sources,
+               s.branch_id, s.branch, s.source_group,
+               ARRAY_AGG(DISTINCT s.raw_source ORDER BY s.raw_source)
+                 FILTER (WHERE s.raw_source IS NOT NULL) AS raw_sources,
+               COUNT(*)::int AS leads,
+               COUNT(*) FILTER (WHERE s.fcount > 0)::int AS attempted,
+               COUNT(*) FILTER (WHERE h.connected)::int AS connected,
+               COUNT(*) FILTER (WHERE s.status = 'open' AND s.fcount > 0)::int AS open_followup,
+               COUNT(*) FILTER (WHERE s.stage = 'Booking Done' AND s.status = 'closed')::int AS booked,
+               COUNT(*) FILTER (WHERE s.stage = 'Retail Done' AND s.status = 'closed')::int AS retailed,
+               COUNT(*) FILTER (WHERE s.stage = 'Lost Lead' AND s.status = 'closed')::int AS lost,
+               COUNT(*) FILTER (WHERE h.lost_rnr)::int AS lost_rnr,
+               ROUND(AVG(s.fcount)::numeric, 2) AS average_followups,
+               COUNT(*) FILTER (WHERE s.status = 'open' AND s.fcount > 0 AND s.next_date < ?)::int AS overdue
+        FROM scoped s
+        LEFT JOIN history h ON h.lead_id = s.id
+        GROUP BY GROUPING SETS ((), (s.source_group), (s.branch_id, s.branch, s.source_group))
+      )
+      SELECT grouped.*, params.requested_id AS requested_branch_id,
+             params.requested_name AS requested_branch_name
+      FROM grouped CROSS JOIN params
+      ORDER BY all_branches DESC, all_sources DESC, leads DESC, branch, source_group
+    `, branchId, today());
+
+    if (branchId && rows[0]?.requested_branch_id == null)
+      return bad(res, 'Invalid branch');
+
+    const normalized = rows.map(sourceQualityRow);
+    const summaryRow = normalized.find((_, index) =>
+      Number(rows[index].all_branches) === 1 && Number(rows[index].all_sources) === 1
+    ) || sourceQualityRow({});
+    const sources = normalized.filter((_, index) =>
+      Number(rows[index].all_branches) === 1 && Number(rows[index].all_sources) === 0
+    );
+    const branches = normalized.filter((_, index) => Number(rows[index].all_branches) === 0);
+    res.json({
+      summary: summaryRow,
+      sources,
+      branches,
+      attention: sourceQualityAttention(sources),
+      branchId,
+      branchName: rows[0]?.requested_branch_name || null,
+    });
+  } catch (e) { next(e); }
+});
 
 app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), async (req, res, next) => {
   try {

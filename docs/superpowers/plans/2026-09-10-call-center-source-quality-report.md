@@ -57,9 +57,9 @@
 
   Keep arithmetic in SQL. Convert PostgreSQL numeric strings to numbers in a small response formatter before returning JSON.
 
-- [ ] **Step 2: Add branch validation without writes.**
+- [ ] **Step 2: Add branch validation without a second query.**
 
-  Parse `req.query.branch_id` as a positive integer. If present, query the existing `branches` table with `SELECT id, name FROM branches WHERE id = ?`; return `bad(res, 'Invalid branch')` when the value is not an integer or the branch does not exist. Do not create or update branches.
+  Parse `req.query.branch_id` as a positive integer. Pass the value into a `requested_branch AS (SELECT id, name FROM branches WHERE id = ?)` CTE and cross join its one-row `params` projection into the report query. Return `bad(res, 'Invalid branch')` when the value is not an integer or when the query reports no matching branch. Do not create or update branches.
 
 - [ ] **Step 3: Add the single-query report endpoint.**
 
@@ -88,7 +88,7 @@
   ORDER BY all_branches DESC, all_sources DESC, leads DESC, s.branch, s.source_group
   ```
 
-  Scope `scoped` to `l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`. Apply the optional branch predicate with a bound argument. In `history`, use `BOOL_OR` over follow-ups joined to `scoped`, so connected and `LOST RNR` are calculated once per lead. Use `COUNT(*)` only after the one-row-per-lead history join.
+  Scope `scoped` to `l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`. Apply the optional branch predicate through the bound `params` CTE. In `history`, use `BOOL_OR` over follow-ups joined to `scoped`, so connected and `LOST RNR` are calculated once per lead. Use `COUNT(*)` only after the one-row-per-lead history join.
 
 - [ ] **Step 4: Compute the attention strip from source rows.**
 
@@ -96,8 +96,7 @@
 
   ```js
   const highest = (rows, key, tieBreak = 'leads') => [...rows]
-    .filter(row => Number(row[key]) > 0)
-    .sort((a, b) => Number(b[key]) - Number(a[key]) || Number(b[tieBreak]) - Number(a[tieBreak]))[0] || null;
+    .sort((a, b) => Number(b[key] || 0) - Number(a[key] || 0) || Number(b[tieBreak] || 0) - Number(a[tieBreak] || 0))[0] || null;
   const eligible = sources.filter(row => Number(row.leads) >= 20);
   const attention = {
     volume: highest(sources, 'leads'),
@@ -158,7 +157,7 @@
 
 - [ ] **Step 2: Validate and apply the source group.**
 
-  Accept a non-empty string up to 80 characters as `source_group`, pass it as a bound value against the shared `SOURCE_GROUP_SQL`, and reject values that produce no supported filter. Keep the SQL expression fixed. Add `source_group` to the existing `BASE` query's Call Center filter branch.
+  Accept a non-empty string up to 80 characters as `source_group`, pass it as a bound value against the shared `SOURCE_GROUP_SQL`, and allow either one of the grouped labels or an unchanged raw source label. Keep the SQL expression fixed. Add `source_group` to the existing `BASE` query's Call Center filter branch.
 
 - [ ] **Step 3: Validate and apply the quality metric.**
 
@@ -239,7 +238,7 @@
 
 - [ ] **Step 1: Add representative grouped sources to the isolated demo seed.**
 
-  Extend the demo source list with `Customer Referral` and `TKM Website`. Add a smoke record with a blank source to exercise `Unknown`. Keep the fixture changes inside `followup_crm_demo`; never add a production migration or mutate existing production source names.
+  Extend the demo source list with `Customer Referral` and `TKM Website`, and seed one demo lead with a null source ID to exercise `Unknown`. Keep the fixture changes inside `followup_crm_demo`; never add a production migration or mutate existing production source names.
 
 - [ ] **Step 2: Add report assertions before and after the report call.**
 

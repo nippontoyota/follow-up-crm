@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { get, pool } from '../db.js';
 
 const base = process.env.DEMO_URL || 'http://localhost:3000';
 const today = new Date().toISOString().slice(0, 10);
@@ -94,4 +95,52 @@ assert.equal(adminSales.status, 200, adminSales.data.error);
 const adminCall = await api('/api/call-center/analytics', admin);
 assert.equal(adminCall.status, 200, adminCall.data.error);
 
-console.log('Demo smoke test passed: import, five-person assignment, Call Guy follow-up, LOST RNR close, Call Center Manager analytics, Sales Manager scope, and Admin analytics.');
+const beforeReportCounts = await get(`SELECT
+  (SELECT COUNT(*)::int FROM leads) AS leads,
+  (SELECT COUNT(*)::int FROM followups) AS followups`);
+const sourceQuality = await api('/api/call-center/source-quality', callManager);
+assert.equal(sourceQuality.status, 200, sourceQuality.data.error);
+const sourceRows = sourceQuality.data.sources || [];
+const summary = sourceQuality.data.summary || {};
+assert.ok(sourceRows.some(row => row.source_group === 'Referral'), 'Referral group should exist');
+const referral = sourceRows.find(row => row.source_group === 'Referral');
+assert.ok(referral.raw_sources.includes('Referral'));
+assert.ok(referral.raw_sources.includes('Customer Referral'));
+const tkm = sourceRows.find(row => row.source_group === 'TKM');
+assert.ok(tkm, 'TKM group should exist');
+assert.ok(tkm.raw_sources.includes('TKM Website'));
+const unknown = sourceRows.find(row => row.source_group === 'Unknown');
+assert.ok(unknown && unknown.leads > 0, 'Unknown source group should include blank source leads');
+assert.equal(summary.leads, sourceRows.reduce((sum, row) => sum + row.leads, 0));
+for (const row of sourceRows) {
+  assert.ok(row.connected <= row.attempted && row.attempted <= row.leads, `${row.source_group} funnel counts must be ordered`);
+  assert.equal(row.won_rate, row.leads ? (row.booked + row.retailed) / row.leads : null);
+}
+assert.equal(sourceQuality.data.attention.conversion, null, 'demo source groups should not meet the conversion sample threshold');
+assert.equal(sourceQuality.data.attention.conversion_unavailable, true);
+assert.equal(sourceQuality.data.attention.unknown.leads, unknown.leads);
+const reportBranchId = Number(valid.data.valid[0].branch_id);
+const branchQuality = await api(`/api/call-center/source-quality?branch_id=${reportBranchId}`, callManager);
+assert.equal(branchQuality.status, 200, branchQuality.data.error);
+assert.ok((branchQuality.data.branches || []).every(row => Number(row.branch_id) === reportBranchId));
+const invalidBranchQuality = await api('/api/call-center/source-quality?branch_id=999999', callManager);
+assert.equal(invalidBranchQuality.status, 400);
+const referralWon = await api('/api/manager/leads?scope=call_center&source_group=Referral&quality_metric=won', callManager);
+assert.equal(referralWon.status, 200, referralWon.data.error);
+assert.ok(referralWon.data.every(row => ['Booking Done', 'Retail Done'].includes(row.stage)));
+const tkmConnected = await api('/api/manager/leads?scope=call_center&source_group=TKM&quality_metric=connected', callManager);
+assert.equal(tkmConnected.status, 200, tkmConnected.data.error);
+const unknownLeads = await api('/api/manager/leads?scope=call_center&source_group=Unknown&quality_metric=total', callManager);
+assert.equal(unknownLeads.status, 200, unknownLeads.data.error);
+assert.ok(unknownLeads.data.every(row => !row.source));
+const callGuyReport = await api('/api/call-center/source-quality', callGuy);
+assert.equal(callGuyReport.status, 403);
+const adminSourceQuality = await api('/api/call-center/source-quality', admin);
+assert.equal(adminSourceQuality.status, 200, adminSourceQuality.data.error);
+const afterReportCounts = await get(`SELECT
+  (SELECT COUNT(*)::int FROM leads) AS leads,
+  (SELECT COUNT(*)::int FROM followups) AS followups`);
+assert.deepEqual(afterReportCounts, beforeReportCounts, 'source quality reads must not mutate CRM data');
+
+console.log('Demo smoke test passed: import, five-person assignment, Call Guy follow-up, LOST RNR close, Call Center analytics, source grouping, source drilldowns, read-only checks, Sales Manager scope, and Admin analytics.');
+await pool.end();

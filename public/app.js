@@ -18,7 +18,7 @@ let listsPage = { branches: 1, sources: 1 };
 let listsTab = 'branches';
 let pendingRouteMessage = '';
 let searchQuery = '';
-const analyticsUpdatedAt = { callCenter: null, salesPerf: null, leadAnalysis: null };
+const analyticsUpdatedAt = { callCenter: null, sourceQuality: null, salesPerf: null, leadAnalysis: null };
 let leadsGen = 0;
 let leadsCtrl = null;
 let leadsStatsCache = null;
@@ -253,12 +253,12 @@ function loginView() {
 /* -------------------------------------------------------------------- shell */
 
 const TABS = {
-  admin:   [['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
+  admin:   [['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊'], ['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩'], ['users', 'Users', '👤'], ['reassign', 'Reassign', '🔀'], ['lists', 'Lists', '🗂'], ['leads', 'All leads', '📋']],
   marketing: [['new', 'Add lead', '➕'], ['leads', 'My leads', '📋']],
   sales:   [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   call_guy: [['fresh', 'Fresh Leads', '🆕'], ['today', 'Today', '📅'], ['leads', 'All', '📋']],
   manager: [['dashboard', 'Dashboard', '📊']],
-  call_center_manager: [['callCenter', 'Call Center', '☎️']],
+  call_center_manager: [['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
   cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['leadSearch', 'Search Leads', '🔎']],
 };
@@ -337,7 +337,7 @@ async function boot() {
 
 function go(t) {
   tab = t;
-  document.body.classList.toggle('cc-mode', t === 'callCenter');
+  document.body.classList.toggle('cc-mode', ['callCenter', 'sourceQuality'].includes(t));
   if (['fresh', 'today', 'leads'].includes(t)) { leadsPage = 1; leadsQ = ''; invalidateLeadsStats(); }
   if (t === 'users') usersPage = 1;
   if (t === 'lists') { listsPage = { branches: 1, sources: 1 }; listsTab = 'branches'; }
@@ -345,7 +345,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, callCenter: callCenterView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ analytics: analyticsView, callCenter: callCenterView, sourceQuality: sourceQualityView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -1313,6 +1313,130 @@ async function callCenterView() {
   } catch (e) {
     view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'callCenterRetry')}`;
     document.getElementById('callCenterRetry').onclick = () => callCenterView();
+  }
+}
+
+let sourceQualityBranchId = '';
+
+function qualityPercent(value) {
+  return value == null ? 'N/A' : `${(Number(value) * 100).toFixed(1)}%`;
+}
+
+function sourceQualityMetricLink(row, metric, label, branchId = '') {
+  const filters = { quality_metric: metric };
+  if (row.source_group) filters.source_group = row.source_group;
+  if (branchId) filters.branch_id = branchId;
+  return callCenterMetricLink(filters, label, row[metric]);
+}
+
+function sourceQualitySourceCell(row) {
+  const raw = row.raw_sources || [];
+  return `<div class="cc-quality-source-name"><b>${esc(row.source_group || 'Unknown')}</b>${raw.length
+    ? `<details><summary>${raw.length} raw source${raw.length === 1 ? '' : 's'}</summary><span>${esc(raw.join(', '))}</span></details>`
+    : ''}</div>`;
+}
+
+function sourceQualityAttentionCard(label, content, tone, link) {
+  return `<div class="cc-quality-attention-card cc-quality-attention-${tone}">
+    <span class="cc-quality-attention-label">${esc(label)}</span>
+    ${link ? `<button type="button" class="cc-quality-attention-link" onclick="${link}">${content}</button>` : `<strong>${content}</strong>`}
+  </div>`;
+}
+
+function sourceQualityTableRow(row, branchId = '') {
+  const prefix = row.source_group || 'Unknown';
+  return [
+    sourceQualitySourceCell(row),
+    sourceQualityMetricLink(row, 'total', `${prefix} leads`, branchId),
+    sourceQualityMetricLink(row, 'attempted', `${prefix} attempted leads`, branchId),
+    sourceQualityMetricLink(row, 'connected', `${prefix} connected leads`, branchId),
+    qualityPercent(row.contact_rate),
+    sourceQualityMetricLink(row, 'open_followup', `${prefix} open follow-up leads`, branchId),
+    sourceQualityMetricLink(row, 'booked', `${prefix} booked leads`, branchId),
+    sourceQualityMetricLink(row, 'retailed', `${prefix} retailed leads`, branchId),
+    qualityPercent(row.won_rate),
+    sourceQualityMetricLink(row, 'lost', `${prefix} lost leads`, branchId),
+    sourceQualityMetricLink(row, 'lost_rnr', `${prefix} LOST RNR leads`, branchId),
+    Number(row.average_followups || 0).toFixed(2),
+    sourceQualityMetricLink(row, 'overdue', `${prefix} overdue leads`, branchId),
+  ];
+}
+
+async function sourceQualityView(branchId = sourceQualityBranchId) {
+  sourceQualityBranchId = String(branchId || '');
+  view.innerHTML = `<div class="cc-loading" aria-busy="true" aria-label="Loading source quality report">
+    <div class="cc-loading-head"></div><div class="cc-loading-main"></div>
+    <div class="cc-loading-grid"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>`;
+  try {
+    const query = sourceQualityBranchId ? `?branch_id=${encodeURIComponent(sourceQualityBranchId)}` : '';
+    const d = await api(`/call-center/source-quality${query}`);
+    analyticsUpdatedAt.sourceQuality = new Date();
+    const summary = d.summary || {};
+    const sources = d.sources || [];
+    const branches = d.branches || [];
+    const attention = d.attention || {};
+    const selectedBranch = sourceQualityBranchId
+      ? masters.branches.find(branch => String(branch.id) === sourceQualityBranchId)
+      : null;
+    const branchOptions = ['<option value="">All branches</option>', ...masters.branches.map(branch =>
+      `<option value="${branch.id}"${String(branch.id) === sourceQualityBranchId ? ' selected' : ''}>${esc(branchLabel(branch.name))}</option>`
+    )].join('');
+    const sourceLink = item => item ? callCenterMetricClick({ source_group: item.source_group, quality_metric: 'total', ...(sourceQualityBranchId ? { branch_id: sourceQualityBranchId } : {}) }, `${item.source_group} leads`) : '';
+    const overdueLink = item => item ? callCenterMetricClick({ source_group: item.source_group, quality_metric: 'overdue', ...(sourceQualityBranchId ? { branch_id: sourceQualityBranchId } : {}) }, `${item.source_group} overdue leads`) : '';
+    const attentionCards = [];
+    if (attention.volume) attentionCards.push(sourceQualityAttentionCard('Highest volume', `${esc(attention.volume.source_group)} · ${attention.volume.leads}`, 'volume', sourceLink(attention.volume)));
+    if (attention.conversion) attentionCards.push(sourceQualityAttentionCard('Best won rate', `${esc(attention.conversion.source_group)} · ${qualityPercent(attention.conversion.won_rate)} <small>(${attention.conversion.leads} leads)</small>`, 'conversion', sourceLink(attention.conversion)));
+    else attentionCards.push(sourceQualityAttentionCard('Best won rate', 'Not enough data <small>(20 leads needed)</small>', 'conversion', ''));
+    if (attention.overdue) attentionCards.push(sourceQualityAttentionCard('Most overdue', `${esc(attention.overdue.source_group)} · ${attention.overdue.overdue}`, 'overdue', overdueLink(attention.overdue)));
+    if (attention.unknown) attentionCards.push(sourceQualityAttentionCard('Unknown source', `${attention.unknown.leads} leads`, 'unknown', sourceLink(attention.unknown)));
+
+    view.innerHTML = `${routeNotice()}<div class="cc-page cc-quality-page">
+      <section class="cc-page-head" aria-labelledby="source-quality-title">
+        <div><h2 id="source-quality-title">Source quality</h2><p>All-time lead outcomes by grouped source${selectedBranch ? ` · ${esc(branchLabel(selectedBranch.name))}` : ''}.</p></div>
+        <div class="cc-head-actions">
+          ${analyticsToolbar('sourceQuality')}
+          <label class="cc-quality-branch">Branch<select id="sourceQualityBranch">${branchOptions}</select></label>
+        </div>
+      </section>
+
+      <section class="cc-quality-attention" aria-labelledby="source-quality-attention-title">
+        <div class="cc-quality-section-head"><div><h2 id="source-quality-attention-title">What needs attention</h2><p>Signals from the current all-time source data.</p></div></div>
+        <div class="cc-quality-attention-grid">${attentionCards.join('')}</div>
+      </section>
+
+      <section class="cc-panel cc-table-panel" aria-labelledby="source-quality-summary-title">
+        <div class="cc-panel-head"><div><h2 id="source-quality-summary-title">Overall source quality</h2><p>Counts are distinct leads. Select a count to open the matching leads.</p></div><span class="cc-panel-count">${summary.leads || 0} leads</span></div>
+        ${tblHtml(['Source group','Leads','Attempted','Connected','Contact rate','Open follow-up','Booked','Retailed','Won rate','Lost','LOST RNR','Avg F/U','Overdue'], [sourceQualityTableRow(summary, sourceQualityBranchId)], 'No source data')}
+      </section>
+
+      <section class="cc-panel cc-table-panel" aria-labelledby="source-quality-sources-title">
+        <div class="cc-panel-head"><div><h2 id="source-quality-sources-title">By source group</h2><p>Referral and TKM names are grouped for comparison. Expand a row to audit raw names.</p></div><span class="cc-panel-count">${sources.length} groups</span></div>
+        ${tblHtml(['Source group','Leads','Attempted','Connected','Contact rate','Open follow-up','Booked','Retailed','Won rate','Lost','LOST RNR','Avg F/U','Overdue'], sources.map(row => sourceQualityTableRow(row, sourceQualityBranchId)), 'No source data')}
+      </section>
+
+      <section class="cc-panel cc-table-panel" aria-labelledby="source-quality-branches-title">
+        <div class="cc-panel-head"><div><h2 id="source-quality-branches-title">Branch breakdown</h2><p>Compare grouped source quality by branch.</p></div></div>
+        ${tblHtml(['Branch','Source group','Leads','Connected','Contact rate','Booked','Retailed','Won rate','Lost','LOST RNR','Overdue'], branches.map(row => [
+          esc(branchLabel(row.branch || 'Unknown branch')),
+          sourceQualitySourceCell(row),
+          sourceQualityMetricLink(row, 'total', `${row.source_group} leads at ${row.branch}`, row.branch_id),
+          sourceQualityMetricLink(row, 'connected', `${row.source_group} connected leads at ${row.branch}`, row.branch_id),
+          qualityPercent(row.contact_rate),
+          sourceQualityMetricLink(row, 'booked', `${row.source_group} booked leads at ${row.branch}`, row.branch_id),
+          sourceQualityMetricLink(row, 'retailed', `${row.source_group} retailed leads at ${row.branch}`, row.branch_id),
+          qualityPercent(row.won_rate),
+          sourceQualityMetricLink(row, 'lost', `${row.source_group} lost leads at ${row.branch}`, row.branch_id),
+          sourceQualityMetricLink(row, 'lost_rnr', `${row.source_group} LOST RNR leads at ${row.branch}`, row.branch_id),
+          sourceQualityMetricLink(row, 'overdue', `${row.source_group} overdue leads at ${row.branch}`, row.branch_id),
+        ]), 'No branch data')}
+      </section>
+    </div>`;
+    document.getElementById('sourceQualityBranch').onchange = event => sourceQualityView(event.target.value);
+    document.getElementById('sourceQualityRefresh').onclick = () => sourceQualityView(sourceQualityBranchId);
+  } catch (e) {
+    view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'sourceQualityRetry')}`;
+    document.getElementById('sourceQualityRetry').onclick = () => sourceQualityView(sourceQualityBranchId);
   }
 }
 

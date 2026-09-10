@@ -78,6 +78,12 @@ Call status → outcome:
 
 Branch Sales Managers get a branch-scoped Sales Officer-wise lead-status table below the performance view. It is based on each lead's latest follow-up outcome, includes `Fresh` leads, shows 10 Sales Officers per page, and opens the matching leads when a non-zero status count is selected. Call Executive flags are reviewed by the Sales Manager assigned to the lead's branch; Admin retains global oversight.
 
+## Call Center Manager source quality
+
+Call Center Managers and Admins can open **Source quality** for an all-time, read-only report of leads assigned to Call Executives. Sources containing `referral` are grouped as `Referral`, sources containing `tkm` are grouped as `TKM`, blank sources appear as `Unknown`, and all other source names remain unchanged in the report. The report compares lead volume, attempted and connected leads, contact rate, open follow-up work, bookings, retails, won rate, lost leads, `LOST RNR`, average follow-ups, and overdue leads.
+
+The report defaults to all branches and supports branch filtering, raw-source details, and read-only lead drill-downs. Its **What needs attention** strip shows the highest-volume source, the best won rate when a source has at least 20 leads, the source with the most overdue work, and unknown-source volume when present. Opening or refreshing the report does not change sources, leads, follow-ups, assignments, or statuses, and it is loaded separately so the main Call Center dashboard request stays fast.
+
 ## Local call-center demo
 
 The repository includes an isolated demo flow for the repurposed call-center model. It uses a separate PostgreSQL database named `followup_crm_demo` on `localhost`. The demo refuses to start if its database host or name points elsewhere. It does not load `.env`, and it does not change the connected database service.

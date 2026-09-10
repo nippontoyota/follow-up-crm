@@ -55,7 +55,7 @@ async function seed() {
   await initDb();
 
   const branches = [...new Set(['Nippon Toyota - Kochi', ...Object.values(branchCodes)])];
-  const sources = ['Meta', 'Referral', 'YouTube', 'JustDial'];
+  const sources = ['Meta', 'Referral', 'Customer Referral', 'TKM Website', 'YouTube', 'JustDial'];
   const activities = ['Website Enquiry', 'Test Drive Camp', 'Dealer Visit'];
   const models = ['Hyryder', 'Glanza', 'Innova Hycross'];
   for (const name of branches) await run('INSERT INTO branches(name) VALUES(?) ON CONFLICT(name) DO NOTHING', name);
@@ -93,7 +93,7 @@ async function seed() {
   const outcomes = ['Need Test Drive', 'Showroom Visit', 'Booking Done', 'Retail Done', 'Customer Busy', 'Call Me Back', 'Details Received', 'Not Interested', 'RNR', 'LOST RNR', 'Need More Details'];
   for (let i = 0; i < sampleNames.length; i++) {
     const branchId = branchByName.get(branches[i % branches.length]);
-    const sourceId = sourceRows[i % sourceRows.length].id;
+    const sourceId = i === sampleNames.length - 1 ? null : sourceRows[i % sourceRows.length].id;
     const modelId = modelRows[i % modelRows.length].id;
     const activityId = activityRows[i % activityRows.length].id;
     const callGuyId = callGuys[i % callGuys.length].id;

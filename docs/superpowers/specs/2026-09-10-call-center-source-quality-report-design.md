@@ -72,7 +72,7 @@ Add a new authenticated GET endpoint:
 
 Access is limited to `call_center_manager` and `admin`. Admin may pass `branch_id`; the Call Center Manager may pass a valid branch ID. Invalid branch IDs return a client error. Without a branch parameter, the endpoint reports all branches.
 
-The endpoint performs one read-only SQL request using a scoped leads CTE and a latest-follow-up CTE. The query joins `sources`, `branches`, and `followups`, aggregates by source group and branch, and returns JSON. It must not call any `INSERT`, `UPDATE`, `DELETE`, or transaction that writes data.
+The endpoint performs one read-only SQL request using a requested-branch CTE, a scoped leads CTE, and a latest-follow-up CTE. The query joins `sources`, `branches`, and `followups`, aggregates by source group and branch, and returns JSON. It validates the requested branch inside that same query. It must not call any `INSERT`, `UPDATE`, `DELETE`, or transaction that writes data.
 
 Lead drill-downs reuse the existing manager lead-list route with a new validated `source_group` filter and optional `branch_id`. The filter uses the same grouping expression as the report, so grouped counts and opened leads cannot disagree.
 
