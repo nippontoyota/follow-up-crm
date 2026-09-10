@@ -1534,13 +1534,6 @@ async function sourceQualityView(branchId = sourceQualityBranchId) {
   }
 }
 
-const SO_BUCKETS = [
-  { key: 'followup',  label: 'Follow-up' },
-  { key: 'booked',    label: 'Booked' },
-  { key: 'retailed',  label: 'Retail' },
-  { key: 'lost',      label: 'Lost' },
-];
-
 const SO_STATUS_ORDER = [
   'Fresh', 'RNR', 'Switch Off', 'Call Me Back', 'Call Forwarding', 'Line Busy', 'Invalid Number',
   'Need Test Drive', 'Showroom Visit', 'Exchange Issue', 'Booking Done', 'Retail Done',
@@ -1600,7 +1593,28 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
   bindPager(nextPage => renderSalesOfficerStatusTable(root, statusRows, officers, branchId, nextPage), root);
 }
 
-let salesPerfSort = 'total';
+function salesOfficerMetric(row) {
+  const total = Number(row.total) || 0;
+  const booked = Number(row.booked) || 0;
+  const retailed = Number(row.retailed) || 0;
+  return {
+    ...row,
+    total,
+    booked,
+    retailed,
+    lost: Number(row.lost) || 0,
+    due: Number(row.due) || 0,
+    followup: Number(row.followup) || 0,
+    outcomes: booked + retailed,
+    outcomeRate: total ? (booked + retailed) / total : null,
+    retailRate: total ? retailed / total : null,
+  };
+}
+
+const salesPerfRateText = rate => rate == null ? 'N/A' : `${(rate * 100).toFixed(1)}%`;
+const salesPerfWonText = (won, total) => total ? `${won} / ${total}` : '—';
+
+let salesPerfSort = 'conversion';
 const SO_PERFORMANCE_PAGE_SIZE = 10;
 let salesPerfPage = 1;
 let salesPerfFilter = '';
@@ -1643,27 +1657,68 @@ async function salesPerformanceView() {
     const d = await api(`/sales-manager/analytics${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
     analyticsUpdatedAt.salesPerf = new Date();
     const s = d.summary || {};
-    const officers = d.bySalesOfficer || [];
+    const totalLeads = Number(s.total) || 0;
+    const booked = Number(s.booked) || 0;
+    const retailed = Number(s.retailed) || 0;
+    const totalOutcomes = booked + retailed;
+    const overallOutcomeRate = totalLeads ? totalOutcomes / totalLeads : null;
+    const overallRetailRate = totalLeads ? retailed / totalLeads : null;
+    const officers = (d.bySalesOfficer || []).map(salesOfficerMetric);
     const flaggedByOfficer = d.flaggedByOfficer || [];
 
     const sorters = {
-      total: (a, b) => b.total - a.total,
-      due: (a, b) => b.due - a.due,
+      conversion: (a, b) => (b.outcomeRate ?? -1) - (a.outcomeRate ?? -1)
+        || b.outcomes - a.outcomes
+        || b.total - a.total
+        || a.sales_officer.localeCompare(b.sales_officer),
+      total: (a, b) => b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
+      due: (a, b) => b.due - a.due || b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
     };
     const sorted = [...officers].sort(sorters[salesPerfSort] || sorters.total);
 
-    const rowHtml = o => `
+    const overdueCount = officers.reduce((sum, o) => sum + o.due, 0);
+    const highVolumeNoOutcome = officers.filter(o => o.total >= 10 && o.outcomes === 0).length;
+    const smallSampleWinners = officers.filter(o => o.total > 0 && o.total < 5 && o.outcomes > 0).length;
+    const attentionItems = [
+      overdueCount ? `${overdueCount} overdue lead${overdueCount === 1 ? '' : 's'}` : '',
+      highVolumeNoOutcome ? `${highVolumeNoOutcome} officer${highVolumeNoOutcome === 1 ? '' : 's'} with 10+ leads and no outcomes` : '',
+      smallSampleWinners ? `${smallSampleWinners} small-sample result${smallSampleWinners === 1 ? '' : 's'} to validate` : '',
+    ].filter(Boolean);
+    const attentionHtml = `<div class="sop-attention" role="status">
+      <strong>Needs attention</strong>
+      <span>${attentionItems.length ? attentionItems.map(esc).join(' · ') : 'No immediate pattern'}</span>
+    </div>`;
+
+    const rowHtml = o => {
+      const open = Math.max(0, o.total - o.outcomes - o.lost);
+      const resultSegments = [
+        ['open', open],
+        ['booked', o.booked],
+        ['retailed', o.retailed],
+        ['lost', o.lost],
+      ].filter(([, value]) => value > 0);
+      return `
       <div class="sop-row" data-name="${esc(o.sales_officer.toLowerCase())}" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)}${o.branch ? ` in ${esc(branchLabel(o.branch))}` : ''}">
         <div class="sop-row-top">
           <span><button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>${me.role === 'cluster_manager' && o.branch ? `<span class="sop-row-branch">${esc(branchLabel(o.branch))}</span>` : ''}</span>
           <span class="sop-row-total">${o.total} lead${o.total !== 1 ? 's' : ''}</span>
         </div>
-        <div class="sop-row-bar">${SO_BUCKETS.map(b => o[b.key] ? `<span class="sop-seg sop-seg-${b.key}" style="flex:${o[b.key]}" title="${esc(b.label)}: ${o[b.key]}"></span>` : '').join('')}</div>
-        <div class="sop-row-pills">
+        <div class="sop-conversion-line">
+          <span class="sop-conversion-label">Outcome conversion</span>
+          <strong>${salesPerfRateText(o.outcomeRate)}</strong>
+          <span>${salesPerfWonText(o.outcomes, o.total)} outcomes</span>
+        </div>
+        <div class="sop-conversion-track" role="img" aria-label="${esc(salesPerfRateText(o.outcomeRate))} outcome conversion for ${esc(o.sales_officer)}">
+          <span style="width:${Math.min(100, Math.max(0, (o.outcomeRate || 0) * 100))}%"></span>
+        </div>
+        <div class="sop-result-bar" aria-hidden="true">${resultSegments.map(([key, value]) => `<span class="sop-result-seg sop-result-${key}" style="flex:${value}"></span>`).join('')}</div>
+        <div class="sop-row-detail">
+          <span>${salesPerfRateText(o.retailRate)} retail · ${o.retailed} final sale${o.retailed === 1 ? '' : 's'}</span>
+          <span>${open} open · ${o.booked} booked · ${o.lost} lost</span>
           <button type="button" class="sop-pill sop-pill-brand" data-officer="${esc(o.sales_officer)}" data-bucket="due">${o.due} due</button>
-          <span class="sop-row-outcome">${o.booked}B · ${o.retailed}R · ${o.lost}L</span>
         </div>
       </div>`;
+    };
 
     const flaggedByOfficerHtml = flaggedByOfficer.length ? `<div class="card flag-card">
       <h2 class="flag-card-h2">🚩 Flagged Leads by Sales Officer</h2>
@@ -1679,10 +1734,10 @@ async function salesPerformanceView() {
     </div>` : '';
 
     view.innerHTML = `${routeNotice()}${clusterScopeNotice()}${analyticsToolbar('salesPerf')}${kpiRow([
-      { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
+      { num: totalLeads, lbl: 'Total Leads', col: 'brand' },
       { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand' },
-      { num: s.booked || 0, lbl: 'Booked', col: 'ok' },
-      { num: s.retailed || 0, lbl: 'Retail', col: 'ok' },
+      { num: salesPerfRateText(overallOutcomeRate), lbl: 'Outcome Conversion', col: 'ok' },
+      { num: salesPerfRateText(overallRetailRate), lbl: 'Retail Conversion', col: 'ok' },
       { num: s.lost || 0, lbl: 'Lost', col: 'bad' },
     ])}
     <div class="card sop-card">
@@ -1693,9 +1748,12 @@ async function salesPerformanceView() {
           <label class="sop-switch-wrap">Branch<select id="salesBranchSwitch" class="sop-switch">${options(masters.branches, Number(branchId))}</select></label>
         </div>` : ''}
       </div>
+      <p class="sop-explainer">Outcome conversion = booked + retail ÷ total leads. Retail conversion is final-sale rate.</p>
+      ${attentionHtml}
       ${officers.length ? `
       <div class="sop-controls">
         <div class="sop-sort" id="sopSort">
+          <button type="button" class="sop-sort-opt${salesPerfSort === 'conversion' ? ' on' : ''}" data-sort="conversion">Conversion</button>
           <button type="button" class="sop-sort-opt${salesPerfSort === 'total' ? ' on' : ''}" data-sort="total">Total</button>
           <button type="button" class="sop-sort-opt${salesPerfSort === 'due' ? ' on' : ''}" data-sort="due">Due</button>
         </div>

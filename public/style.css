@@ -808,6 +808,34 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .sop-row-branch { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .sop-row-total { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 
+.sop-explainer { margin: -4px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.sop-attention {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; margin-bottom: 16px; border: 1px solid #FED7AA; border-radius: 10px;
+  background: #FFF7ED; color: #7C2D12; font-size: 12px; line-height: 1.4;
+}
+.sop-attention strong { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+.sop-conversion-line { display: flex; align-items: baseline; gap: 9px; margin: 2px 0 7px; }
+.sop-conversion-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.sop-conversion-line strong { color: var(--brand-dark); font-size: 25px; line-height: 1; }
+.sop-conversion-line > span:last-child { color: var(--muted); font-size: 12px; font-weight: 600; }
+.sop-conversion-track { height: 10px; overflow: hidden; border-radius: 5px; background: #E8EDF4; }
+.sop-conversion-track span { display: block; height: 100%; min-width: 0; border-radius: 5px; background: var(--ok); }
+.sop-result-bar { display: flex; height: 7px; overflow: hidden; margin: 8px 0 10px; border-radius: 4px; background: var(--bg); }
+.sop-result-seg { display: block; height: 100%; }
+.sop-result-open { background: #AAB7C8; }
+.sop-result-booked { background: var(--warn); }
+.sop-result-retailed { background: var(--ok); }
+.sop-result-lost { background: var(--bad); }
+.sop-row-detail { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 12px; font-weight: 600; }
+.sop-row-detail .sop-pill { margin-left: auto; }
+
+@media (max-width: 599px) {
+  .sop-conversion-line { gap: 7px; flex-wrap: wrap; }
+  .sop-conversion-line strong { font-size: 23px; }
+  .sop-row-detail .sop-pill { margin-left: 0; }
+}
+
 .sop-row-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--bg); margin-bottom: 10px; }
 .sop-seg { display: block; height: 100%; }
 .sop-seg-untouched { background: var(--warn); }
