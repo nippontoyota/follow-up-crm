@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the hard-to-scan branch table with chunky visual branch cards while retaining exact figures and existing lead drill-downs.
+**Goal:** Replace the hard-to-scan branch table with one ranked branch health board while retaining exact figures and existing lead drill-downs.
 
-**Architecture:** Keep `/api/call-center/source-quality` unchanged. In `public/app.js`, group the existing `branches` rows by branch, derive card summaries and source-mix segments, and render a visual card grid plus a collapsed exact-detail table. Use CSS bars and existing metric-link helpers instead of a chart library or new requests.
+**Architecture:** Keep `/api/call-center/source-quality` unchanged. In `public/app.js`, group the existing `branches` rows by branch, derive row summaries and bar widths, and render one ranked visual board plus a collapsed exact-detail table. Use CSS bars and existing metric-link helpers instead of a chart library or new requests.
 
 **Tech Stack:** Vanilla JavaScript, existing HTML helpers, CSS, PostgreSQL-backed existing API, Node smoke tests.
 
@@ -18,14 +18,14 @@
 
 ---
 
-### Task 1: Add branch-card grouping and rendering helpers
+### Task 1: Add branch-board grouping and rendering helpers
 
 **Files:**
 - Modify: `public/app.js` near the existing source-quality helpers
 
 **Interfaces:**
 - Consumes: source-quality `branches` rows with branch/source metrics.
-- Produces: pure client-side branch grouping and `sourceQualityBranchCards(rows, branchId)` HTML.
+- Produces: pure client-side branch grouping and `sourceQualityBranchBoard(rows)` HTML.
 
 - [ ] **Step 1: Group rows by branch**
 
@@ -39,22 +39,22 @@ For each branch group, sum leads, connected, booked, retailed, lost, LOST RNR, a
 
 Render branch name, total leads, overdue count, four large metrics, a proportional source-mix bar, a text legend, and the derived `Start with` action. Use `sourceQualityMetricLink()` for clickable branch metrics and existing drill-down query parameters.
 
-### Task 2: Make cards the primary branch presentation
+### Task 2: Make the health board the primary branch presentation
 
 **Files:**
 - Modify: `public/app.js` in `sourceQualityView()` near the current Branch breakdown section
 
 **Interfaces:**
-- Consumes: `sourceQualityBranchGroups()` and `sourceQualityBranchCards()`.
+- Consumes: `sourceQualityBranchGroups()` and `sourceQualityBranchBoard()`.
 - Produces: the branch performance section with cards and an exact detail disclosure.
 
 - [ ] **Step 1: Replace ambiguous section copy**
 
 Change the heading to `Branch performance`. Use helper text explaining that each card compares volume, reach, sales, overdue work, and source mix for one branch.
 
-- [ ] **Step 2: Insert the visual card grid**
+- [ ] **Step 2: Insert the visual board**
 
-Render the cards as the primary view. Preserve the existing no-data message when no branch rows are returned.
+Render one ranked row per branch. Each row shows lead volume, reached rate, won rate, and overdue work through labeled bars. Preserve the existing no-data message when no branch rows are returned.
 
 - [ ] **Step 3: Preserve exact details**
 

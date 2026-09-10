@@ -6,20 +6,20 @@ Make the Call Center Manager's branch breakdown understandable at a glance. The 
 
 ## Design
 
-Replace the primary branch breakdown table with a responsive grid of branch cards. Each card contains:
+Replace the primary branch breakdown table with one ranked branch health board. Each branch row contains:
 
-- branch name, total leads, and overdue count in the header;
-- large summary figures for lead volume, reach rate, won rate, and overdue work;
-- a proportional source-mix bar using the existing grouped source data;
-- a compact source legend with grouped source names and lead counts;
-- one derived "Start with" action line pointing to the branch/source combination with the most overdue work, when available;
+- branch name and a clear overdue-work status;
+- a lead-volume bar;
+- a reached bar sized against that branch's leads;
+- a won bar sized against that branch's leads;
+- a red overdue bar and count;
 - clickable counts that open the existing matching-lead drill-down.
 
-Keep exact figures in a collapsed "Show detailed figures" section below the cards. The detail view uses the same existing metrics and links, so no reporting capability is removed.
+Order rows by overdue count first, then lead volume. Keep exact figures in a collapsed "Show detailed figures" section below the board. The detail view uses the same existing metrics and links, so no reporting capability is removed.
 
 ## Data and performance
 
-Do not change the database, API, or source-quality definitions. Group the already-loaded branch rows in the browser. Do not add requests, polling, writes, or chart dependencies. Source colors remain consistent within the section and the mix bar has a text legend for accessibility.
+Do not change the database, API, or source-quality definitions. Group and sort the already-loaded branch rows in the browser. Do not add requests, polling, writes, or chart dependencies. Bars must have text labels and accessible summaries; color must not carry meaning alone.
 
 ## States and accessibility
 
@@ -27,5 +27,5 @@ Do not change the database, API, or source-quality definitions. Group the alread
 - Keep the existing loading and error states.
 - Make all lead counts keyboard reachable and preserve their current drill-down targets.
 - Give the source-mix bar an accessible summary and do not rely on color alone.
-- Stack cards and keep the detail table horizontally scrollable on narrow screens.
-- Preserve the current light blue and navy CRM visual language, using stronger spacing, type scale, and grouping for the cards.
+- Stack board metrics and keep the detail table horizontally scrollable on narrow screens.
+- Preserve the current light blue and navy CRM visual language, using stronger spacing, type scale, and grouping for the board.

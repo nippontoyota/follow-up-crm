@@ -1402,58 +1402,50 @@ function sourceQualityBranchGroups(rows) {
   });
 }
 
-function sourceQualityMixClass(sourceGroup) {
-  const key = String(sourceGroup || 'Unknown').toLowerCase();
-  if (key === 'referral') return 'referral';
-  if (key === 'tkm') return 'tkm';
-  if (key === 'meta') return 'meta';
-  if (key === 'youtube') return 'youtube';
-  if (key === 'justdial') return 'justdial';
-  if (key === 'unknown') return 'unknown';
-  return 'other';
-}
-
-function sourceQualityBranchCards(rows) {
+function sourceQualityBranchBoard(rows) {
   const groups = sourceQualityBranchGroups(rows);
   if (!groups.length) return '<p class="cc-quality-branch-empty">No branch data</p>';
-  return `<div class="cc-quality-branch-grid">${groups.map(group => {
-    const sourceRows = [...group.rows].sort((a, b) =>
-      Number(b.leads || 0) - Number(a.leads || 0) ||
-      String(a.source_group || '').localeCompare(String(b.source_group || ''))
-    );
-    const mixLabel = sourceRows.map(row => `${row.source_group || 'Unknown source'} ${leadCountText(row.leads)}`).join(', ');
-    const mix = sourceRows.map(row => {
-      const width = group.leads ? (Number(row.leads || 0) / group.leads) * 100 : 0;
-      return `<span class="cc-quality-mix-segment cc-quality-mix-${sourceQualityMixClass(row.source_group)}" style="width:${width.toFixed(2)}%"></span>`;
-    }).join('');
-    const legend = sourceRows.map(row => `<span class="cc-quality-mix-legend-item"><i class="cc-quality-mix-dot cc-quality-mix-${sourceQualityMixClass(row.source_group)}"></i><span>${esc(row.source_group || 'Unknown')}</span><b>${row.leads}</b></span>`).join('');
-    const overdueSource = [...sourceRows].sort((a, b) =>
-      Number(b.overdue || 0) - Number(a.overdue || 0) || Number(b.leads || 0) - Number(a.leads || 0)
-    )[0];
-    const action = overdueSource?.overdue
-      ? `<button type="button" class="cc-quality-next-link" onclick="${callCenterMetricClick({ source_group: overdueSource.source_group, quality_metric: 'overdue', branch_id: group.branch_id }, `${group.branch} · ${overdueSource.source_group} overdue leads`)}"><span>${esc(overdueSource.source_group || 'Unknown source')}</span><b>${leadCountText(overdueSource.overdue)}</b></button>`
-      : '<span class="cc-quality-next-clear">No overdue leads</span>';
-    const totalLink = sourceQualityMetricLink(group, 'total', `${group.branch} total leads`, group.branch_id);
-    const overdueLink = sourceQualityMetricLink(group, 'overdue', `${group.branch} overdue leads`, group.branch_id);
-    return `<article class="cc-quality-branch-card">
-      <header class="cc-quality-branch-card-head">
-        <div><h3>${esc(group.branch)}</h3><span>${sourceRows.length} source group${sourceRows.length === 1 ? '' : 's'}</span></div>
-        <div class="cc-quality-branch-total">${totalLink}<small>${leadCountText(group.leads)}</small></div>
-      </header>
-      <div class="cc-quality-branch-metrics">
-        <div class="cc-quality-branch-metric"><span>Lead volume</span><strong>${group.leads}</strong><small>assigned</small></div>
-        <div class="cc-quality-branch-metric"><span>Reach rate</span><strong>${qualityPercent(group.contact_rate)}</strong><small>${group.connected} reached</small></div>
-        <div class="cc-quality-branch-metric"><span>Won rate</span><strong>${qualityPercent(group.won_rate)}</strong><small>${group.booked + group.retailed} won</small></div>
-        <div class="cc-quality-branch-metric cc-quality-branch-metric-alert"><span>Overdue</span><strong>${overdueLink}</strong><small>needs action</small></div>
-      </div>
-      <div class="cc-quality-mix-block">
-        <div class="cc-quality-card-label"><span>Source mix</span><span>${leadCountText(group.leads)}</span></div>
-        <div class="cc-quality-mix-bar" role="img" aria-label="${esc(`${group.branch} source mix: ${mixLabel}`)}">${mix}</div>
-        <div class="cc-quality-mix-legend">${legend}</div>
-      </div>
-      <div class="cc-quality-branch-next"><span>Start with</span>${action}</div>
-    </article>`;
-  }).join('')}</div>`;
+  const maxLeads = Math.max(1, ...groups.map(group => group.leads));
+  return `<div class="cc-quality-branch-board" role="list" aria-label="Branch health comparison">${groups
+    .sort((a, b) => b.overdue - a.overdue || b.leads - a.leads || a.branch.localeCompare(b.branch))
+    .map(group => {
+      const won = group.booked + group.retailed;
+      const leadWidth = (group.leads / maxLeads) * 100;
+      const reachedWidth = group.leads ? (group.connected / group.leads) * 100 : 0;
+      const wonWidth = group.leads ? (won / group.leads) * 100 : 0;
+      const overdueWidth = group.leads ? (group.overdue / group.leads) * 100 : 0;
+      const status = group.overdue ? `${leadCountText(group.overdue)} overdue` : 'No overdue work';
+      const totalLink = sourceQualityMetricLink(group, 'total', `${group.branch} total leads`, group.branch_id);
+      const overdueLink = sourceQualityMetricLink(group, 'overdue', `${group.branch} overdue leads`, group.branch_id);
+      return `<div class="cc-quality-branch-board-row" role="listitem">
+        <div class="cc-quality-branch-board-head">
+          <div><h3>${esc(group.branch)}</h3><span>${esc(status)}</span></div>
+          <div class="cc-quality-board-total">${totalLink}<small>${leadCountText(group.leads)}</small></div>
+        </div>
+        <div class="cc-quality-board-bars">
+          <div class="cc-quality-board-bar-row">
+            <span class="cc-quality-board-bar-label">Leads</span>
+            <div class="cc-quality-board-track" role="img" aria-label="${esc(`${group.branch}: ${leadCountText(group.leads)} total leads`)}"><span class="cc-quality-board-fill cc-quality-board-fill-leads" style="width:${leadWidth.toFixed(2)}%"></span></div>
+            <b>${group.leads}</b>
+          </div>
+          <div class="cc-quality-board-bar-row">
+            <span class="cc-quality-board-bar-label">Reached</span>
+            <div class="cc-quality-board-track" role="img" aria-label="${esc(`${group.branch}: ${group.connected} reached, ${qualityPercent(group.contact_rate)}`)}"><span class="cc-quality-board-fill cc-quality-board-fill-reached" style="width:${reachedWidth.toFixed(2)}%"></span></div>
+            <b>${group.connected} <small>${qualityPercent(group.contact_rate)}</small></b>
+          </div>
+          <div class="cc-quality-board-bar-row">
+            <span class="cc-quality-board-bar-label">Won</span>
+            <div class="cc-quality-board-track" role="img" aria-label="${esc(`${group.branch}: ${won} won, ${qualityPercent(group.won_rate)}`)}"><span class="cc-quality-board-fill cc-quality-board-fill-won" style="width:${wonWidth.toFixed(2)}%"></span></div>
+            <b>${won} <small>${qualityPercent(group.won_rate)}</small></b>
+          </div>
+          <div class="cc-quality-board-bar-row cc-quality-board-bar-row-overdue">
+            <span class="cc-quality-board-bar-label">Overdue</span>
+            <div class="cc-quality-board-track" role="img" aria-label="${esc(`${group.branch}: ${leadCountText(group.overdue)} overdue`)}"><span class="cc-quality-board-fill cc-quality-board-fill-overdue" style="width:${overdueWidth.toFixed(2)}%"></span></div>
+            <b>${overdueLink} <small>${group.overdue ? 'act now' : 'clear'}</small></b>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
 }
 
 function sourceQualityBranchDetails(rows) {
@@ -1526,8 +1518,8 @@ async function sourceQualityView(branchId = sourceQualityBranchId) {
       </section>
 
       <section class="cc-panel cc-table-panel cc-quality-branch-panel" aria-labelledby="source-quality-branches-title">
-        <div class="cc-panel-head"><div><h2 id="source-quality-branches-title">Branch performance</h2><p>Each card shows one branch's lead volume, reach, sales, overdue work, and source mix.</p></div><span class="cc-panel-count">${sourceQualityBranchGroups(branches).length} branches</span></div>
-        ${sourceQualityBranchCards(branches)}
+        <div class="cc-panel-head"><div><h2 id="source-quality-branches-title">Branch health</h2><p>Rows show workload first, then reached leads, won leads, and overdue work. Highest overdue work appears first.</p></div><span class="cc-panel-count">${sourceQualityBranchGroups(branches).length} branches</span></div>
+        ${sourceQualityBranchBoard(branches)}
         <details class="cc-quality-details">
           <summary>Show detailed branch figures <span>${branches.length} source rows</span></summary>
           ${sourceQualityBranchDetails(branches)}
