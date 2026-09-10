@@ -1713,7 +1713,7 @@ async function salesPerformanceView() {
                 <span class="sop-model-segment retail" style="flex:${m.retailed}" aria-hidden="true"></span>
                 <span class="sop-model-segment lost" style="flex:${m.lost}" aria-hidden="true"></span>
               </div>
-              <div class="sop-model-outcome-meta" aria-hidden="true"><span><b>${modelOpen}</b> open · <b>${m.booked}</b> booked · <b>${m.retailed}</b> retail · <b>${m.lost}</b> lost</span><strong>${rateText} converted</strong></div>
+              <div class="sop-model-outcome-meta" aria-hidden="true"><span><b class="open">${modelOpen}</b> open · <b class="booked">${m.booked}</b> booked · <b class="retail">${m.retailed}</b> retail · <b class="lost">${m.lost}</b> lost</span><strong>${rateText} converted</strong></div>
             </div>
             <div class="sop-model-sales ${m.retailed ? 'has-sale' : 'no-sale'}"><strong>${m.retailed}</strong><span>retail</span></div>
           </article>`;

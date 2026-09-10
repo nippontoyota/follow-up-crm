@@ -4,7 +4,7 @@
 
 **Goal:** Replace only the “Which models are selling?” section with a compact, high-contrast, visual-first model board.
 
-**Architecture:** Keep the current analytics response, `salesModelMetric` normalization, and `sortedModels` ordering. Replace the model panel’s card-per-model HTML with a dense three-zone row: model identity, segmented outcome bar plus metadata, and final retail sales. Replace the existing model-only CSS with responsive grid styles that fit inside the current page width.
+**Architecture:** Keep the current analytics response, `salesModelMetric` normalization, and `sortedModels` ordering. Replace the model panel’s card-per-model HTML with a dense three-zone row: model identity, segmented outcome bar plus metadata, and final retail sales. Use the incumbent light-blue/white CRM surfaces with larger chunky typography and responsive grid styles that fit inside the current page width.
 
 **Tech Stack:** Vanilla JavaScript template rendering, existing CSS custom properties, semantic HTML, CSS grid/flex, Express static frontend.
 
@@ -14,6 +14,7 @@
 - Do not change analytics endpoints, backend aggregation, role scope, or model ordering.
 - Preserve `Small sample` and `Unknown model` behavior.
 - Outcome colors must be paired with visible text/counts for non-color access.
+- Match the incumbent light-blue/white page surfaces and navy heading typography; do not use a dark visualization frame.
 - Do not introduce page-level horizontal overflow or required motion.
 
 ---
@@ -159,4 +160,3 @@ regression: branch switcher, refresh, officer board, and flagged table still ren
 Run: `git diff --check; git status --short`
 
 Expected: no whitespace errors, and only the intended frontend files plus the implementation plan are changed.
-

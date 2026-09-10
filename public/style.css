@@ -785,28 +785,36 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
 .sop-model-head h2 { margin: 0 0 3px; }
 .sop-model-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .sop-model-count { flex: 0 0 auto; color: var(--muted); font-size: 11px; font-weight: 700; }
-.sop-model-grid { display: flex; flex-direction: column; gap: 5px; max-width: 900px; margin: 0 auto; padding: 12px; border-radius: 14px; background: #10233B; }
-.sop-model-row { display: grid; grid-template-columns: minmax(130px, .9fr) minmax(180px, 1.7fr) 42px; gap: 12px; align-items: center; padding: 7px 9px; border-radius: 9px; background: #F8FBFF; color: var(--text); }
+.sop-model-grid { display: flex; flex-direction: column; gap: 6px; max-width: 900px; margin: 0 auto; padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+.sop-model-row { display: grid; grid-template-columns: minmax(150px, .9fr) minmax(220px, 1.7fr) 50px; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid #D7E0EC; border-radius: 10px; background: #fff; color: var(--text); }
+.sop-model-row.has-sale { border-color: #B8DEC6; background: #F7FCF8; }
+.sop-model-row.no-sale { border-color: #E5CBD0; }
 .sop-model-identity { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .sop-model-name { min-width: 0; }
-.sop-model-name h3 { margin: 0; overflow: hidden; color: var(--text); font-size: 11px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
-.sop-model-name > span { color: #667D96; font-size: 8px; }
-.sop-model-name .sop-sample-tag { display: inline-flex; margin-left: 5px; padding: 1px 4px; font-size: 8px; }
-.sop-model-rank { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border-radius: 5px; background: #DCE8F6; color: #173B60; font-size: 8px; font-weight: 900; }
+.sop-model-name h3 { margin: 0; overflow: hidden; color: var(--text); font-size: 15px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.sop-model-name > span { color: #667D96; font-size: 11px; font-weight: 600; }
+.sop-model-name .sop-sample-tag { display: inline-flex; margin-left: 5px; padding: 2px 6px; font-size: 9px; }
+.sop-model-rank { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: #DCE8F6; color: #173B60; font-size: 10px; font-weight: 900; }
+.sop-model-row.has-sale .sop-model-rank { background: #D8F0DF; color: #166534; }
 .sop-model-funnel { min-width: 0; }
-.sop-model-outcome-bar { display: flex; height: 16px; overflow: hidden; border-radius: 99px; background: #E1E9F2; box-shadow: inset 0 0 0 1px rgba(16,42,70,.08); }
+.sop-model-outcome-bar { display: flex; height: 22px; overflow: hidden; border: 1px solid #C9D3E3; border-radius: 99px; background: #E1E9F2; box-shadow: inset 0 0 0 1px rgba(16,42,70,.06); }
 .sop-model-segment { display: block; min-width: 2px; }
 .sop-model-segment.open { background: #F2A900; }
 .sop-model-segment.booked { background: #5AA9E6; }
 .sop-model-segment.retail { background: #16B57B; }
 .sop-model-segment.lost { background: #EC6478; }
-.sop-model-outcome-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 3px; color: #647992; font-size: 8px; }
-.sop-model-outcome-meta strong { color: #173B60; }
+.sop-model-outcome-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: #52647A; font-size: 10px; font-weight: 600; }
+.sop-model-outcome-meta b { font-weight: 900; }
+.sop-model-outcome-meta b.open { color: #A96500; }
+.sop-model-outcome-meta b.booked { color: #2F649A; }
+.sop-model-outcome-meta b.retail { color: #15803D; }
+.sop-model-outcome-meta b.lost { color: #B91C1C; }
+.sop-model-outcome-meta strong { color: #173B60; font-size: 10px; white-space: nowrap; }
 .sop-model-sales { text-align: center; color: #087D54; }
-.sop-model-sales strong { display: block; font-size: 15px; line-height: 1; }
-.sop-model-sales span { display: block; color: #6F849A; font-size: 8px; }
+.sop-model-sales strong { display: block; font-size: 22px; line-height: 1; }
+.sop-model-sales span { display: block; color: #6F849A; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .sop-model-sales.no-sale { color: var(--bad); }
-.sop-model-legend { display: flex; gap: 11px; flex-wrap: wrap; padding: 1px 3px 0; color: #B7C7D8; font-size: 8px; }
+.sop-model-legend { display: flex; gap: 13px; flex-wrap: wrap; padding: 3px 3px 0; color: var(--muted); font-size: 10px; font-weight: 600; }
 .sop-model-legend span::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 3px; border-radius: 50%; background: #F2A900; }
 .sop-model-legend .booked::before { background: #5AA9E6; }
 .sop-model-legend .retail::before { background: #16B57B; }
@@ -892,7 +900,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
   .sop-model-head { display: block; }
   .sop-model-count { display: inline-flex; margin-top: 10px; }
   .sop-model-grid { padding: 8px; }
-  .sop-model-row { grid-template-columns: minmax(96px, .85fr) minmax(120px, 1.4fr) 34px; gap: 8px; padding: 7px; }
+  .sop-model-row { grid-template-columns: minmax(96px, .85fr) minmax(120px, 1.4fr) 38px; gap: 9px; padding: 9px; }
   .sop-model-outcome-meta { align-items: flex-start; flex-wrap: wrap; row-gap: 1px; }
   .sop-model-name .sop-sample-tag { display: flex; width: max-content; margin: 2px 0 0; }
   .sop-card { padding: 16px 13px; }

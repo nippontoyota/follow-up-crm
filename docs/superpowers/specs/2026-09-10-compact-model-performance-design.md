@@ -41,7 +41,7 @@ Zero-valued outcome segments should still leave a visible minimum-width sliver o
 
 ## Visual design
 
-The section uses a light page-level surface with a dark navy inner visualization frame to create contrast against the surrounding CRM UI. The board itself is capped by the available content width rather than introducing a wider horizontal canvas.
+The section uses the existing light-blue page surface and white card treatment so it feels native to the CRM. Contrast comes from navy typography, clear borders, and saturated semantic status colors rather than a dark inner frame. The board itself is capped by the available content width rather than introducing a wider horizontal canvas.
 
 Each row is compact and consistent:
 
