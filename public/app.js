@@ -1935,14 +1935,51 @@ function bindPager(onPage, root = view) {
   });
 }
 
-async function leadsView() {
+async function leadsView({ preserveShell = false } = {}) {
   const gen = ++leadsGen;
   leadsCtrl?.abort();
   leadsCtrl = new AbortController();
   const sig = leadsCtrl.signal;
 
   const t = tab === 'leads' ? 'all' : tab;
-  view.innerHTML = '<div class="empty">Loading…</div>';
+  const isBulkAdmin = (me.role === 'admin' && t === 'all');
+  const shellReady = preserveShell && document.getElementById('leadSearch') && document.getElementById('leadResults');
+  const searchHtml = `
+    <div class="search-bar-wrap">
+      <div class="search-bar-inner">
+        <svg class="search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="leadSearch" placeholder="Search by name or mobile…" autocomplete="off" value="${esc(leadsQ)}">
+        ${isBulkAdmin ? `
+          <input type="file" id="bulkFile" accept=".xlsx,.xls" style="display:none">
+          <button class="btn ghost" style="width:auto;margin:0;padding:6px 14px;font-size:13px;white-space:nowrap" onclick="document.getElementById('bulkFile').click()">Bulk Upload</button>
+        ` : ''}
+      </div>
+    </div>`;
+
+  if (!shellReady) {
+    view.innerHTML = searchHtml + '<div id="leadResults"><div class="empty">Loading…</div></div>';
+    const sInput = document.getElementById('leadSearch');
+    if (sInput) {
+      sInput.oninput = () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          const q = sInput.value.trim();
+          if (q === leadsQ) return;
+          leadsQ = q;
+          leadsPage = 1;
+          leadsView({ preserveShell: true });
+        }, 300);
+      };
+      if (leadsQ) sInput.focus();
+    }
+    if (isBulkAdmin) {
+      const fb = document.getElementById('bulkFile');
+      if (fb) fb.onchange = handleBulkUpload;
+    }
+  } else {
+    document.getElementById('leadResults').innerHTML = '<div class="empty">Loading…</div>';
+  }
+
   const params = new URLSearchParams({ tab: t, page: leadsPage, limit: LEADS_PER_PAGE });
   if (leadsQ) params.set('q', leadsQ);
 
@@ -1957,7 +1994,8 @@ async function leadsView() {
     ]);
   } catch (e) {
     if (e.name === 'AbortError') return;
-    view.innerHTML = `<div class="empty msg err">${esc(e.message)}</div>`;
+    const results = document.getElementById('leadResults');
+    if (results) results.innerHTML = `<div class="empty msg err">${esc(e.message)}</div>`;
     return;
   }
   if (gen !== leadsGen) return;
@@ -1986,18 +2024,8 @@ async function leadsView() {
     ]),
   }[t] || '';
 
-  const isBulkAdmin = (me.role === 'admin' && t === 'all');
-  const searchHtml = `
-    <div class="search-bar-wrap">
-      <div class="search-bar-inner">
-        <svg class="search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="search" id="leadSearch" placeholder="Search by name or mobile…" autocomplete="off" value="${esc(leadsQ)}">
-        ${isBulkAdmin ? `
-          <input type="file" id="bulkFile" accept=".xlsx,.xls" style="display:none">
-          <button class="btn ghost" style="width:auto;margin:0;padding:6px 14px;font-size:13px;white-space:nowrap" onclick="document.getElementById('bulkFile').click()">Bulk Upload</button>
-        ` : ''}
-      </div>
-    </div>`;
+  const results = document.getElementById('leadResults');
+  if (!results) return;
 
   if (!leads.length) {
     const blank = {
@@ -2005,9 +2033,9 @@ async function leadsView() {
       today: leadsQ ? 'No matching follow-ups.' : 'Nothing due today. Nice work.',
       all: leadsQ ? 'No matching leads.' : 'No leads yet.',
     };
-    view.innerHTML = kpi + searchHtml + pg + `<div class="empty">${blank[t]}</div>`;
+    results.innerHTML = kpi + pg + `<div class="empty">${blank[t]}</div>`;
   } else {
-    view.innerHTML = kpi + searchHtml + pg + `
+    results.innerHTML = kpi + pg + `
       <div id="leadList">${leads.map((l, i) => {
         const num = (page - 1) * LEADS_PER_PAGE + i + 1;
         return `
@@ -2023,29 +2051,14 @@ async function leadsView() {
       }).join('')}</div>`;
   }
 
-  bindPager(p => { leadsPage = p; leadsView(); });
+  bindPager(p => { leadsPage = p; leadsView({ preserveShell: true }); }, results);
 
-  const sInput = document.getElementById('leadSearch');
-  if (sInput) {
-    sInput.oninput = () => {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => {
-        const q = sInput.value.trim();
-        if (q === leadsQ) return;
-        leadsQ = q;
-        leadsPage = 1;
-        leadsView();
-      }, 300);
-    };
-    if (leadsQ) sInput.focus();
-  }
-
-  view.querySelectorAll('.lead').forEach(card => {
+  results.querySelectorAll('.lead').forEach(card => {
     card.onclick = (e) => { if (!e.target.closest('.flag-btn')) openLead(card.dataset.id); };
     card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') openLead(card.dataset.id); };
   });
 
-  view.querySelectorAll('.flag-btn').forEach(btn => {
+  results.querySelectorAll('.flag-btn').forEach(btn => {
     btn.onclick = async (e) => {
       e.stopPropagation();
       btn.disabled = true;
@@ -2057,11 +2070,6 @@ async function leadsView() {
       btn.disabled = false;
     };
   });
-  
-  if (isBulkAdmin) {
-    const fb = document.getElementById('bulkFile');
-    if (fb) fb.onchange = handleBulkUpload;
-  }
 }
 
 let bulkValid = [];
