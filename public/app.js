@@ -1186,6 +1186,19 @@ async function callCenterView() {
   try {
     const d = await api('/call-center/analytics');
     const s = d.summary || d.kpi || {};
+    const byCallGuy = d.byCallGuy || [];
+    const followupBuckets = [
+      { key: 'f1', label: 'F1', col: 'brand' },
+      { key: 'f2', label: 'F2', col: 'brand' },
+      { key: 'f3', label: 'F3', col: 'brand' },
+      { key: 'f4', label: 'F4', col: 'warn' },
+      { key: 'f5', label: 'F5', col: 'warn' },
+      { key: 'f6plus', label: 'F6+', col: 'bad' },
+    ];
+    const followupSummary = followupBuckets.map(bucket => ({
+      ...bucket,
+      count: Number(s[bucket.key]) || 0,
+    }));
     view.innerHTML = `<div style="display:flex;justify-content:flex-end;padding:0 4px 8px">
       <button id="exportBtn" class="btn" style="width:auto;padding:8px 18px;font-size:13px" onclick="downloadLeadsExcel()">⬇ Download Excel</button>
     </div>${kpiRow([
@@ -1198,9 +1211,18 @@ async function callCenterView() {
       { num: s.lost || 0, lbl: 'Lost', col: 'bad', onClick: callCenterMetricClick({ bucket: 'lost' }, 'Lost leads') },
       ...(me.role === 'admin' ? [{ num: (d.flagged || []).length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" }] : []),
     ])}
+    <div class="card"><h2>Follow-up-wise Summary</h2>
+      <p class="flag-card-note">Total open leads under follow-up, grouped by the current follow-up number. Select a tile to view those leads.</p>
+      ${kpiRow(followupSummary.map(bucket => ({
+        num: bucket.count,
+        lbl: bucket.label,
+        col: bucket.col,
+        onClick: callCenterMetricClick({ bucket: bucket.key }, `${bucket.label} leads`),
+      })))}
+    </div>
     <div class="card"><h2>Call Executive Performance</h2>${tblHtml(
       ['Call Executive','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
-      d.byCallGuy.map(r => [
+      byCallGuy.map(r => [
         esc(r.call_guy),
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'total' }, `${r.call_guy} total leads`, r.total),
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'untouched' }, `${r.call_guy} untouched leads`, r.untouched),
@@ -1213,14 +1235,15 @@ async function callCenterView() {
       'No Call Executives found'
     )}</div>
     <div class="card"><h2>Follow-up stages</h2>${tblHtml(
-      ['Call Executive','F1','F2','F3','F4','F5+'],
-      d.byCallGuy.map(r => [
+      ['Call Executive','F1','F2','F3','F4','F5','F6+'],
+      byCallGuy.map(r => [
         esc(r.call_guy),
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'f1' }, `${r.call_guy} F1 leads`, r.f1),
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'f2' }, `${r.call_guy} F2 leads`, r.f2),
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'f3' }, `${r.call_guy} F3 leads`, r.f3),
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'f4' }, `${r.call_guy} F4 leads`, r.f4),
-        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f5plus' }, `${r.call_guy} F5 and later leads`, r.f5plus),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f5' }, `${r.call_guy} F5 leads`, r.f5),
+        callCenterMetricLink({ call_guy_id: r.id, bucket: 'f6plus' }, `${r.call_guy} F6 and later leads`, r.f6plus),
       ]),
       'No follow-up stages found'
     )}</div>
@@ -1351,6 +1374,7 @@ async function salesPerformanceView() {
     analyticsUpdatedAt.salesPerf = new Date();
     const s = d.summary || {};
     const officers = d.bySalesOfficer || [];
+    const flaggedByOfficer = d.flaggedByOfficer || [];
 
     const sorters = {
       total: (a, b) => b.total - a.total,
@@ -1370,6 +1394,19 @@ async function salesPerformanceView() {
           <span class="sop-row-outcome">${o.booked}B · ${o.retailed}R · ${o.lost}L</span>
         </div>
       </div>`;
+
+    const flaggedByOfficerHtml = flaggedByOfficer.length ? `<div class="card flag-card">
+      <h2 class="flag-card-h2">🚩 Flagged Leads by Sales Officer</h2>
+      <p class="flag-card-note">Active and closed flag history for this branch.</p>
+      <div class="tbl-wrap"><table class="tbl tbl-flag">
+        <thead><tr><th>Sales Officer</th>${me.role === 'admin' ? '<th>Branch</th>' : ''}<th>Total</th><th>Active</th><th>Closed</th></tr></thead>
+        <tbody>${flaggedByOfficer.map(r => `<tr>
+          <td>${esc(r.sales_officer)}</td>
+          ${me.role === 'admin' ? `<td>${esc(branchLabel(r.branch || '—'))}</td>` : ''}
+          <td><b>${r.flagged}</b></td><td>${r.active}</td><td>${r.closed}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : '';
 
     view.innerHTML = `${routeNotice()}${clusterScopeNotice()}${analyticsToolbar('salesPerf')}${kpiRow([
       { num: s.total || 0, lbl: 'Total Leads', col: 'brand' },
@@ -1397,7 +1434,8 @@ async function salesPerformanceView() {
       <div class="sop-rows" id="sopRows"></div>
       <div id="sopPager"></div>
       ` : '<div class="empty">No imported Sales Officer data found</div>'}
-    </div>`;
+    </div>
+    ${flaggedByOfficerHtml}`;
 
     if (me.role === 'admin') {
       document.getElementById('salesBranchSwitch').onchange = (e) => {
@@ -1733,21 +1771,21 @@ async function flaggedLeadsView() {
       const query = `?branch_id=${encodeURIComponent(me.branch_id)}`;
       const d = await api(`/sales-manager/analytics${query}`);
       flagged = d.flagged || [];
-      cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Executive', 'Stage'];
-      rows = flagged.map(r => [esc(r.customer_name), esc(r.mobile), esc(r.sales_officer), esc(r.call_guy || '—'), esc(r.stage || '—')]);
+      cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Executive', 'Stage', 'Flag Status', 'Remarks'];
+      rows = flagged.map(r => [esc(r.customer_name), esc(r.mobile), esc(r.sales_officer), esc(r.call_guy || '—'), esc(r.stage || '—'), esc(r.flag_status || 'Active'), esc(r.flag_remarks || '—')]);
     } else if (me.role === 'admin') {
       const d = await api('/call-center/analytics');
       flagged = d.flagged || [];
-      cols = ['Customer', 'Branch', 'Sales Officer', 'Call Executive', 'Sales Manager'];
-      rows = flagged.map(r => [esc(r.customer_name), esc(r.branch || '—'), esc(r.original_so_name || '—'), esc(r.call_guy || '—'), esc(r.sales_manager || 'Unassigned')]);
+      cols = ['Customer', 'Branch', 'Sales Officer', 'Call Executive', 'Sales Manager', 'Flag Status', 'Remarks'];
+      rows = flagged.map(r => [esc(r.customer_name), esc(r.branch || '—'), esc(r.original_so_name || '—'), esc(r.call_guy || '—'), esc(r.sales_manager || 'Unassigned'), esc(r.flag_status || 'Active'), esc(r.flag_remarks || '—')]);
     } else {
       view.innerHTML = '<div class="empty">Flag review is handled by Branch Sales Managers.</div>';
       return;
     }
     const ids = flagged.map(r => r.id);
     view.innerHTML = `<div class="card flag-card">
-      <h2 class="flag-card-h2">🚩 Flagged Leads · ${flagged.length}</h2>
-      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Tap a lead to review and close its flag.' : 'Escalated by Call Executives, routed to the Sales Manager of the flagged lead\'s branch.'}${me.role === 'admin' && flagged.some(r => !r.sales_manager) ? ' Some flagged leads have no active Branch Sales Manager and need assignment.' : ''}</p>` : ''}
+      <h2 class="flag-card-h2">🚩 Flag History · ${flagged.length}</h2>
+      ${flagged.length ? `<p class="flag-card-note">${me.role === 'sales_manager' ? 'Active and closed flags for this branch.' : 'Active and closed flags across all branches.'}${me.role === 'admin' && flagged.some(r => !r.sales_manager) ? ' Some flagged leads have no active Branch Sales Manager and need assignment.' : ''}</p>` : ''}
       <div class="tbl-wrap"><table class="tbl tbl-flag">
         <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((r, i) => `<tr class="lead-row" data-id="${ids[i]}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
@@ -2430,16 +2468,16 @@ async function openLead(id) {
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
-    ${l.is_flagged && ['manager', 'sales_manager', 'admin'].includes(me.role) ? `<div class="card" style="border-color:#B91C1C">
-      <h2 style="color:#B91C1C">⚑ Flagged for Sales Manager</h2>
+    ${((l.is_flagged || l.flag_remarks != null) && ['manager', 'sales_manager', 'admin'].includes(me.role)) ? `<div class="card" style="border-color:#B91C1C">
+      <h2 style="color:#B91C1C">⚑ ${l.is_flagged ? 'Flagged for Sales Manager' : 'Flag History'}</h2>
       ${l.original_so_name ? `<div style="margin-bottom:12px"><b>Sales Officer:</b> ${esc(l.original_so_name)}</div>` : ''}
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}
-        ${me.role === 'sales_manager' || me.role === 'admin' ? `
+        ${l.is_flagged && (me.role === 'sales_manager' || me.role === 'admin') ? `
         <label>Close Flag with Remarks</label>
         <textarea id="flagRemarks" placeholder="Enter remarks…"></textarea>
         <button class="btn" id="closeFlagBtn" style="background:#B91C1C">Close Flag</button>
         <div id="flagMsg"></div>
-      ` : `<div style="color:var(--muted);font-size:13px">Awaiting resolution by the Sales Manager.</div>`}
+      ` : `<div style="color:var(--muted);font-size:13px">${l.is_flagged ? 'Awaiting resolution by the Sales Manager.' : 'Flag closed; retained in history.'}</div>`}
     </div>` : ''}
 
     ${canAct ? `<div class="card">

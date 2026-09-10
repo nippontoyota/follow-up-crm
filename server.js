@@ -734,7 +734,7 @@ app.get('/api/manager/analytics', auth('manager', 'admin'), async (req, res, nex
 
       all(`SELECT u.id AS officer_id, u.name AS officer, COUNT(l.id)::int AS flagged
            FROM users u
-           LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_flagged = 1
+           LEFT JOIN leads l ON l.assigned_to = u.id AND (l.is_flagged = 1 OR l.flag_remarks IS NOT NULL)
            WHERE u.branch_id = ? AND u.role = 'sales' AND u.active = 1
            GROUP BY u.id, u.name
            HAVING COUNT(l.id) > 0
@@ -954,6 +954,8 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
         f2:        `l.fcount = 2 AND l.status = 'open'`,
         f3:        `l.fcount = 3 AND l.status = 'open'`,
         f4:        `l.fcount = 4 AND l.status = 'open'`,
+        f5:        `l.fcount = 5 AND l.status = 'open'`,
+        f6plus:    `l.fcount >= 6 AND l.status = 'open'`,
         f5plus:    `l.fcount >= 5 AND l.status = 'open'`,
       };
       const bucketSql = BUCKET_FILTERS[bucket || 'total'];
@@ -979,7 +981,7 @@ app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), a
       `, ...args);
     } else if (flagged === '1' && officer_id) {
       leads = await all(`${BASE}
-        WHERE ${scopeSql} AND l.assigned_to = ? AND l.is_flagged = 1
+        WHERE ${scopeSql} AND l.assigned_to = ? AND (l.is_flagged = 1 OR l.flag_remarks IS NOT NULL)
         ORDER BY l.id DESC
       `, ...scopeArgs, Number(officer_id));
     } else if (call_status && outcome) {
@@ -1165,7 +1167,7 @@ app.post('/api/leads/:id/close-flag', auth('manager', 'sales_manager', 'admin'),
       if (!lead) return res.status(404).json({ error: 'Not found' });
       if (lead.branch_id !== req.user.branch_id) return res.status(403).json({ error: 'Not your branch' });
     }
-    await run(`UPDATE leads SET is_flagged = 0, flag_remarks = ? WHERE id = ?`, remarks?.trim() || null, id);
+    await run(`UPDATE leads SET is_flagged = 0, flag_remarks = ? WHERE id = ?`, typeof remarks === 'string' ? remarks.trim() : '', id);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -1183,7 +1185,13 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
           COUNT(*) FILTER (WHERE next_date < ? AND status = 'open')::int AS overdue,
           COUNT(*) FILTER (WHERE stage = 'Booking Done' AND status = 'closed')::int AS booked,
           COUNT(*) FILTER (WHERE stage = 'Retail Done' AND status = 'closed')::int AS retailed,
-          COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
+          COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost,
+          COUNT(*) FILTER (WHERE fcount = 1 AND status = 'open')::int AS f1,
+          COUNT(*) FILTER (WHERE fcount = 2 AND status = 'open')::int AS f2,
+          COUNT(*) FILTER (WHERE fcount = 3 AND status = 'open')::int AS f3,
+          COUNT(*) FILTER (WHERE fcount = 4 AND status = 'open')::int AS f4,
+          COUNT(*) FILTER (WHERE fcount = 5 AND status = 'open')::int AS f5,
+          COUNT(*) FILTER (WHERE fcount >= 6 AND status = 'open')::int AS f6plus
         FROM leads WHERE assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')`, day),
       all(`SELECT u.id, u.name AS call_guy, COUNT(l.id)::int AS total,
           COUNT(l.id) FILTER (WHERE l.fcount = 0 AND l.status = 'open')::int AS untouched,
@@ -1196,7 +1204,8 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
           COUNT(l.id) FILTER (WHERE l.fcount = 2 AND l.status = 'open')::int AS f2,
           COUNT(l.id) FILTER (WHERE l.fcount = 3 AND l.status = 'open')::int AS f3,
           COUNT(l.id) FILTER (WHERE l.fcount = 4 AND l.status = 'open')::int AS f4,
-          COUNT(l.id) FILTER (WHERE l.fcount >= 5 AND l.status = 'open')::int AS f5plus
+          COUNT(l.id) FILTER (WHERE l.fcount = 5 AND l.status = 'open')::int AS f5,
+          COUNT(l.id) FILTER (WHERE l.fcount >= 6 AND l.status = 'open')::int AS f6plus
         FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
         WHERE u.role = 'call_guy' AND u.active = 1
         GROUP BY u.id, u.name ORDER BY u.name`, day),
@@ -1216,13 +1225,15 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
         WHERE u.role = 'call_guy' AND u.active = 1
         GROUP BY u.id, u.name ORDER BY overdue DESC, u.name`, day),
       includeFlags ? all(`SELECT l.id, l.customer_name, l.mobile, l.branch_id, b.name AS branch, l.original_so_name,
-          l.fcount, l.stage, l.status, u.name AS call_guy,
+          l.fcount, l.stage, l.status,
+          CASE WHEN l.is_flagged = 1 THEN 'Active' ELSE 'Closed' END AS flag_status,
+          l.flag_remarks, u.name AS call_guy,
           (SELECT sm.name FROM users sm WHERE sm.role = 'sales_manager' AND sm.branch_id = l.branch_id AND sm.active = 1
            ORDER BY sm.id LIMIT 1) AS sales_manager
         FROM leads l
         LEFT JOIN users u ON u.id = l.assigned_to
         LEFT JOIN branches b ON b.id = l.branch_id
-        WHERE l.is_flagged = 1
+        WHERE (l.is_flagged = 1 OR l.flag_remarks IS NOT NULL)
         ORDER BY l.id DESC LIMIT 200`) : Promise.resolve([]),
     ]);
     res.json({ kpi, byCallGuy, outcomes, byBranch, overdue, flagged });
@@ -1234,7 +1245,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
     const branchIds = managerBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
     const leadFilter = branchFilter('l.branch_id', branchIds);
-    const [bySalesOfficer, summary] = await Promise.all([
+    const [bySalesOfficer, summary, flaggedRows] = await Promise.all([
       all(`SELECT l.branch_id, b.name AS branch,
           COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
           COUNT(*)::int AS total,
@@ -1255,7 +1266,41 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
           COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
         FROM leads l WHERE ${leadFilter.sql}`, ...leadFilter.args),
 
+      req.user.role !== 'cluster_manager'
+        ? all(`SELECT l.id, l.customer_name, l.mobile,
+            l.branch_id, b.name AS branch,
+            COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+            l.fcount, l.stage, l.status,
+            CASE WHEN l.is_flagged = 1 THEN 'Active' ELSE 'Closed' END AS flag_status,
+            u.name AS call_guy, l.flag_remarks
+          FROM leads l
+          LEFT JOIN branches b ON b.id = l.branch_id
+          LEFT JOIN users u ON u.id = l.assigned_to
+          WHERE ${leadFilter.sql} AND (l.is_flagged = 1 OR l.flag_remarks IS NOT NULL)
+          ORDER BY l.is_flagged DESC, l.id DESC`, ...leadFilter.args)
+        : Promise.resolve([]),
+
     ]);
+    const flaggedByOfficer = [];
+    if (req.user.role !== 'cluster_manager') {
+      const grouped = new Map();
+      for (const row of flaggedRows) {
+        const key = `${row.branch_id}:${row.sales_officer}`;
+        if (!grouped.has(key)) grouped.set(key, {
+          branch_id: row.branch_id,
+          branch: row.branch,
+          sales_officer: row.sales_officer,
+          flagged: 0,
+          active: 0,
+          closed: 0,
+        });
+        const group = grouped.get(key);
+        group.flagged++;
+        group[row.flag_status === 'Active' ? 'active' : 'closed']++;
+      }
+      flaggedByOfficer.push(...grouped.values());
+      flaggedByOfficer.sort((a, b) => b.flagged - a.flagged || a.sales_officer.localeCompare(b.sales_officer));
+    }
     const response = {
       branchId: branchIds.length === 1 ? branchIds[0] : null,
       branchIds,
@@ -1264,15 +1309,8 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
       bySalesOfficer,
     };
     if (req.user.role !== 'cluster_manager') {
-      response.flagged = await all(`SELECT l.id, l.customer_name, l.mobile,
-          l.branch_id, b.name AS branch,
-          COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
-          l.fcount, l.stage, l.status, u.name AS call_guy, l.flag_remarks
-        FROM leads l
-        LEFT JOIN branches b ON b.id = l.branch_id
-        LEFT JOIN users u ON u.id = l.assigned_to
-        WHERE ${leadFilter.sql} AND l.is_flagged = 1
-        ORDER BY l.id DESC`, ...leadFilter.args);
+      response.flagged = flaggedRows;
+      response.flaggedByOfficer = flaggedByOfficer;
     }
     res.json(response);
   } catch (e) { next(e); }
