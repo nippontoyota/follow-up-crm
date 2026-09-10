@@ -18,7 +18,7 @@ let listsPage = { branches: 1, sources: 1 };
 let listsTab = 'branches';
 let pendingRouteMessage = '';
 let searchQuery = '';
-const analyticsUpdatedAt = { salesPerf: null, leadAnalysis: null };
+const analyticsUpdatedAt = { callCenter: null, salesPerf: null, leadAnalysis: null };
 let leadsGen = 0;
 let leadsCtrl = null;
 let leadsStatsCache = null;
@@ -337,6 +337,7 @@ async function boot() {
 
 function go(t) {
   tab = t;
+  document.body.classList.toggle('cc-mode', t === 'callCenter');
   if (['fresh', 'today', 'leads'].includes(t)) { leadsPage = 1; leadsQ = ''; invalidateLeadsStats(); }
   if (t === 'users') usersPage = 1;
   if (t === 'lists') { listsPage = { branches: 1, sources: 1 }; listsTab = 'branches'; }
@@ -1182,11 +1183,19 @@ async function managerView() {
 }
 
 async function callCenterView() {
-  view.innerHTML = '<div class="empty">Loading…</div>';
+  view.innerHTML = `<div class="cc-loading" aria-busy="true" aria-label="Loading call center dashboard">
+    <div class="cc-loading-head"></div>
+    <div class="cc-loading-main"></div>
+    <div class="cc-loading-grid"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>`;
   try {
     const d = await api('/call-center/analytics');
+    analyticsUpdatedAt.callCenter = new Date();
     const s = d.summary || d.kpi || {};
     const byCallGuy = d.byCallGuy || [];
+    const byBranch = d.byBranch || [];
+    const outcomes = d.outcomes || [];
+    const overdue = d.overdue || [];
     const followupBuckets = [
       { key: 'f1', label: 'F1', col: 'brand' },
       { key: 'f2', label: 'F2', col: 'brand' },
@@ -1199,28 +1208,63 @@ async function callCenterView() {
       ...bucket,
       count: Number(s[bucket.key]) || 0,
     }));
-    view.innerHTML = `<div style="display:flex;justify-content:flex-end;padding:0 4px 8px">
-      <button id="exportBtn" class="btn" style="width:auto;padding:8px 18px;font-size:13px" onclick="downloadLeadsExcel()">⬇ Download Excel</button>
-    </div>${kpiRow([
-      { num: s.total || 0, lbl: 'Total Leads', col: 'brand', onClick: callCenterMetricClick({ bucket: 'total' }, 'Total leads') },
-      { num: s.untouched || 0, lbl: 'Untouched', col: 'warn', onClick: callCenterMetricClick({ bucket: 'untouched' }, 'Untouched leads') },
-      { num: s.followup || 0, lbl: 'Under Follow-up', col: 'brand', onClick: callCenterMetricClick({ bucket: 'followup' }, 'Leads under follow-up') },
-      { num: s.overdue || 0, lbl: 'Overdue', col: 'bad', onClick: callCenterMetricClick({ bucket: 'overdue' }, 'Overdue leads') },
-      { num: s.booked || 0, lbl: 'Booked', col: 'ok', onClick: callCenterMetricClick({ bucket: 'booked' }, 'Booked leads') },
-      { num: s.retailed || 0, lbl: 'Retail', col: 'ok', onClick: callCenterMetricClick({ bucket: 'retailed' }, 'Retail leads') },
-      { num: s.lost || 0, lbl: 'Lost', col: 'bad', onClick: callCenterMetricClick({ bucket: 'lost' }, 'Lost leads') },
-      ...(me.role === 'admin' ? [{ num: (d.flagged || []).length, lbl: '🚩 Flagged', col: 'flag', onClick: "go('flagged')" }] : []),
-    ])}
-    <div class="card"><h2>Follow-up-wise Summary</h2>
-      <p class="flag-card-note">Total open leads under follow-up, grouped by the current follow-up number. Select a tile to view those leads.</p>
-      ${kpiRow(followupSummary.map(bucket => ({
-        num: bucket.count,
-        lbl: bucket.label,
-        col: bucket.col,
-        onClick: callCenterMetricClick({ bucket: bucket.key }, `${bucket.label} leads`),
-      })))}
-    </div>
-    <div class="card"><h2>Call Executive Performance</h2>${tblHtml(
+    const statValue = (filters, label, count) => count
+      ? `<button type="button" class="cc-stat-value" onclick="${callCenterMetricClick(filters, label)}">${count}</button>`
+      : '<span class="cc-stat-value is-zero">0</span>';
+    const followupCards = followupSummary.map(bucket => `<button type="button" class="cc-stage-card cc-stage-${bucket.key}" onclick="${callCenterMetricClick({ bucket: bucket.key }, `${bucket.label} leads`)}" aria-label="${bucket.count} ${bucket.label} leads">
+      <span class="cc-stage-label">${bucket.label}</span>
+      <strong>${bucket.count}</strong>
+      <span class="cc-stage-caption">open leads</span>
+      <span class="cc-stage-action">View leads</span>
+    </button>`).join('');
+    view.innerHTML = `${routeNotice()}<div class="cc-page">
+      <section class="cc-page-head" aria-labelledby="cc-page-title">
+        <div>
+          <h2 id="cc-page-title">Follow-up desk</h2>
+          <p>Open leads grouped by the next follow-up you need to work.</p>
+        </div>
+        <div class="cc-head-actions">
+          ${analyticsToolbar('callCenter')}
+          <button id="exportBtn" type="button" class="btn cc-export">Download Excel</button>
+        </div>
+      </section>
+
+      <section class="cc-command" aria-labelledby="cc-command-title">
+        <div class="cc-command-main">
+          <span class="cc-label">Current workload</span>
+          <h2 id="cc-command-title"><span>${s.followup || 0}</span> open leads</h2>
+          <p>These leads have at least one follow-up recorded and are ready for the next call.</p>
+          <button type="button" class="cc-command-link" onclick="${callCenterMetricClick({ bucket: 'followup' }, 'Leads under follow-up')}">View all follow-up leads</button>
+        </div>
+        <button type="button" class="cc-command-alert" onclick="${callCenterMetricClick({ bucket: 'overdue' }, 'Overdue leads')}" aria-label="${s.overdue || 0} overdue leads">
+          <span class="cc-label">Needs attention</span>
+          <strong>${s.overdue || 0}</strong>
+          <span>overdue leads</span>
+          <span class="cc-command-alert-link">Open overdue work</span>
+        </button>
+      </section>
+
+      <section class="cc-panel cc-queue-panel" aria-labelledby="cc-queue-title">
+        <div class="cc-panel-head">
+          <div>
+            <h2 id="cc-queue-title">Follow-up queue</h2>
+            <p>Select a bucket to open its lead list.</p>
+          </div>
+          <span class="cc-panel-count">${s.followup || 0} open</span>
+        </div>
+        <div class="cc-stage-grid">${followupCards}</div>
+      </section>
+
+      <section class="cc-stats" aria-label="Other lead totals">
+        <div class="cc-stat"><span>Total leads</span>${statValue({ bucket: 'total' }, 'Total leads', Number(s.total) || 0)}</div>
+        <div class="cc-stat"><span>Untouched</span>${statValue({ bucket: 'untouched' }, 'Untouched leads', Number(s.untouched) || 0)}</div>
+        <div class="cc-stat"><span>Booked</span>${statValue({ bucket: 'booked' }, 'Booked leads', Number(s.booked) || 0)}</div>
+        <div class="cc-stat"><span>Retail</span>${statValue({ bucket: 'retailed' }, 'Retail leads', Number(s.retailed) || 0)}</div>
+        <div class="cc-stat"><span>Lost</span>${statValue({ bucket: 'lost' }, 'Lost leads', Number(s.lost) || 0)}</div>
+        ${me.role === 'admin' ? `<div class="cc-stat"><span>Flag history</span><button type="button" class="cc-stat-value" onclick="go('flagged')">${(d.flagged || []).length}</button></div>` : ''}
+      </section>
+
+      <section class="cc-panel cc-table-panel" aria-labelledby="cc-performance-title"><h2 id="cc-performance-title">Call executive performance</h2>${tblHtml(
       ['Call Executive','Total','Untouched','Follow-up','Due','Booked','Retail','Lost'],
       byCallGuy.map(r => [
         esc(r.call_guy),
@@ -1233,8 +1277,8 @@ async function callCenterView() {
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'lost' }, `${r.call_guy} lost leads`, r.lost),
       ]),
       'No Call Executives found'
-    )}</div>
-    <div class="card"><h2>Follow-up stages</h2>${tblHtml(
+    )}</section>
+      <section class="cc-panel cc-table-panel" aria-labelledby="cc-stages-title"><h2 id="cc-stages-title">Follow-up stages by executive</h2>${tblHtml(
       ['Call Executive','F1','F2','F3','F4','F5','F6+'],
       byCallGuy.map(r => [
         esc(r.call_guy),
@@ -1246,22 +1290,30 @@ async function callCenterView() {
         callCenterMetricLink({ call_guy_id: r.id, bucket: 'f6plus' }, `${r.call_guy} F6 and later leads`, r.f6plus),
       ]),
       'No follow-up stages found'
-    )}</div>
-    <div class="card"><h2>Performance by Branch</h2>${tblHtml(
-      ['Branch','Total','Open','Won'], d.byBranch.map(r => [
+    )}</section>
+      <section class="cc-panel cc-table-panel" aria-labelledby="cc-branch-title"><h2 id="cc-branch-title">Performance by branch</h2>${tblHtml(
+      ['Branch','Total','Open','Won'], byBranch.map(r => [
         esc(r.branch),
         callCenterMetricLink({ branch_id: r.branch_id, bucket: 'total' }, `${r.branch} total leads`, r.total),
         callCenterMetricLink({ branch_id: r.branch_id, bucket: 'open' }, `${r.branch} open leads`, r.open),
         callCenterMetricLink({ branch_id: r.branch_id, bucket: 'won' }, `${r.branch} won leads`, r.won),
       ]), 'No branch data'
-    )}</div>
-    <div class="card"><h2>Call Outcomes</h2>${tblHtml(
-      ['Call Status','Outcome','Count'], d.outcomes.map(r => [esc(r.call_status), esc(r.outcome), outcomeLink(r.call_status, r.outcome, r.count)]), 'No calls logged'
-    )}</div>
-    <div class="card"><h2>Overdue Work</h2>${tblHtml(
-      ['Call Executive','Overdue Leads'], d.overdue.map(r => [esc(r.call_guy), overdueLink(r.call_guy_id, r.call_guy, r.overdue)]), 'No overdue follow-ups'
-    )}</div>`;
-  } catch (e) { view.innerHTML = `<div class="empty" style="color:var(--bad)">${esc(e.message)}</div>`; }
+    )}</section>
+      <section class="cc-lower-grid">
+        <section class="cc-panel cc-table-panel" aria-labelledby="cc-outcomes-title"><h2 id="cc-outcomes-title">Call outcomes</h2>${tblHtml(
+      ['Call Status','Outcome','Count'], outcomes.map(r => [esc(r.call_status), esc(r.outcome), outcomeLink(r.call_status, r.outcome, r.count)]), 'No calls logged'
+        )}</section>
+        <section class="cc-panel cc-table-panel" aria-labelledby="cc-overdue-title"><h2 id="cc-overdue-title">Overdue work</h2>${tblHtml(
+      ['Call Executive','Overdue Leads'], overdue.map(r => [esc(r.call_guy), overdueLink(r.call_guy_id, r.call_guy, r.overdue)]), 'No overdue follow-ups'
+        )}</section>
+      </section>
+    </div>`;
+    document.getElementById('callCenterRefresh').onclick = () => callCenterView();
+    document.getElementById('exportBtn').onclick = () => downloadLeadsExcel();
+  } catch (e) {
+    view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'callCenterRetry')}`;
+    document.getElementById('callCenterRetry').onclick = () => callCenterView();
+  }
 }
 
 const SO_BUCKETS = [
