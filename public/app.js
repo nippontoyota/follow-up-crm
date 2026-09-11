@@ -262,7 +262,7 @@ const TABS = {
   call_center_manager: [['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
   cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['leadSearch', 'Search Leads', '🔎']],
-  ceo: [['executiveOverview', 'Executive Overview', '◈'], ['analytics', 'Branch performance', '▤'], ['salesPerf', 'Sales performance', '↗'], ['customerVoice', 'Customer voice', '❝']],
+  ceo: [['executiveOverview', 'Executive Overview', '◈'], ['salesPerf', 'Sales performance', '↗'], ['customerVoice', 'Customer voice', '❝']],
 };
 
 function branchLabel(name) {
@@ -3340,21 +3340,15 @@ function ceoOverviewBranchRows(branches) {
     const total = ceoCount(branch.total);
     const open = Math.min(total, ceoCount(branch.open));
     const name = branch.name || branch.branch || 'Unknown branch';
-    return `<button type="button" class="ceo-branch-row"${index >= CEO_OVERVIEW_VISIBLE_BRANCHES ? ' hidden' : ''} data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open`)}">
+    return `<div class="ceo-branch-row is-static"${index >= CEO_OVERVIEW_VISIBLE_BRANCHES ? ' hidden' : ''} role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open`)}">
       <span class="ceo-branch-row-top">
         <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
         <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
         <span class="ceo-branch-stat"><b>${open}</b><small>open</small></span>
-        <span class="ceo-branch-arrow" aria-hidden="true">↗</span>
+        <span></span>
       </span>
-    </button>`;
+    </div>`;
   }).join('')}</div>${rows.length > CEO_OVERVIEW_VISIBLE_BRANCHES ? `<button type="button" class="ceo-branch-expand" id="ceoOverviewExpand">Show all ${rows.length} branches</button>` : ''}`;
-}
-
-function ceoOpenBranchSalesPerf(branchId) {
-  ceoSalesBranchFilter = Number(branchId) || null;
-  ceoSalesPage = 1;
-  go('salesPerf');
 }
 
 async function ceoOverviewView() {
@@ -3393,9 +3387,8 @@ async function ceoOverviewView() {
         ${ceoSummaryMetric('Open', open, `${ceoCount(callSummary.followup)} in follow-up`, 'open', { bucket: 'open' })}
         ${ceoSummaryMetric('New this week', newThisWeek, 'Leads added in the last 7 days', 'new', null)}
       </section>
-      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Top branches by current lead volume. Select one for its sales officer report.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Open</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
+      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Top branches by current lead volume.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Open</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
     </div>`;
-    view.querySelectorAll('.ceo-branch-row').forEach(row => row.onclick = () => ceoOpenBranchSalesPerf(row.dataset.branchId));
     const expandBtn = document.getElementById('ceoOverviewExpand');
     if (expandBtn) expandBtn.onclick = () => {
       view.querySelectorAll('.ceo-branch-row[hidden]').forEach(row => row.hidden = false);
