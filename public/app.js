@@ -349,7 +349,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ executiveOverview: ceoOverviewView, analytics: analyticsView, callCenter: callCenterView, sourceQuality: sourceQualityView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ executiveOverview: ceoOverviewView, analytics: analyticsView, callCenter: callCenterView, sourceQuality: sourceQualityView, salesPerf: me.role === 'ceo' ? ceoSalesPerfView : salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -1629,6 +1629,229 @@ let salesPerfSort = 'conversion';
 const SO_PERFORMANCE_PAGE_SIZE = 10;
 let salesPerfPage = 1;
 let salesPerfFilter = '';
+
+/* -------------------------------------------------------- ceo: sales performance */
+
+let ceoSalesSort = 'conversion';
+let ceoSalesPage = 1;
+let ceoSalesFilter = '';
+let ceoSalesBranchFilter = null;
+
+function ceoSalesMixBar(row) {
+  const total = ceoCount(row.total);
+  if (!total) return '';
+  const booked = Math.min(total, ceoCount(row.booked));
+  const retailed = Math.min(Math.max(0, total - booked), ceoCount(row.retailed));
+  const lost = Math.min(Math.max(0, total - booked - retailed), ceoCount(row.lost));
+  const open = Math.max(0, total - booked - retailed - lost);
+  const aria = `${open} open, ${booked} booked, ${retailed} retail, ${lost} lost of ${total} total`;
+  return `<div class="ceo-branch-bar" role="img" aria-label="${esc(aria)}">
+    <span class="ceo-branch-bar-seg" style="width:${ceoPercent(open, total)};background:var(--ceo-mix-open-c)"></span>
+    <span class="ceo-branch-bar-seg" style="width:${ceoPercent(booked, total)};background:var(--ceo-mix-booked-c)"></span>
+    <span class="ceo-branch-bar-seg" style="width:${ceoPercent(retailed, total)};background:var(--ceo-mix-retail-c)"></span>
+    <span class="ceo-branch-bar-seg" style="width:${ceoPercent(lost, total)};background:var(--ceo-mix-lost-c)"></span>
+  </div>`;
+}
+
+function ceoBranchSalesRollup(officers) {
+  const map = new Map();
+  for (const o of officers) {
+    const key = o.branch_id ?? o.branch ?? 'unknown';
+    if (!map.has(key)) map.set(key, { branch_id: o.branch_id ?? null, branch: o.branch || 'Unknown branch', total: 0, booked: 0, retailed: 0, lost: 0, due: 0, officers: 0 });
+    const b = map.get(key);
+    b.total += o.total; b.booked += o.booked; b.retailed += o.retailed; b.lost += o.lost; b.due += o.due; b.officers += 1;
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total || String(a.branch).localeCompare(String(b.branch)));
+}
+
+function ceoBranchSalesRows(branches) {
+  if (!branches.length) return '<p class="ceo-empty">No branch data available</p>';
+  return `<div class="ceo-branch-list" role="list">${branches.map((b, index) => {
+    const won = b.booked + b.retailed;
+    const active = ceoSalesBranchFilter === b.branch_id;
+    const attentionClass = active ? ' is-active' : (b.due ? ' is-attention' : (won ? ' is-positive' : ''));
+    const aria = `${branchLabel(b.branch)}: ${b.total} total, ${ceoPercent(won, b.total)} conversion, ${b.officers} officers, ${b.due} due`;
+    return `<button type="button" class="ceo-branch-row${attentionClass}" data-branch-id="${b.branch_id ?? ''}" role="listitem" aria-pressed="${active}" aria-label="${esc(aria)}">
+      <span class="ceo-branch-row-top">
+        <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
+        <span class="ceo-branch-heading"><b>${esc(branchLabel(b.branch))}</b><small>${b.total} total leads</small></span>
+        <span class="ceo-branch-stat"><b>${ceoPercent(won, b.total)}</b><small>conversion</small></span>
+        <span class="ceo-branch-stat"><b>${b.officers}</b><small>officers</small></span>
+        <span class="ceo-branch-stat ceo-branch-overdue"><b>${b.due}</b><small>due</small></span>
+        <span class="ceo-branch-arrow" aria-hidden="true">${active ? '✕' : '↗'}</span>
+      </span>
+      ${ceoSalesMixBar(b)}
+    </button>`;
+  }).join('')}</div>`;
+}
+
+function ceoOfficerRow(o, rank) {
+  const ratePct = Math.min(100, Math.max(0, (o.outcomeRate || 0) * 100));
+  return `<article class="ceo-officer-row" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)} in ${esc(branchLabel(o.branch || ''))}">
+    <span class="ceo-officer-rank">${rank}</span>
+    <span class="ceo-officer-id"><b>${esc(o.sales_officer)}</b><small>${esc(branchLabel(o.branch || '—'))}${o.total > 0 && o.total < 5 ? ' · small sample' : ''}</small></span>
+    <span class="ceo-officer-rate"><span class="ceo-officer-rate-bar"><span style="width:${ratePct}%"></span></span><b>${salesPerfRateText(o.outcomeRate)}</b></span>
+    <span class="ceo-officer-stat"><strong>${o.total}</strong><small>Leads</small></span>
+    <span class="ceo-officer-stat ceo-officer-stat-good"><strong>${o.retailed}</strong><small>Retail</small></span>
+    <button type="button" class="ceo-officer-stat ceo-officer-stat-due" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" data-bucket="due"><strong>${o.due}</strong><small>Due</small></button>
+  </article>`;
+}
+
+function ceoSalesTopItem(o, rank) {
+  return `<div class="ceo-attention-item"><span class="ceo-attention-rank">${String(rank).padStart(2, '0')}</span><span class="ceo-attention-copy"><b>${esc(o.sales_officer)}</b><small>${esc(branchLabel(o.branch || ''))} · ${o.retailed} retail, ${o.booked} booked</small></span><span class="ceo-attention-arrow" aria-hidden="true">${salesPerfRateText(o.outcomeRate)}</span></div>`;
+}
+
+async function ceoSalesPerfView() {
+  view.innerHTML = '<div class="ceo-loading" aria-busy="true"><span></span><span></span><span></span></div>';
+  try {
+    const d = await api('/sales-manager/analytics');
+    analyticsUpdatedAt.salesPerf = new Date();
+    const s = d.summary || {};
+    const totalLeads = Number(s.total) || 0;
+    const booked = Number(s.booked) || 0;
+    const retailed = Number(s.retailed) || 0;
+    const lost = Number(s.lost) || 0;
+    const won = booked + retailed;
+    const officers = (d.bySalesOfficer || []).map(salesOfficerMetric);
+    const models = (d.byModel || []).map(salesModelMetric);
+    const branches = ceoBranchSalesRollup(officers);
+
+    const topPerformers = officers
+      .filter(o => o.total >= 5 && o.outcomes > 0)
+      .sort((a, b) => b.outcomeRate - a.outcomeRate || b.outcomes - a.outcomes || b.total - a.total)
+      .slice(0, 5);
+
+    const overdueCount = officers.reduce((sum, o) => sum + o.due, 0);
+    const highVolumeNoOutcome = officers.filter(o => o.total >= 10 && o.outcomes === 0)
+      .sort((a, b) => b.total - a.total).slice(0, 5);
+
+    const sorters = {
+      conversion: (a, b) => (b.outcomeRate ?? -1) - (a.outcomeRate ?? -1) || b.outcomes - a.outcomes || b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
+      total: (a, b) => b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
+      due: (a, b) => b.due - a.due || b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
+    };
+
+    const sortedModels = [...models].sort((a, b) => b.retailed - a.retailed || b.outcomes - a.outcomes || b.total - a.total || String(a.model || '').localeCompare(String(b.model || '')));
+    const modelHtml = sortedModels.length ? `<section class="ceo-panel ceo-model-panel" aria-labelledby="ceoModelTitle">
+      <div class="ceo-panel-heading"><div><h2 id="ceoModelTitle">Which models are selling</h2><p>Final sales come first, across every branch.</p></div><strong>${sortedModels.length} model${sortedModels.length === 1 ? '' : 's'}</strong></div>
+      <div class="ceo-branch-list" role="list">${sortedModels.slice(0, 10).map((m, index) => `
+        <div class="ceo-branch-row" role="listitem">
+          <span class="ceo-branch-row-top">
+            <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
+            <span class="ceo-branch-heading"><b>${esc(m.model || 'Unknown model')}</b><small>${m.total} total leads</small></span>
+            <span class="ceo-branch-stat"><b>${salesPerfRateText(m.outcomeRate)}</b><small>conversion</small></span>
+            <span class="ceo-branch-stat"><b>${m.retailed}</b><small>retail</small></span>
+            <span class="ceo-branch-stat"><b>${m.booked}</b><small>booked</small></span>
+          </span>
+          ${ceoSalesMixBar(m)}
+        </div>`).join('')}
+      </div>
+    </section>` : '';
+
+    view.innerHTML = `<div class="ceo-page">
+      <header class="ceo-hero"><div><span class="ceo-eyebrow">NIPPON TOYOTA / SALES PERFORMANCE</span><h2>Who's converting</h2><p>Sales officer performance across every branch, ranked by results.</p></div><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>${branches.length} branches</span></div></header>
+      <section class="ceo-summary" aria-label="Company sales totals">
+        ${ceoSummaryMetric('Total leads', totalLeads, 'Current lead book', 'total', null)}
+        ${ceoSummaryMetric('Booked', booked, 'Awaiting retail', 'booked', null)}
+        ${ceoSummaryMetric('Retail', retailed, 'Final sales', 'won', null)}
+        ${ceoSummaryMetric('Lost', lost, 'Closed lost', 'lost', null)}
+        ${ceoSummaryMetric('Conversion', ceoPercent(won, totalLeads), 'Booked plus retail', 'conversion', null)}
+      </section>
+      <div class="ceo-layout">
+        <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceoSalesBranchTitle"><div class="ceo-panel-heading"><div><h2 id="ceoSalesBranchTitle">Branch performance</h2><p>Select a branch to filter the leaderboard below.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Conversion</span><span>Officers</span><span>Due</span><span></span></div><div id="ceoSalesBranches">${ceoBranchSalesRows(branches)}</div></section>
+        <aside class="ceo-rail">
+          <section class="ceo-panel ceo-attention-panel is-good" aria-labelledby="ceoTopTitle"><div class="ceo-panel-heading"><div><h2 id="ceoTopTitle">Top performers</h2><p>Best conversion rate, 5+ leads.</p></div></div><div class="ceo-attention-list">${topPerformers.length ? topPerformers.map((o, i) => ceoSalesTopItem(o, i + 1)).join('') : '<p class="ceo-empty">Not enough volume yet to rank top performers.</p>'}</div></section>
+          <section class="ceo-panel ceo-attention-panel" aria-labelledby="ceoNeedsTitle"><div class="ceo-panel-heading"><div><h2 id="ceoNeedsTitle">Needs a look</h2><p>10+ leads, zero converted.</p></div></div><div class="ceo-attention-list">${highVolumeNoOutcome.length ? highVolumeNoOutcome.map((o, i) => `<div class="ceo-attention-item"><span class="ceo-attention-rank">${String(i + 1).padStart(2, '0')}</span><span class="ceo-attention-copy"><b>${esc(o.sales_officer)}</b><small>${esc(branchLabel(o.branch || ''))} · ${o.total} leads, 0 converted</small></span></div>`).join('') : '<p class="ceo-empty">No high-volume officers stuck at zero.</p>'}</div></section>
+        </aside>
+      </div>
+      ${modelHtml}
+      <section class="card ceo-officer-card" aria-labelledby="ceoOfficerTitle">
+        <div class="sop-board-head"><div><h2 id="ceoOfficerTitle">Sales officer leaderboard</h2><p>${overdueCount} lead${overdueCount === 1 ? '' : 's'} company-wide need a call.</p></div></div>
+        ${officers.length ? `
+        <div class="sop-controls">
+          <div class="sop-sort" id="ceoSalesSort" aria-label="Sort Sales Officers">
+            <button type="button" class="sop-sort-opt${ceoSalesSort === 'conversion' ? ' on' : ''}" data-sort="conversion">Best conversion</button>
+            <button type="button" class="sop-sort-opt${ceoSalesSort === 'total' ? ' on' : ''}" data-sort="total">Most leads</button>
+            <button type="button" class="sop-sort-opt${ceoSalesSort === 'due' ? ' on' : ''}" data-sort="due">Most due</button>
+          </div>
+          <input id="ceoSalesFilterInput" class="sop-filter" placeholder="Filter officers…" aria-label="Filter Sales Officers">
+        </div>
+        <div id="ceoSalesBranchPill"></div>
+        <div class="ceo-officer-rows" id="ceoSalesRows"></div>
+        <div id="ceoSalesPager"></div>
+        ` : '<div class="empty">No imported Sales Officer data found</div>'}
+      </section>
+    </div>`;
+
+    if (!officers.length) return;
+
+    document.getElementById('ceoSalesSort').querySelectorAll('.sop-sort-opt').forEach(b => b.onclick = () => {
+      ceoSalesSort = b.dataset.sort;
+      ceoSalesPage = 1;
+      ceoSalesPerfView();
+    });
+
+    const bindBranchRows = () => {
+      document.querySelectorAll('#ceoSalesBranches .ceo-branch-row').forEach(row => row.onclick = () => {
+        const id = row.dataset.branchId ? Number(row.dataset.branchId) : null;
+        ceoSalesBranchFilter = ceoSalesBranchFilter === id ? null : id;
+        ceoSalesPage = 1;
+        document.getElementById('ceoSalesBranches').innerHTML = ceoBranchSalesRows(branches);
+        bindBranchRows();
+        renderRows();
+      });
+    };
+
+    const renderRows = () => {
+      const query = ceoSalesFilter.trim().toLowerCase();
+      let filtered = ceoSalesBranchFilter != null ? officers.filter(o => o.branch_id === ceoSalesBranchFilter) : officers;
+      if (query) filtered = filtered.filter(o => o.sales_officer.toLowerCase().includes(query));
+      filtered = [...filtered].sort(sorters[ceoSalesSort] || sorters.conversion);
+      const pages = Math.max(1, Math.ceil(filtered.length / SO_PERFORMANCE_PAGE_SIZE));
+      ceoSalesPage = Math.min(Math.max(1, ceoSalesPage), pages);
+      const start = (ceoSalesPage - 1) * SO_PERFORMANCE_PAGE_SIZE;
+      const visible = filtered.slice(start, start + SO_PERFORMANCE_PAGE_SIZE);
+      const activeBranch = ceoSalesBranchFilter != null ? branches.find(b => b.branch_id === ceoSalesBranchFilter) : null;
+      document.getElementById('ceoSalesBranchPill').innerHTML = activeBranch
+        ? `<div class="ceo-filter-pill">Filtered to <b>${esc(branchLabel(activeBranch.branch))}</b><button type="button" id="ceoSalesClearBranch">Clear ✕</button></div>` : '';
+      const clearBtn = document.getElementById('ceoSalesClearBranch');
+      if (clearBtn) clearBtn.onclick = () => {
+        ceoSalesBranchFilter = null;
+        ceoSalesPage = 1;
+        document.getElementById('ceoSalesBranches').innerHTML = ceoBranchSalesRows(branches);
+        bindBranchRows();
+        renderRows();
+      };
+      document.getElementById('ceoSalesRows').innerHTML = visible.length
+        ? visible.map((o, i) => ceoOfficerRow(o, start + i + 1)).join('')
+        : '<div class="empty">No matching Sales Officers</div>';
+      const pager = document.getElementById('ceoSalesPager');
+      pager.innerHTML = renderPager(ceoSalesPage, pages, filtered.length);
+      view.querySelectorAll('#ceoSalesRows .ceo-officer-row').forEach(row => {
+        const openTotal = () => openOfficerLeads(row.dataset.branchId, row.dataset.officer, 'total');
+        row.onclick = openTotal;
+        row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTotal(); } };
+      });
+      view.querySelectorAll('#ceoSalesRows .ceo-officer-stat-due').forEach(b => b.onclick = (e) => {
+        e.stopPropagation();
+        openOfficerLeads(b.dataset.branchId, b.dataset.officer, b.dataset.bucket);
+      });
+      bindPager(nextPage => { ceoSalesPage = nextPage; renderRows(); }, pager);
+    };
+
+    bindBranchRows();
+    document.getElementById('ceoSalesFilterInput').value = ceoSalesFilter;
+    document.getElementById('ceoSalesFilterInput').oninput = (e) => {
+      ceoSalesFilter = e.target.value;
+      ceoSalesPage = 1;
+      renderRows();
+    };
+    renderRows();
+  } catch (e) {
+    view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'ceoSalesPerfRetry')}`;
+    document.getElementById('ceoSalesPerfRetry').onclick = () => ceoSalesPerfView();
+  }
+}
 
 async function salesPerformanceView() {
   view.innerHTML = '<div class="empty">Loading…</div>';
@@ -3050,7 +3273,7 @@ function ceoMetricValue(filters, label, count) {
   return `<button type="button" class="ceo-inline-metric" onclick="${callCenterMetricClick(filters, label)}">${value}</button>`;
 }
 
-const CEO_TONE_ICON = { total: '▥', won: '✓', open: '◐', overdue: '⚠', conversion: '↗' };
+const CEO_TONE_ICON = { total: '▥', won: '✓', open: '◐', overdue: '⚠', conversion: '↗', booked: '◧', lost: '✕' };
 
 function ceoSummaryMetric(label, value, detail, tone, filters) {
   const metric = filters

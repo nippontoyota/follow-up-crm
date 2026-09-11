@@ -1689,7 +1689,6 @@ const SO_BUCKET_FILTERS = {
 
 function managerDrilldownBranchIds(req) {
   const allowed = managerBranchIds(req);
-  if (req.user.role === 'ceo') return allowed;
   const requested = Number(req.query.branch_id || 0);
   return requested && allowed.includes(requested) ? [requested] : allowed;
 }
