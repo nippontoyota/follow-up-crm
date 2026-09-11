@@ -1877,13 +1877,14 @@ app.get('/api/analytics', auth('admin', 'ceo'), async (req, res, next) => {
     const { branch_id } = req.query;
     if (branch_id) {
       res.json(await all(
-        `SELECT u.id, u.name, COUNT(l.id)::int AS total,
+        `SELECT COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS name,
+                COUNT(*)::int AS total,
                 SUM(CASE WHEN l.status = 'open' THEN 1 ELSE 0 END)::int AS open,
                 SUM(CASE WHEN l.stage IN ('Booking Done', 'Retail Done') THEN 1 ELSE 0 END)::int AS won
-         FROM users u
-         LEFT JOIN leads l ON l.assigned_to = u.id
-         WHERE u.role = 'sales' AND u.branch_id = ?
-         GROUP BY u.id, u.name ORDER BY total DESC`,
+         FROM leads l
+         WHERE l.branch_id = ?
+         GROUP BY COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer')
+         ORDER BY total DESC`,
          Number(branch_id)
       ));
     } else {
