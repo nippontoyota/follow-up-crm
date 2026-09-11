@@ -1266,7 +1266,7 @@ async function callCenterView() {
         <div class="cc-stat"><span>Booked</span>${statValue({ bucket: 'booked' }, 'Booked leads', Number(s.booked) || 0)}</div>
         <div class="cc-stat"><span>Retail</span>${statValue({ bucket: 'retailed' }, 'Retail leads', Number(s.retailed) || 0)}</div>
         <div class="cc-stat"><span>Lost</span>${statValue({ bucket: 'lost' }, 'Lost leads', Number(s.lost) || 0)}</div>
-        ${['admin', 'ceo'].includes(me.role) ? `<div class="cc-stat"><span>Flag history</span><button type="button" class="cc-stat-value" onclick="go('flagged')">${(d.flagged || []).length}</button></div>` : ''}
+        ${me.role === 'admin' ? `<div class="cc-stat"><span>Flag history</span><button type="button" class="cc-stat-value" onclick="go('flagged')">${(d.flagged || []).length}</button></div>` : ''}
       </section>
 
       <section class="cc-panel cc-table-panel" aria-labelledby="cc-performance-title"><h2 id="cc-performance-title">Call executive performance</h2>${tblHtml(
@@ -1669,7 +1669,8 @@ async function salesPerformanceView() {
     const retailed = Number(s.retailed) || 0;
     const officers = (d.bySalesOfficer || []).map(salesOfficerMetric);
     const models = (d.byModel || []).map(salesModelMetric);
-    const flaggedByOfficer = d.flaggedByOfficer || [];
+    // Flag history is an operating-team concern, not CEO reporting.
+    const flaggedByOfficer = me.role === 'ceo' ? [] : (d.flaggedByOfficer || []);
 
     const sorters = {
       conversion: (a, b) => (b.outcomeRate ?? -1) - (a.outcomeRate ?? -1)
@@ -2843,7 +2844,7 @@ async function openLead(id) {
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
-    ${((l.is_flagged || l.flag_remarks != null) && ['manager', 'sales_manager', 'admin', 'ceo'].includes(me.role)) ? `<div class="card" style="border-color:#B91C1C">
+    ${((l.is_flagged || l.flag_remarks != null) && ['manager', 'sales_manager', 'admin'].includes(me.role)) ? `<div class="card" style="border-color:#B91C1C">
       <h2 style="color:#B91C1C">⚑ ${l.is_flagged ? 'Flagged for Sales Manager' : 'Flag History'}</h2>
       ${l.original_so_name ? `<div style="margin-bottom:12px"><b>Sales Officer:</b> ${esc(l.original_so_name)}</div>` : ''}
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}

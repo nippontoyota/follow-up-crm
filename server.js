@@ -1357,7 +1357,7 @@ app.get('/api/call-center/source-quality', auth('call_center_manager', 'admin', 
 app.get('/api/call-center/analytics', auth('call_center_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const day = today();
-    const includeFlags = ['admin', 'ceo'].includes(req.user.role);
+    const includeFlags = req.user.role === 'admin';
     const [kpi, byCallGuy, outcomes, byBranch, overdue, flagged] = await Promise.all([
       get(`SELECT COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE fcount = 0 AND status = 'open')::int AS untouched,
@@ -1418,7 +1418,9 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin', 'ceo'
         WHERE (l.is_flagged = 1 OR l.flag_remarks IS NOT NULL)
         ORDER BY l.id DESC LIMIT 200`) : Promise.resolve([]),
     ]);
-    res.json({ summary: kpi, kpi, byCallGuy, outcomes, byBranch, overdue, flagged });
+    const response = { summary: kpi, kpi, byCallGuy, outcomes, byBranch, overdue };
+    if (req.user.role === 'admin') response.flagged = flagged;
+    res.json(response);
   } catch (e) { next(e); }
 });
 
@@ -1460,7 +1462,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
           COUNT(*) FILTER (WHERE stage = 'Lost Lead' AND status = 'closed')::int AS lost
         FROM leads l WHERE ${leadFilter.sql}`, ...leadFilter.args),
 
-      req.user.role !== 'cluster_manager'
+      !['cluster_manager', 'ceo'].includes(req.user.role)
         ? all(`SELECT l.id, l.customer_name, l.mobile,
             l.branch_id, b.name AS branch,
             COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
@@ -1476,7 +1478,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
 
     ]);
     const flaggedByOfficer = [];
-    if (req.user.role !== 'cluster_manager') {
+    if (!['cluster_manager', 'ceo'].includes(req.user.role)) {
       const grouped = new Map();
       for (const row of flaggedRows) {
         const key = `${row.branch_id}:${row.sales_officer}`;
@@ -1503,7 +1505,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
       bySalesOfficer,
       byModel,
     };
-    if (req.user.role !== 'cluster_manager') {
+    if (!['cluster_manager', 'ceo'].includes(req.user.role)) {
       response.flagged = flaggedRows;
       response.flaggedByOfficer = flaggedByOfficer;
     }

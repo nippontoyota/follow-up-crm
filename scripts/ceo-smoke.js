@@ -39,6 +39,7 @@ assert.ok(Array.isArray(branchAnalytics.data));
 const callCenter = await request('/api/call-center/analytics', ceo);
 assert.equal(callCenter.status, 200);
 assert.ok(callCenter.data.summary && Array.isArray(callCenter.data.byBranch));
+assert.ok(!Object.hasOwn(callCenter.data, 'flagged'), 'CEO call-center data must not include flag history');
 
 const sourceQuality = await request('/api/call-center/source-quality', ceo);
 assert.equal(sourceQuality.status, 200);
@@ -48,6 +49,8 @@ const salesAnalytics = await request('/api/sales-manager/analytics', ceo);
 assert.equal(salesAnalytics.status, 200);
 assert.ok(Array.isArray(salesAnalytics.data.branchIds));
 assert.ok(Array.isArray(salesAnalytics.data.bySalesOfficer));
+assert.ok(!Object.hasOwn(salesAnalytics.data, 'flagged'), 'CEO sales data must not include flagged leads');
+assert.ok(!Object.hasOwn(salesAnalytics.data, 'flaggedByOfficer'), 'CEO sales data must not include flag summaries');
 
 const leadAnalysis = await request('/api/sales-manager/lead-analysis', ceo);
 assert.equal(leadAnalysis.status, 200);
