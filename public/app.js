@@ -32,7 +32,7 @@ function invalidateLeadsStats() { leadsStatsCache = null; }
 const el = (html) => Object.assign(document.createElement('div'), { innerHTML: html }).firstElementChild;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const val = (id) => document.getElementById(id).value.trim();
-const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager', cluster_manager: 'Cluster Manager' };
+const roleLabel = { admin: 'Admin', marketing: 'Marketing', sales: 'Sales Officer', call_guy: 'Call Executive', manager: 'Sales Manager', call_center_manager: 'Call Center Manager', sales_manager: 'Sales Manager', cluster_manager: 'Cluster Manager', ceo: 'CEO' };
 
 async function copyContactPhone(phone, button) {
   try {
@@ -261,6 +261,7 @@ const TABS = {
   call_center_manager: [['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
   cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['leadSearch', 'Search Leads', '🔎']],
+  ceo: [['executiveOverview', 'Executive Overview', '◈'], ['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊'], ['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩'], ['leads', 'All leads', '📋']],
 };
 
 function branchLabel(name) {
@@ -345,7 +346,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ analytics: analyticsView, callCenter: callCenterView, sourceQuality: sourceQualityView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ executiveOverview: ceoOverviewView, analytics: analyticsView, callCenter: callCenterView, sourceQuality: sourceQualityView, salesPerf: salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -1262,7 +1263,7 @@ async function callCenterView() {
         <div class="cc-stat"><span>Booked</span>${statValue({ bucket: 'booked' }, 'Booked leads', Number(s.booked) || 0)}</div>
         <div class="cc-stat"><span>Retail</span>${statValue({ bucket: 'retailed' }, 'Retail leads', Number(s.retailed) || 0)}</div>
         <div class="cc-stat"><span>Lost</span>${statValue({ bucket: 'lost' }, 'Lost leads', Number(s.lost) || 0)}</div>
-        ${me.role === 'admin' ? `<div class="cc-stat"><span>Flag history</span><button type="button" class="cc-stat-value" onclick="go('flagged')">${(d.flagged || []).length}</button></div>` : ''}
+        ${['admin', 'ceo'].includes(me.role) ? `<div class="cc-stat"><span>Flag history</span><button type="button" class="cc-stat-value" onclick="go('flagged')">${(d.flagged || []).length}</button></div>` : ''}
       </section>
 
       <section class="cc-panel cc-table-panel" aria-labelledby="cc-performance-title"><h2 id="cc-performance-title">Call executive performance</h2>${tblHtml(
@@ -1569,13 +1570,13 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
     : '<span class="tbl-zero">0</span>';
   const rows = visibleOfficers.map(officer => {
     const counts = statusByOfficer.get(officerKey(officer.branch_id, officer.sales_officer)) || new Map();
-    const branch = me.role === 'cluster_manager' ? `<td>${esc(branchLabel(officer.branch || '—'))}</td>` : '';
+    const branch = ['cluster_manager', 'ceo'].includes(me.role) ? `<td>${esc(branchLabel(officer.branch || '—'))}</td>` : '';
     return `<tr>${branch}<td><b>${esc(officer.sales_officer)}</b></td><td>${officer.total}</td>${statuses.map(status => `<td>${countCell(officer.sales_officer, officer, status, counts.get(status) || 0)}</td>`).join('')}</tr>`;
   }).join('');
   const mobileRows = visibleOfficers.map(officer => {
     const counts = statusByOfficer.get(officerKey(officer.branch_id, officer.sales_officer)) || new Map();
     const nonZero = statuses.filter(status => counts.get(status)).map(status => `<span>${esc(status)} <b>${counts.get(status)}</b></span>`).join('');
-    return `<div class="so-mobile-summary-row"><div><b>${esc(officer.sales_officer)}</b>${me.role === 'cluster_manager' && officer.branch ? `<small>${esc(branchLabel(officer.branch))}</small>` : ''}</div><strong>${officer.total} total</strong><p>${nonZero || '<span>No non-zero statuses</span>'}</p></div>`;
+    return `<div class="so-mobile-summary-row"><div><b>${esc(officer.sales_officer)}</b>${['cluster_manager', 'ceo'].includes(me.role) && officer.branch ? `<small>${esc(branchLabel(officer.branch))}</small>` : ''}</div><strong>${officer.total} total</strong><p>${nonZero || '<span>No non-zero statuses</span>'}</p></div>`;
   }).join('');
 
   root.innerHTML = `<div class="card so-status-card">
@@ -1583,7 +1584,7 @@ function renderSalesOfficerStatusTable(root, statusRows, officers, branchId, pag
       <div><h2>Sales Officer-wise Lead Status</h2><p class="sop-pick-desc">Latest follow-up status by Sales Officer. Select a count to view those leads.</p></div>
     </div>
     ${officers.length ? `<div class="so-mobile-summary">${mobileRows}</div><div class="tbl-wrap"><table class="tbl so-status-table">
-       <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Sales Officer</th><th>Total</th>${statusHeader}</tr></thead>
+       <thead><tr>${['cluster_manager', 'ceo'].includes(me.role) ? '<th>Branch</th>' : ''}<th>Sales Officer</th><th>Total</th>${statusHeader}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>${renderPager(salesStatusPage, pages, officers.length)}` : '<div class="empty">No Sales Officer status data found</div>'}
   </div>`;
@@ -1732,7 +1733,7 @@ async function salesPerformanceView() {
           <span class="sop-rank" aria-hidden="true">${rank}</span>
           <div class="sop-officer">
             <button type="button" class="sop-row-name sop-row-name-btn" data-officer="${esc(o.sales_officer)}">${esc(o.sales_officer)}</button>
-            ${me.role === 'cluster_manager' && o.branch ? `<span class="sop-row-branch">${esc(branchLabel(o.branch))}</span>` : ''}
+            ${['cluster_manager', 'ceo'].includes(me.role) && o.branch ? `<span class="sop-row-branch">${esc(branchLabel(o.branch))}</span>` : ''}
             ${o.total > 0 && o.total < 5 ? '<span class="sop-sample-tag">Small sample</span>' : ''}
           </div>
           <div class="sop-score-rate">
@@ -1758,10 +1759,10 @@ async function salesPerformanceView() {
       <h2 class="flag-card-h2">🚩 Flagged Leads by Sales Officer</h2>
       <p class="flag-card-note">Active and closed flag history for this branch.</p>
       <div class="tbl-wrap"><table class="tbl tbl-flag">
-        <thead><tr><th>Sales Officer</th>${me.role === 'admin' ? '<th>Branch</th>' : ''}<th>Total</th><th>Active</th><th>Closed</th></tr></thead>
+        <thead><tr><th>Sales Officer</th>${['admin', 'ceo'].includes(me.role) ? '<th>Branch</th>' : ''}<th>Total</th><th>Active</th><th>Closed</th></tr></thead>
         <tbody>${flaggedByOfficer.map(r => `<tr>
           <td>${esc(r.sales_officer)}</td>
-          ${me.role === 'admin' ? `<td>${esc(branchLabel(r.branch || 'Unknown branch'))}</td>` : ''}
+          ${['admin', 'ceo'].includes(me.role) ? `<td>${esc(branchLabel(r.branch || 'Unknown branch'))}</td>` : ''}
           <td><b>${r.flagged}</b></td><td>${r.active}</td><td>${r.closed}</td>
         </tr>`).join('')}</tbody>
       </table></div>
@@ -1895,6 +1896,7 @@ async function leadAnalysisView() {
 
     branchName = me.role === 'cluster_manager'
       ? clusterScopeLabel()
+      : me.role === 'ceo' ? 'All branches'
       : masters.branches.find(b => String(b.id) === String(branchId))?.name || '';
     const d = await api(`/sales-manager/lead-analysis${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`);
     analyticsUpdatedAt.leadAnalysis = new Date();
@@ -2029,9 +2031,9 @@ async function openLeadAnalysisLeads(kind, status) {
       const heading = kind === 'lost' ? `Lost · ${label}` : label;
       card.innerHTML = `<h2>${esc(heading)} · ${data.total || 0}</h2>
         ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>Stage</th></tr></thead>
+         <thead><tr>${['cluster_manager', 'ceo'].includes(me.role) ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Sales Officer</th><th>Next Date</th><th>Stage</th></tr></thead>
          <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
-           ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
+           ${['cluster_manager', 'ceo'].includes(me.role) ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
            <td>${esc(l.customer_name)}</td>
            <td>${esc(l.mobile)}</td>
            <td>${esc(l.sales_officer)}</td>
@@ -2067,9 +2069,9 @@ async function openOfficerLeads(branchId, officer, bucket) {
       const leads = data.leads || [];
       card.innerHTML = `<h2>${esc(label)} — ${esc(officer)} · ${data.total || 0}</h2>
         ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-         <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>Stage</th></tr></thead>
+         <thead><tr>${['cluster_manager', 'ceo'].includes(me.role) ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>Stage</th></tr></thead>
          <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
-           ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
+           ${['cluster_manager', 'ceo'].includes(me.role) ? `<td>${esc(branchLabel(l.branch || '—'))}</td>` : ''}
            <td>${esc(l.customer_name)}</td>
            <td>${esc(l.mobile)}</td>
            <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
@@ -2102,11 +2104,11 @@ async function openOfficerStatusLeads(branchId, officer, status) {
       const data = await api(`/sales-manager/officer-status-leads?${query}`);
       const leads = data.leads || [];
       const drillBranch = masters.branches.find(branch => String(branch.id) === String(branchId));
-      card.innerHTML = `<h2>${esc(status)} — ${esc(officer)}${me.role === 'cluster_manager' && drillBranch ? ` · ${esc(branchLabel(drillBranch.name))}` : ''} · ${data.total || 0}</h2>
+      card.innerHTML = `<h2>${esc(status)} — ${esc(officer)}${['cluster_manager', 'ceo'].includes(me.role) && drillBranch ? ` · ${esc(branchLabel(drillBranch.name))}` : ''} · ${data.total || 0}</h2>
         ${leads.length ? `<div class="tbl-wrap"><table class="tbl">
-           <thead><tr>${me.role === 'cluster_manager' ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
+           <thead><tr>${['cluster_manager', 'ceo'].includes(me.role) ? '<th>Branch</th>' : ''}<th>Customer</th><th>Mobile</th><th>Next Date</th><th>Latest Outcome</th><th>Stage</th></tr></thead>
           <tbody>${leads.map(l => `<tr class="lead-row" data-id="${l.id}">
-            ${me.role === 'cluster_manager' ? `<td>${esc(branchLabel(l.branch || drillBranch?.name || '—'))}</td>` : ''}
+            ${['cluster_manager', 'ceo'].includes(me.role) ? `<td>${esc(branchLabel(l.branch || drillBranch?.name || '—'))}</td>` : ''}
             <td>${esc(l.customer_name)}</td>
             <td>${esc(l.mobile)}</td>
             <td>${esc(l.next_date ? displayDate(l.next_date) : '—')}</td>
@@ -2133,7 +2135,7 @@ async function flaggedLeadsView() {
       flagged = d.flagged || [];
       cols = ['Customer', 'Mobile', 'Sales Officer', 'Call Executive', 'Stage', 'Flag Status', 'Remarks'];
       rows = flagged.map(r => [esc(r.customer_name), esc(r.mobile), esc(r.sales_officer), esc(r.call_guy || '—'), esc(r.stage || '—'), esc(r.flag_status || 'Active'), esc(r.flag_remarks || '—')]);
-    } else if (me.role === 'admin') {
+    } else if (['admin', 'ceo'].includes(me.role)) {
       const d = await api('/call-center/analytics');
       flagged = d.flagged || [];
       cols = ['Customer', 'Branch', 'Sales Officer', 'Call Executive', 'Sales Manager', 'Flag Status', 'Remarks'];
@@ -2838,7 +2840,7 @@ async function openLead(id) {
         ${f.exchange_expected_price ? `<div><b>Exchange — Expected: ₹${esc(String(f.exchange_expected_price))} / Offered: ₹${esc(String(f.exchange_offered_price || '—'))}</b></div>` : ''}
         ${f.remarks ? `<div>${esc(f.remarks)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
 
-    ${((l.is_flagged || l.flag_remarks != null) && ['manager', 'sales_manager', 'admin'].includes(me.role)) ? `<div class="card" style="border-color:#B91C1C">
+    ${((l.is_flagged || l.flag_remarks != null) && ['manager', 'sales_manager', 'admin', 'ceo'].includes(me.role)) ? `<div class="card" style="border-color:#B91C1C">
       <h2 style="color:#B91C1C">⚑ ${l.is_flagged ? 'Flagged for Sales Manager' : 'Flag History'}</h2>
       ${l.original_so_name ? `<div style="margin-bottom:12px"><b>Sales Officer:</b> ${esc(l.original_so_name)}</div>` : ''}
       ${l.flag_remarks ? `<div style="margin-bottom:12px"><b>Previous remarks:</b> ${esc(l.flag_remarks)}</div>` : ''}
@@ -3028,8 +3030,128 @@ async function openLead(id) {
 
 /* -------------------------------------------------------- admin: analytics */
 
+function ceoBar(value, max, tone = 'brand') {
+  const safeValue = Math.max(0, Number(value) || 0);
+  const safeMax = Math.max(0, Number(max) || 0);
+  const width = safeMax > 0 ? Math.min(100, (safeValue / safeMax) * 100) : 0;
+  return `<span class="ceo-bar" role="img" aria-label="${esc(`${safeValue} of ${safeMax}`)}"><span class="ceo-bar-fill ceo-tone-${esc(tone)}" style="width:${width.toFixed(2)}%"></span></span>`;
+}
+
+function ceoPercent(value, total) {
+  const denominator = Number(total) || 0;
+  if (denominator <= 0) return '0%';
+  return `${Math.min(100, Math.max(0, ((Number(value) || 0) / denominator) * 100)).toFixed(1)}%`;
+}
+
+function ceoOverviewBranchRows(branches) {
+  const rows = (branches || []).filter(Boolean);
+  if (!rows.length) return '<p class="ceo-empty">No branch data available</p>';
+  return `<div class="ceo-branch-list" role="list">${rows.map(branch => {
+    const total = Math.max(0, Number(branch.total) || 0);
+    const open = Math.min(total, Math.max(0, Number(branch.open) || 0));
+    const won = Math.min(Math.max(0, total - open), Math.max(0, Number(branch.won) || 0));
+    const other = Math.max(0, total - open - won);
+    const name = branch.name || branch.branch || 'Unknown branch';
+    return `<button type="button" class="ceo-branch-row" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open, ${won} won`)}">
+      <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><span>${total} total · ${open} open · ${won} won</span></span>
+      <span class="ceo-stack" role="img" aria-label="${esc(`${won} won, ${open} open, ${other} other`)}">
+        <span class="ceo-stack-segment ceo-stack-won" style="width:${ceoPercent(won, total)}"></span>
+        <span class="ceo-stack-segment ceo-stack-open" style="width:${ceoPercent(open, total)}"></span>
+        <span class="ceo-stack-segment ceo-stack-other" style="width:${ceoPercent(other, total)}"></span>
+      </span>
+      <span class="ceo-branch-meta"><span>${ceoPercent(won, total)} won</span><span>${Number(branch.overdue) || 0} overdue</span></span>
+    </button>`;
+  }).join('')}</div>`;
+}
+
+function ceoMetricValue(filters, label, count) {
+  const value = Math.max(0, Number(count) || 0);
+  if (!value) return `<span class="ceo-metric-value is-zero">0</span>`;
+  return `<button type="button" class="ceo-metric-value" onclick="${callCenterMetricClick(filters, label)}">${value}</button>`;
+}
+
+function ceoMixCard(summary) {
+  const total = Math.max(0, Number(summary.total) || 0);
+  const booked = Math.min(total, Math.max(0, Number(summary.booked) || 0));
+  const retailed = Math.min(Math.max(0, total - booked), Math.max(0, Number(summary.retailed) || 0));
+  const lost = Math.min(Math.max(0, total - booked - retailed), Math.max(0, Number(summary.lost) || 0));
+  const open = Math.max(0, total - booked - retailed - lost);
+  const parts = [
+    ['open', 'Open', open, 'open'],
+    ['booked', 'Booked', booked, 'booked'],
+    ['retailed', 'Retail', retailed, 'retail'],
+    ['lost', 'Lost', lost, 'lost'],
+  ];
+  return `<section class="ceo-card ceo-mix-card" aria-labelledby="ceo-mix-title">
+    <div class="ceo-card-heading"><div><h2 id="ceo-mix-title">Conversion mix</h2><p>All branches · ${total} leads</p></div><span class="ceo-card-kpi">${ceoPercent(booked + retailed, total)} won</span></div>
+    <div class="ceo-mix-bar" role="img" aria-label="${esc(parts.map(([, label, value]) => `${label}: ${value}`).join(', '))}">${parts.map(([key, , value]) => `<span class="ceo-mix-segment ceo-mix-${key}" style="width:${ceoPercent(value, total)}"></span>`).join('')}</div>
+    <div class="ceo-mix-legend">${parts.map(([key, label, value]) => `<div class="ceo-mix-item"><span class="ceo-swatch ceo-swatch-${key}" aria-hidden="true"></span><span>${label}</span>${ceoMetricValue({ bucket: key === 'retailed' ? 'retailed' : key }, `${label} leads`, value)}</div>`).join('')}</div>
+  </section>`;
+}
+
+async function ceoOverviewView() {
+  view.innerHTML = '<div class="ceo-loading" aria-busy="true">Loading executive overview…</div>';
+  try {
+    const [branchStats, callCenter, sales] = await Promise.all([
+      api('/analytics'),
+      api('/call-center/analytics'),
+      api('/sales-manager/analytics'),
+    ]);
+    if (tab !== 'executiveOverview') return;
+
+    const branchMap = new Map((callCenter.byBranch || []).map(row => [Number(row.branch_id), row]));
+    const branches = (Array.isArray(branchStats) ? branchStats : []).map(row => ({
+      ...row,
+      ...(branchMap.get(Number(row.id)) || {}),
+      id: row.id,
+      name: row.name,
+      total: Number(row.total) || 0,
+      open: Number(row.open) || 0,
+      won: Number(row.won) || 0,
+    }));
+    const summary = sales.summary || {};
+    const overdueBranches = [...branches]
+      .filter(row => Number(row.overdue) > 0)
+      .sort((a, b) => Number(b.overdue) - Number(a.overdue) || String(a.name).localeCompare(String(b.name)))
+      .slice(0, 3);
+    const attention = overdueBranches.length
+      ? overdueBranches.map(row => `<button type="button" class="ceo-attention-item" onclick="${callCenterMetricClick({ branch_id: row.id, bucket: 'overdue' }, `${row.name} overdue leads`)}"><span>${esc(branchLabel(row.name))}</span><b>${Number(row.overdue) || 0}</b><small>overdue · view leads</small></button>`).join('')
+      : '<p class="ceo-empty">No overdue branch workload to review.</p>';
+
+    view.innerHTML = `<div class="ceo-page">
+      <div class="ceo-page-heading"><div><span class="ceo-eyebrow">NIPPON TOYOTA · EXECUTIVE VIEW</span><h2>Executive Overview</h2><p>One read-only view of branch volume, conversion, and follow-up pressure.</p></div><span class="ceo-readonly">Read only</span></div>
+      <div class="ceo-grid">
+        <section class="ceo-card ceo-branch-card" aria-labelledby="ceo-branch-title"><div class="ceo-card-heading"><div><h2 id="ceo-branch-title">Branch comparison</h2><p>Click a branch to open its detailed analytics.</p></div><span class="ceo-card-kpi">${branches.length} branches</span></div><div class="ceo-legend"><span><i class="ceo-swatch ceo-swatch-won"></i>Won</span><span><i class="ceo-swatch ceo-swatch-open"></i>Open</span><span><i class="ceo-swatch ceo-swatch-other"></i>Other</span></div>${ceoOverviewBranchRows(branches)}</section>
+        ${ceoMixCard(summary)}
+        <section class="ceo-card ceo-workload-card" aria-labelledby="ceo-workload-title"><div class="ceo-card-heading"><div><h2 id="ceo-workload-title">Workload by branch</h2><p>Open follow-up and overdue work, with counts kept visible.</p></div><span class="ceo-card-kpi">${Number(callCenter.summary?.overdue ?? callCenter.kpi?.overdue) || 0} overdue</span></div>${branches.length ? `<div class="ceo-workload-list">${branches.map(row => `<div class="ceo-workload-row"><div class="ceo-workload-heading"><b>${esc(branchLabel(row.name))}</b><span>${Number(row.followup) || 0} follow-up · ${Number(row.overdue) || 0} overdue</span></div>${ceoBar(row.followup, Math.max(...branches.map(item => Number(item.followup) || 0), 0), 'brand')}<div class="ceo-workload-meta"><span>${Number(row.open) || 0} open</span><span>${Number(row.won) || 0} won</span><span>${Number(row.overdue) || 0} overdue</span></div></div>`).join('')}</div>` : '<p class="ceo-empty">No branch data available</p>'}</section>
+        <section class="ceo-card ceo-attention-card" aria-labelledby="ceo-attention-title"><div class="ceo-card-heading"><div><h2 id="ceo-attention-title">Needs attention</h2><p>Top three branches by overdue follow-up count.</p></div></div><div class="ceo-attention-list">${attention}</div></section>
+      </div>
+    </div>`;
+    view.querySelectorAll('.ceo-branch-row').forEach(row => row.onclick = () => analyticsView(Number(row.dataset.branchId), row.dataset.branchName));
+  } catch (e) {
+    view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'ceoOverviewRetry')}`;
+    document.getElementById('ceoOverviewRetry').onclick = () => ceoOverviewView();
+  }
+}
+
 async function analyticsView(branchId = null, branchName = null) {
   const stats = await api(branchId ? `/analytics?branch_id=${branchId}` : '/analytics');
+  const aiSection = me.role === 'ceo' ? '' : `
+    <section class="card ai-analysis" aria-labelledby="ai-analysis-title">
+      <div class="ai-analysis-head">
+        <div class="ai-analysis-heading">
+          <span class="ai-analysis-eyebrow">AI analysis</span>
+          <h2 id="ai-analysis-title">🤖 Lost-Lead Analysis</h2>
+          <span class="ai-analysis-scope">${branchId ? esc(branchName) : 'All Branches'}</span>
+        </div>
+        <button type="button" class="btn ai-analysis-action" onclick="fetchAiLostSummary(${branchId || ''})">
+          <span aria-hidden="true">✨</span>
+          <span>Generate summary</span>
+        </button>
+      </div>
+      <p class="ai-analysis-desc">Analyze lost lead remarks to find patterns and actionable insights.</p>
+      <div id="aiSummaryBox" class="ai-summary-box" style="display:none;"></div>
+    </section>`;
   
   view.innerHTML = `
     <div class="card">
@@ -3055,21 +3177,7 @@ async function analyticsView(branchId = null, branchName = null) {
         </div>`).join('')}</div>` : '<div class="empty">No data</div>'}
     </div>
 
-    <section class="card ai-analysis" aria-labelledby="ai-analysis-title">
-      <div class="ai-analysis-head">
-        <div class="ai-analysis-heading">
-          <span class="ai-analysis-eyebrow">AI analysis</span>
-          <h2 id="ai-analysis-title">🤖 Lost-Lead Analysis</h2>
-          <span class="ai-analysis-scope">${branchId ? esc(branchName) : 'All Branches'}</span>
-        </div>
-        <button type="button" class="btn ai-analysis-action" onclick="fetchAiLostSummary(${branchId || ''})">
-          <span aria-hidden="true">✨</span>
-          <span>Generate summary</span>
-        </button>
-      </div>
-      <p class="ai-analysis-desc">Analyze lost lead remarks to find patterns and actionable insights.</p>
-      <div id="aiSummaryBox" class="ai-summary-box" style="display:none;"></div>
-    </section>
+    ${aiSection}
   `;
 }
 

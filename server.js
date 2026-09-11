@@ -2,7 +2,7 @@ import express from 'express';
 import Groq from 'groq-sdk';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { pool, get, all, run, ins, hash, verify, initDb, seedClusterManagers } from './db.js';
+import { pool, get, all, run, ins, hash, verify, initDb, seedClusterManagers, seedCeoAccount } from './db.js';
 import branchCodes from './demo-data/branch-codes.json' with { type: 'json' };
 import { CLUSTER_MANAGER_DEFINITIONS } from './cluster-managers.js';
 import {
@@ -44,6 +44,7 @@ END`;
 const MAX_DAYS_AHEAD = 3;
 const clusterManagerScopes = new Map();
 const clusterManagerScopeDetails = new Map();
+let allBranchIds = [];
 
 function canonicalBranchInput(value) {
   const raw = String(value || '').trim();
@@ -55,6 +56,7 @@ function canonicalBranchInput(value) {
 }
 
 async function loadClusterManagerScopes() {
+  allBranchIds = (await all('SELECT id FROM branches ORDER BY id')).map(row => Number(row.id));
   const branchNames = [...new Set(CLUSTER_MANAGER_DEFINITIONS.flatMap(manager => manager.branches))];
   const rows = branchNames.length
     ? await all('SELECT id, name FROM branches WHERE name = ANY(?)', branchNames)
@@ -83,6 +85,7 @@ function clusterScopeFor(username) {
 }
 
 function managerBranchIds(req) {
+  if (req.user.role === 'ceo') return [...allBranchIds];
   if (req.user.role === 'cluster_manager')
     return clusterManagerScopes.get(req.user.username) || [];
   const branchId = req.user.role === 'sales_manager'
@@ -886,7 +889,7 @@ ${remarksText}`;
   }
 });
 
-app.get('/api/call-center/leads/export', auth('call_center_manager', 'admin'), async (req, res, next) => {
+app.get('/api/call-center/leads/export', auth('call_center_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const leads = await all(`
       SELECT l.customer_name, l.mobile, b.name AS branch, s.name AS source,
@@ -912,10 +915,10 @@ app.get('/api/call-center/leads/export', auth('call_center_manager', 'admin'), a
   } catch (e) { next(e); }
 });
 
-app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin'), async (req, res, next) => {
+app.get('/api/manager/leads', auth('manager', 'call_center_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const branchId = req.user.branch_id;
-    const isCallCenter = req.user.role === 'call_center_manager' ||
+    const isCallCenter = ['call_center_manager', 'ceo'].includes(req.user.role) ||
       (req.user.role === 'admin' && req.query.scope === 'call_center');
     if (!isCallCenter && !branchId) return bad(res, 'No branch assigned');
     const scopeSql = isCallCenter
@@ -1266,7 +1269,7 @@ function sourceQualityAttention(sources) {
   };
 }
 
-app.get('/api/call-center/source-quality', auth('call_center_manager', 'admin'), async (req, res, next) => {
+app.get('/api/call-center/source-quality', auth('call_center_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const rawBranchId = String(req.query.branch_id ?? '').trim();
     let branchId = null;
@@ -1351,10 +1354,10 @@ app.get('/api/call-center/source-quality', auth('call_center_manager', 'admin'),
   } catch (e) { next(e); }
 });
 
-app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), async (req, res, next) => {
+app.get('/api/call-center/analytics', auth('call_center_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const day = today();
-    const includeFlags = req.user.role === 'admin';
+    const includeFlags = ['admin', 'ceo'].includes(req.user.role);
     const [kpi, byCallGuy, outcomes, byBranch, overdue, flagged] = await Promise.all([
       get(`SELECT COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE fcount = 0 AND status = 'open')::int AS untouched,
@@ -1392,10 +1395,12 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
         GROUP BY f.call_status, f.outcome ORDER BY count DESC`),
       all(`SELECT b.id AS branch_id, b.name AS branch, COUNT(l.id)::int AS total,
           COUNT(l.id) FILTER (WHERE l.status = 'open')::int AS open,
-          COUNT(l.id) FILTER (WHERE l.stage IN ('Booking Done','Retail Done'))::int AS won
+          COUNT(l.id) FILTER (WHERE l.stage IN ('Booking Done','Retail Done'))::int AS won,
+          COUNT(l.id) FILTER (WHERE l.fcount > 0 AND l.status = 'open')::int AS followup,
+          COUNT(l.id) FILTER (WHERE l.next_date < ? AND l.status = 'open')::int AS overdue
         FROM branches b LEFT JOIN leads l ON l.branch_id = b.id
           AND l.assigned_to IN (SELECT id FROM users WHERE role = 'call_guy')
-        GROUP BY b.id, b.name ORDER BY total DESC, b.name`),
+        GROUP BY b.id, b.name ORDER BY total DESC, b.name`, day),
       all(`SELECT u.id AS call_guy_id, u.name AS call_guy, COUNT(l.id)::int AS overdue
         FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
           AND l.status = 'open' AND l.next_date < ?
@@ -1413,11 +1418,11 @@ app.get('/api/call-center/analytics', auth('call_center_manager', 'admin'), asyn
         WHERE (l.is_flagged = 1 OR l.flag_remarks IS NOT NULL)
         ORDER BY l.id DESC LIMIT 200`) : Promise.resolve([]),
     ]);
-    res.json({ kpi, byCallGuy, outcomes, byBranch, overdue, flagged });
+    res.json({ summary: kpi, kpi, byCallGuy, outcomes, byBranch, overdue, flagged });
   } catch (e) { next(e); }
 });
 
-app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const branchIds = managerBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
@@ -1506,7 +1511,7 @@ app.get('/api/sales-manager/analytics', auth('sales_manager', 'cluster_manager',
   } catch (e) { next(e); }
 });
 
-app.get('/api/sales-manager/lead-search', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+app.get('/api/sales-manager/lead-search', auth('sales_manager', 'cluster_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const query = String(req.query.q || '').trim().replace(/[\\%_]/g, '').slice(0, 80);
     if (query.length < 2) return bad(res, 'Enter at least 2 characters to search');
@@ -1534,7 +1539,7 @@ app.get('/api/sales-manager/lead-search', auth('sales_manager', 'cluster_manager
   } catch (e) { next(e); }
 });
 
-app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'cluster_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const branchIds = managerBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
@@ -1604,7 +1609,7 @@ app.get('/api/sales-manager/lead-analysis', auth('sales_manager', 'cluster_manag
   } catch (e) { next(e); }
 });
 
-app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const branchIds = managerBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
@@ -1682,11 +1687,12 @@ const SO_BUCKET_FILTERS = {
 
 function managerDrilldownBranchIds(req) {
   const allowed = managerBranchIds(req);
+  if (req.user.role === 'ceo') return allowed;
   const requested = Number(req.query.branch_id || 0);
   return requested && allowed.includes(requested) ? [requested] : allowed;
 }
 
-app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const branchIds = managerDrilldownBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
@@ -1722,7 +1728,7 @@ app.get('/api/sales-manager/officer-leads', auth('sales_manager', 'cluster_manag
   } catch (e) { next(e); }
 });
 
-app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'cluster_manager', 'admin'), async (req, res, next) => {
+app.get('/api/sales-manager/officer-status-leads', auth('sales_manager', 'cluster_manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const branchIds = managerDrilldownBranchIds(req);
     if (!branchIds.length) return bad(res, 'No assigned branches');
@@ -1813,7 +1819,7 @@ app.post('/api/admin/reassign-leads', auth('admin'), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/api/analytics', auth('admin'), async (req, res, next) => {
+app.get('/api/analytics', auth('admin', 'ceo'), async (req, res, next) => {
   try {
     const { branch_id } = req.query;
     if (branch_id) {
@@ -1849,7 +1855,9 @@ app.use((err, _req, res, _next) => {
 
 /* ----------------------------------------------------------------- start */
 
-const boot = process.env.DB_SKIP_INIT === '1' ? seedClusterManagers() : initDb();
+const boot = process.env.DB_SKIP_INIT === '1'
+  ? seedClusterManagers().then(seedCeoAccount)
+  : initDb();
 boot
   .then(loadClusterManagerScopes)
   .then(() => app.listen(PORT, () => console.log(`Follow-up CRM running on http://localhost:${PORT}`)))

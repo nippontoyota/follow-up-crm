@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { CLUSTER_MANAGER_DEFINITIONS, getClusterManagerPassword } from './cluster-managers.js';
+import { CEO_ACCOUNT_DEFINITION, getCeoPassword } from './ceo-account.js';
 
 const { Pool } = pg;
 
@@ -51,7 +52,7 @@ const DDL = [
     username  TEXT NOT NULL UNIQUE,
     password  TEXT NOT NULL,
     name      TEXT NOT NULL,
-    role      TEXT NOT NULL CHECK (role IN ('admin','marketing','sales')),
+    role      TEXT NOT NULL CHECK (role IN ('admin','marketing','sales','ceo')),
     branch_id INTEGER REFERENCES branches(id),
     active    INTEGER NOT NULL DEFAULT 1
   )`,
@@ -97,7 +98,7 @@ const DDL = [
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_flagged INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE leads ADD COLUMN IF NOT EXISTS flag_remarks TEXT`,
   `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`,
-  `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager','cluster_manager'))`,
+  `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager','cluster_manager','ceo'))`,
   `CREATE TABLE IF NOT EXISTS salesforce_calls (
     id SERIAL PRIMARY KEY,
     mobile TEXT NOT NULL UNIQUE,
@@ -151,6 +152,7 @@ export async function initDb() {
   }
 
   await seedClusterManagers();
+  await seedCeoAccount();
 }
 
 export async function seedClusterManagers() {
@@ -159,9 +161,10 @@ export async function seedClusterManagers() {
      FROM pg_constraint
      WHERE conrelid = 'users'::regclass AND conname = 'users_role_check'`,
   );
-  if (!String(constraint?.definition || '').includes('cluster_manager')) {
+  const roleDefinition = String(constraint?.definition || '');
+  if (!roleDefinition.includes('cluster_manager') || !roleDefinition.includes('ceo')) {
     await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
-    await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager','cluster_manager'))`);
+    await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','marketing','sales','manager','call_guy','call_center_manager','sales_manager','cluster_manager','ceo'))`);
   }
 
   for (const manager of CLUSTER_MANAGER_DEFINITIONS) {
@@ -209,4 +212,31 @@ export async function seedClusterManagers() {
       [manager.username, hash(password), manager.name],
     );
   }
+}
+
+export async function seedCeoAccount() {
+  const existing = await get(
+    `SELECT id, password FROM users WHERE username = ?`,
+    CEO_ACCOUNT_DEFINITION.username,
+  );
+  const configuredPassword = String(process.env[CEO_ACCOUNT_DEFINITION.passwordEnv] || '');
+  if (!configuredPassword && existing) return;
+
+  const password = getCeoPassword();
+  if (existing) {
+    if (!verify(password, existing.password)) {
+      await pool.query(
+        `UPDATE users SET password = $1 WHERE id = $2`,
+        [hash(password), existing.id],
+      );
+    }
+    return;
+  }
+
+  await pool.query(
+    `INSERT INTO users (username, password, name, role, branch_id)
+     VALUES ($1, $2, $3, $4, NULL)
+     ON CONFLICT (username) DO NOTHING`,
+    [CEO_ACCOUNT_DEFINITION.username, hash(password), CEO_ACCOUNT_DEFINITION.name, CEO_ACCOUNT_DEFINITION.role],
+  );
 }
