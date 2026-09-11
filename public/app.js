@@ -1665,19 +1665,19 @@ function ceoBranchSalesRollup(officers) {
 
 function ceoBranchSalesRows(branches) {
   if (!branches.length) return '<p class="ceo-empty">No branch data available</p>';
-  return `<div class="ceo-branch-list" role="list">${branches.map((b, index) => {
-    const active = ceoSalesBranchFilter === b.branch_id;
-    const aria = `${branchLabel(b.branch)}: ${b.total} total, ${b.officers} officers`;
-    return `<button type="button" class="ceo-branch-row${active ? ' is-active' : ''}" data-branch-id="${b.branch_id ?? ''}" role="listitem" aria-pressed="${active}" aria-label="${esc(aria)}">
-      <span class="ceo-branch-row-top">
-        <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
-        <span class="ceo-branch-heading"><b>${esc(branchLabel(b.branch))}</b><small>${b.total} total leads</small></span>
-        <span class="ceo-branch-stat"><b>${b.officers}</b><small>officers</small></span>
-        <span class="ceo-branch-arrow" aria-hidden="true">${active ? '✕' : '↗'}</span>
-      </span>
-      ${ceoSalesMixBar(b)}
-    </button>`;
-  }).join('')}</div>`;
+  return `<div class="tbl-wrap ceo-branch-tbl-wrap"><table class="tbl ceo-branch-tbl">
+    <thead><tr><th>Branch</th><th>Leads</th><th>Officers</th><th class="ceo-tbl-mix">Mix</th></tr></thead>
+    <tbody>${branches.map(b => {
+      const active = ceoSalesBranchFilter === b.branch_id;
+      const aria = `${branchLabel(b.branch)}: ${b.total} total leads, ${b.officers} officers`;
+      return `<tr class="lead-row${active ? ' is-active' : ''}" data-branch-id="${b.branch_id ?? ''}" tabindex="0" aria-pressed="${active}" aria-label="${esc(aria)}">
+        <td><b>${esc(branchLabel(b.branch))}</b></td>
+        <td>${b.total}</td>
+        <td>${b.officers}</td>
+        <td class="ceo-tbl-mix">${ceoSalesMixBar(b)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
 }
 
 function ceoOfficerRow(o, rank) {
@@ -1706,17 +1706,17 @@ async function ceoSalesPerfView() {
     const sortedModels = [...models].sort((a, b) => b.retailed - a.retailed || b.booked - a.booked || b.total - a.total || String(a.model || '').localeCompare(String(b.model || '')));
     const modelHtml = sortedModels.length ? `<section class="ceo-panel ceo-model-panel" aria-labelledby="ceoModelTitle">
       <div class="ceo-panel-heading"><div><h2 id="ceoModelTitle">Which models are selling</h2><p>Final sales come first, across every branch.</p></div><strong>${sortedModels.length} model${sortedModels.length === 1 ? '' : 's'}</strong></div>
-      <div class="ceo-branch-list" role="list">${sortedModels.slice(0, 10).map((m, index) => `
-        <div class="ceo-branch-row" role="listitem">
-          <span class="ceo-branch-row-top">
-            <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
-            <span class="ceo-branch-heading"><b>${esc(m.model || 'Unknown model')}</b><small>${m.total} total leads</small></span>
-            <span class="ceo-branch-stat"><b>${m.retailed}</b><small>retail</small></span>
-            <span class="ceo-branch-stat"><b>${m.booked}</b><small>booked</small></span>
-          </span>
-          ${ceoSalesMixBar(m)}
-        </div>`).join('')}
-      </div>
+      <div class="tbl-wrap ceo-branch-tbl-wrap"><table class="tbl ceo-branch-tbl">
+        <thead><tr><th>Model</th><th>Leads</th><th>Retail</th><th>Booked</th><th class="ceo-tbl-mix">Mix</th></tr></thead>
+        <tbody>${sortedModels.slice(0, 10).map(m => `
+          <tr>
+            <td><b>${esc(m.model || 'Unknown model')}</b></td>
+            <td>${m.total}</td>
+            <td>${m.retailed}</td>
+            <td>${m.booked}</td>
+            <td class="ceo-tbl-mix">${ceoSalesMixBar(m)}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>
     </section>` : '';
 
     view.innerHTML = `<div class="ceo-page">
@@ -1727,7 +1727,7 @@ async function ceoSalesPerfView() {
         ${ceoSummaryMetric('Retail', retailed, 'Final sales', 'won', null)}
         ${ceoSummaryMetric('Lost', lost, 'Closed lost', 'lost', null)}
       </section>
-      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceoSalesBranchTitle"><div class="ceo-panel-heading"><div><h2 id="ceoSalesBranchTitle">Branch performance</h2><p>Select a branch to filter the leaderboard below.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Officers</span><span></span></div><div id="ceoSalesBranches">${ceoBranchSalesRows(branches)}</div></section>
+      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceoSalesBranchTitle"><div class="ceo-panel-heading"><div><h2 id="ceoSalesBranchTitle">Branch performance</h2><p>Select a branch to filter the leaderboard below.</p></div><strong>${branches.length} branches</strong></div><div id="ceoSalesBranches">${ceoBranchSalesRows(branches)}</div></section>
       ${modelHtml}
       <section class="card ceo-officer-card" aria-labelledby="ceoOfficerTitle">
         <div class="sop-board-head"><div><h2 id="ceoOfficerTitle">Sales officer leaderboard</h2><p>Ranked by total leads.</p></div></div>
@@ -1745,13 +1745,17 @@ async function ceoSalesPerfView() {
     if (!officers.length) return;
 
     const bindBranchRows = () => {
-      document.querySelectorAll('#ceoSalesBranches .ceo-branch-row').forEach(row => row.onclick = () => {
-        const id = row.dataset.branchId ? Number(row.dataset.branchId) : null;
-        ceoSalesBranchFilter = ceoSalesBranchFilter === id ? null : id;
-        ceoSalesPage = 1;
-        document.getElementById('ceoSalesBranches').innerHTML = ceoBranchSalesRows(branches);
-        bindBranchRows();
-        renderRows();
+      document.querySelectorAll('#ceoSalesBranches .lead-row').forEach(row => {
+        const pick = () => {
+          const id = row.dataset.branchId ? Number(row.dataset.branchId) : null;
+          ceoSalesBranchFilter = ceoSalesBranchFilter === id ? null : id;
+          ceoSalesPage = 1;
+          document.getElementById('ceoSalesBranches').innerHTML = ceoBranchSalesRows(branches);
+          bindBranchRows();
+          renderRows();
+        };
+        row.onclick = pick;
+        row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } };
       });
     };
 
@@ -3336,19 +3340,19 @@ const CEO_OVERVIEW_VISIBLE_BRANCHES = 6;
 function ceoOverviewBranchRows(branches) {
   const rows = (branches || []).filter(Boolean);
   if (!rows.length) return '<p class="ceo-empty">No branch data available</p>';
-  return `<div class="ceo-branch-list" role="list">${rows.map((branch, index) => {
-    const total = ceoCount(branch.total);
-    const open = Math.min(total, ceoCount(branch.open));
-    const name = branch.name || branch.branch || 'Unknown branch';
-    return `<div class="ceo-branch-row is-static"${index >= CEO_OVERVIEW_VISIBLE_BRANCHES ? ' hidden' : ''} role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open`)}">
-      <span class="ceo-branch-row-top">
-        <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
-        <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
-        <span class="ceo-branch-stat"><b>${open}</b><small>open</small></span>
-        <span></span>
-      </span>
-    </div>`;
-  }).join('')}</div>${rows.length > CEO_OVERVIEW_VISIBLE_BRANCHES ? `<button type="button" class="ceo-branch-expand" id="ceoOverviewExpand">Show all ${rows.length} branches</button>` : ''}`;
+  return `<div class="tbl-wrap ceo-branch-tbl-wrap"><table class="tbl ceo-branch-tbl">
+    <thead><tr><th>Branch</th><th>Leads</th><th>Open</th></tr></thead>
+    <tbody>${rows.map((branch, index) => {
+      const total = ceoCount(branch.total);
+      const open = Math.min(total, ceoCount(branch.open));
+      const name = branch.name || branch.branch || 'Unknown branch';
+      return `<tr${index >= CEO_OVERVIEW_VISIBLE_BRANCHES ? ' hidden' : ''}>
+        <td><b>${esc(branchLabel(name))}</b></td>
+        <td>${total}</td>
+        <td>${open}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>${rows.length > CEO_OVERVIEW_VISIBLE_BRANCHES ? `<button type="button" class="ceo-branch-expand" id="ceoOverviewExpand">Show all ${rows.length} branches</button>` : ''}`;
 }
 
 async function ceoOverviewView() {
@@ -3387,11 +3391,11 @@ async function ceoOverviewView() {
         ${ceoSummaryMetric('Open', open, `${ceoCount(callSummary.followup)} in follow-up`, 'open', { bucket: 'open' })}
         ${ceoSummaryMetric('New this week', newThisWeek, 'Leads added in the last 7 days', 'new', null)}
       </section>
-      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Top branches by current lead volume.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Open</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
+      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Top branches by current lead volume.</p></div><strong>${branches.length} branches</strong></div>${ceoOverviewBranchRows(branches)}</section>
     </div>`;
     const expandBtn = document.getElementById('ceoOverviewExpand');
     if (expandBtn) expandBtn.onclick = () => {
-      view.querySelectorAll('.ceo-branch-row[hidden]').forEach(row => row.hidden = false);
+      view.querySelectorAll('.ceo-branch-tbl tr[hidden]').forEach(row => row.hidden = false);
       expandBtn.remove();
     };
   } catch (e) {
