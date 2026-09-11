@@ -3321,7 +3321,7 @@ function ceoMetricValue(filters, label, count) {
   return `<button type="button" class="ceo-inline-metric" onclick="${callCenterMetricClick(filters, label)}">${value}</button>`;
 }
 
-const CEO_TONE_ICON = { total: '▥', won: '✓', open: '◐', overdue: '⚠', conversion: '↗', booked: '◧', lost: '✕' };
+const CEO_TONE_ICON = { total: '▥', won: '✓', open: '◐', overdue: '⚠', conversion: '↗', booked: '◧', lost: '✕', new: '↑' };
 
 function ceoSummaryMetric(label, value, detail, tone, filters) {
   const metric = filters
@@ -3331,6 +3331,8 @@ function ceoSummaryMetric(label, value, detail, tone, filters) {
   return `<div class="ceo-summary-item ceo-summary-${esc(tone)}"><span class="ceo-summary-icon" aria-hidden="true">${icon}</span><span class="ceo-summary-label">${esc(label)}</span><div>${metric}</div><small>${esc(detail)}</small></div>`;
 }
 
+const CEO_OVERVIEW_VISIBLE_BRANCHES = 6;
+
 function ceoOverviewBranchRows(branches) {
   const rows = (branches || []).filter(Boolean);
   if (!rows.length) return '<p class="ceo-empty">No branch data available</p>';
@@ -3338,7 +3340,7 @@ function ceoOverviewBranchRows(branches) {
     const total = ceoCount(branch.total);
     const open = Math.min(total, ceoCount(branch.open));
     const name = branch.name || branch.branch || 'Unknown branch';
-    return `<button type="button" class="ceo-branch-row" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open`)}">
+    return `<button type="button" class="ceo-branch-row"${index >= CEO_OVERVIEW_VISIBLE_BRANCHES ? ' hidden' : ''} data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open`)}">
       <span class="ceo-branch-row-top">
         <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
         <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
@@ -3346,7 +3348,13 @@ function ceoOverviewBranchRows(branches) {
         <span class="ceo-branch-arrow" aria-hidden="true">↗</span>
       </span>
     </button>`;
-  }).join('')}</div>`;
+  }).join('')}</div>${rows.length > CEO_OVERVIEW_VISIBLE_BRANCHES ? `<button type="button" class="ceo-branch-expand" id="ceoOverviewExpand">Show all ${rows.length} branches</button>` : ''}`;
+}
+
+function ceoOpenBranchSalesPerf(branchId) {
+  ceoSalesBranchFilter = Number(branchId) || null;
+  ceoSalesPage = 1;
+  go('salesPerf');
 }
 
 async function ceoOverviewView() {
@@ -3376,16 +3384,23 @@ async function ceoOverviewView() {
     const won = ceoCount(summary.booked || callSummary.booked) + ceoCount(summary.retailed || callSummary.retailed);
     const lost = ceoCount(summary.lost || callSummary.lost);
     const open = Math.max(0, total - won - lost);
+    const newThisWeek = branches.reduce((sum, branch) => sum + ceoCount(branch.new_this_week), 0);
 
     view.innerHTML = `<div class="ceo-page">
       <header class="ceo-hero"><p>Branch volume and follow-up pressure in one read-only view.</p><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>All ${branches.length} branches</span></div></header>
       <section class="ceo-summary" aria-label="Executive totals">
         ${ceoSummaryMetric('Total leads', total, 'Current lead book', 'total', { bucket: 'total' })}
         ${ceoSummaryMetric('Open', open, `${ceoCount(callSummary.followup)} in follow-up`, 'open', { bucket: 'open' })}
+        ${ceoSummaryMetric('New this week', newThisWeek, 'Leads added in the last 7 days', 'new', null)}
       </section>
-      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Ranked by current lead volume. Select a branch for the full report.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Open</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
+      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Top branches by current lead volume. Select one for its sales officer report.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Open</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
     </div>`;
-    view.querySelectorAll('.ceo-branch-row').forEach(row => row.onclick = () => analyticsView(Number(row.dataset.branchId), row.dataset.branchName));
+    view.querySelectorAll('.ceo-branch-row').forEach(row => row.onclick = () => ceoOpenBranchSalesPerf(row.dataset.branchId));
+    const expandBtn = document.getElementById('ceoOverviewExpand');
+    if (expandBtn) expandBtn.onclick = () => {
+      view.querySelectorAll('.ceo-branch-row[hidden]').forEach(row => row.hidden = false);
+      expandBtn.remove();
+    };
   } catch (e) {
     view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'ceoOverviewRetry')}`;
     document.getElementById('ceoOverviewRetry').onclick = () => ceoOverviewView();

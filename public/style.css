@@ -1488,9 +1488,11 @@ body.ceo-shell main { max-width: 1320px; padding: 22px 28px 40px; }
 .ceo-summary-total { background: #eaf2fb; border-color: #c3dbf3; }
 .ceo-summary-won { background: #e9f8ec; border-color: #b9e6c2; }
 .ceo-summary-open { background: #eef3f8; border-color: #cddce9; }
+.ceo-summary-new { background: #eef8f0; border-color: #c3e6cc; }
 .ceo-summary-total strong, .ceo-summary-total .ceo-inline-metric, .ceo-summary-total .ceo-summary-icon { color: var(--ceo-blue); }
 .ceo-summary-won strong, .ceo-summary-won .ceo-inline-metric, .ceo-summary-won .ceo-summary-icon { color: var(--ceo-green); }
 .ceo-summary-open strong, .ceo-summary-open .ceo-inline-metric, .ceo-summary-open .ceo-summary-icon { color: var(--ceo-slate); }
+.ceo-summary-new strong, .ceo-summary-new .ceo-inline-metric, .ceo-summary-new .ceo-summary-icon { color: var(--ceo-green); }
 .ceo-inline-metric { padding: 0; border: 0; background: transparent; cursor: pointer; }
 .ceo-inline-metric:hover { text-decoration: underline; text-underline-offset: 3px; filter: brightness(1.15); }
 .ceo-inline-metric.is-zero { color: #9aa6ad; cursor: default; text-decoration: none; }
@@ -1509,6 +1511,8 @@ body.ceo-shell main { max-width: 1320px; padding: 22px 28px 40px; }
 .ceo-branch-header span:nth-child(3) { grid-column: 3; text-align: right; }
 .ceo-branch-header span:nth-child(4) { grid-column: 4; }
 .ceo-branch-list { display: block; max-height: none; overflow: visible; padding: 0; }
+.ceo-branch-expand { display: block; width: 100%; padding: 12px 18px; color: var(--ceo-blue); font-size: 12.5px; font-weight: 700; text-align: center; cursor: pointer; }
+.ceo-branch-expand:hover { background: #fafbfa; color: var(--ceo-ink); }
 .ceo-branch-row { display: block; width: 100%; padding: 11px 18px 10px; border: 0; border-left: 3px solid var(--ceo-blue-mark); border-bottom: 1px solid #e9edef; background: transparent; color: var(--ceo-ink); text-align: left; cursor: pointer; transition: background .18s ease, transform .18s ease; }
 .ceo-branch-row:last-child { border-bottom: 0; }
 .ceo-branch-row:hover { transform: translateX(5px); background: #fafbfa; }

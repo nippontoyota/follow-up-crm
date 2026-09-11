@@ -1890,10 +1890,12 @@ app.get('/api/analytics', auth('admin', 'ceo'), async (req, res, next) => {
       res.json(await all(
         `SELECT b.id, b.name, COUNT(l.id)::int AS total,
                 SUM(CASE WHEN l.status = 'open' THEN 1 ELSE 0 END)::int AS open,
-                SUM(CASE WHEN l.stage IN ('Booking Done', 'Retail Done') THEN 1 ELSE 0 END)::int AS won
+                SUM(CASE WHEN l.stage IN ('Booking Done', 'Retail Done') THEN 1 ELSE 0 END)::int AS won,
+                SUM(CASE WHEN l.created_at >= ? THEN 1 ELSE 0 END)::int AS new_this_week
          FROM branches b
          LEFT JOIN leads l ON l.branch_id = b.id
-         GROUP BY b.id, b.name ORDER BY total DESC`
+         GROUP BY b.id, b.name ORDER BY total DESC`,
+         addDays(today(), -7)
       ));
     }
   } catch (e) { next(e); }
