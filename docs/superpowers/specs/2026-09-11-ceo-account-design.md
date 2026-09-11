@@ -18,6 +18,7 @@ Use a distinct `ceo` role rather than aliasing CEO to `admin`.
 
 CEO receives read-only access to:
 
+- An Executive Overview with visual branch comparisons, conversion mix, and workload indicators.
 - Branch Analytics across all branches, with branch drill-down.
 - Call Center and Source Quality reports across all branches.
 - Sales Officer performance and Lead Analysis across all branches, including branch-wise breakdowns.
@@ -32,6 +33,7 @@ CEO must not receive User management, lead reassignment, master-list editing, up
 - Add a fixed CEO definition and additive seed helper, called during the same startup path as Cluster Manager seeding.
 - Permit `ceo` on the existing read/report endpoints needed above and preserve all-branch query behavior for the role.
 - Reuse the existing report pages and add only CEO navigation/role checks needed to render branch selectors, branch columns, and flag history correctly.
+- Build the Executive Overview from existing aggregate endpoints using dependency-free HTML/CSS/SVG visuals; every visual summary links to the corresponding detailed lead view.
 - Keep Cluster Manager branch scoping unchanged.
 
 ## Verification
@@ -41,3 +43,4 @@ CEO must not receive User management, lead reassignment, master-list editing, up
 - Verify CEO can read each intended report and lead detail endpoint.
 - Verify CEO receives `403` from user-management, reassignment, upload, follow-up, flag, and master mutation endpoints.
 - Verify existing Admin and Cluster Manager account behavior remains unchanged.
+- Verify charts render with zero-value and empty-state data without producing invalid widths or misleading totals.
