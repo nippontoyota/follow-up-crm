@@ -3050,11 +3050,28 @@ function ceoMetricValue(filters, label, count) {
   return `<button type="button" class="ceo-inline-metric" onclick="${callCenterMetricClick(filters, label)}">${value}</button>`;
 }
 
+const CEO_TONE_ICON = { total: '▥', won: '✓', open: '◐', overdue: '⚠', conversion: '↗' };
+
 function ceoSummaryMetric(label, value, detail, tone, filters) {
   const metric = filters
     ? ceoMetricValue(filters, `${label} leads`, value)
     : `<strong>${esc(value)}</strong>`;
-  return `<div class="ceo-summary-item ceo-summary-${esc(tone)}"><span>${esc(label)}</span><div>${metric}</div><small>${esc(detail)}</small></div>`;
+  const icon = CEO_TONE_ICON[tone] || '•';
+  return `<div class="ceo-summary-item ceo-summary-${esc(tone)}"><span class="ceo-summary-icon" aria-hidden="true">${icon}</span><span class="ceo-summary-label">${esc(label)}</span><div>${metric}</div><small>${esc(detail)}</small></div>`;
+}
+
+function ceoBranchBar(total, won, openTotal, overdue) {
+  const t = ceoCount(total);
+  if (!t) return '';
+  const wonCount = Math.min(t, ceoCount(won));
+  const overdueCount = Math.min(t, ceoCount(overdue));
+  const openOnly = Math.max(0, Math.min(t - wonCount, ceoCount(openTotal) - overdueCount));
+  const aria = `${wonCount} won, ${openOnly} open, ${overdueCount} overdue of ${t} total`;
+  return `<div class="ceo-branch-bar" role="img" aria-label="${esc(aria)}">
+    <span class="ceo-branch-bar-seg ceo-branch-bar-won" style="width:${ceoPercent(wonCount, t)}"></span>
+    <span class="ceo-branch-bar-seg ceo-branch-bar-open" style="width:${ceoPercent(openOnly, t)}"></span>
+    <span class="ceo-branch-bar-seg ceo-branch-bar-overdue" style="width:${ceoPercent(overdueCount, t)}"></span>
+  </div>`;
 }
 
 function ceoOverviewBranchRows(branches) {
@@ -3068,14 +3085,34 @@ function ceoOverviewBranchRows(branches) {
     const name = branch.name || branch.branch || 'Unknown branch';
     const attentionClass = overdue ? ' is-attention' : (won ? ' is-positive' : '');
     return `<button type="button" class="ceo-branch-row${attentionClass}" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${ceoPercent(won, total)} won, ${open} open, ${overdue} overdue`)}">
-      <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
-      <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
-      <span class="ceo-branch-stat"><b>${ceoPercent(won, total)}</b><small>win rate</small></span>
-      <span class="ceo-branch-stat"><b>${open}</b><small>open</small></span>
-      <span class="ceo-branch-stat ceo-branch-overdue"><b>${overdue}</b><small>overdue</small></span>
-      <span class="ceo-branch-arrow" aria-hidden="true">↗</span>
+      <span class="ceo-branch-row-top">
+        <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
+        <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
+        <span class="ceo-branch-stat"><b>${ceoPercent(won, total)}</b><small>win rate</small></span>
+        <span class="ceo-branch-stat"><b>${open}</b><small>open</small></span>
+        <span class="ceo-branch-stat ceo-branch-overdue"><b>${overdue}</b><small>overdue</small></span>
+        <span class="ceo-branch-arrow" aria-hidden="true">↗</span>
+      </span>
+      ${ceoBranchBar(total, won, open, overdue)}
     </button>`;
   }).join('')}</div>`;
+}
+
+function ceoDonutChart(parts, centerValue, centerLabel) {
+  const total = parts.reduce((sum, p) => sum + ceoCount(p.value), 0);
+  let acc = 0;
+  const stops = total > 0
+    ? parts.filter(p => ceoCount(p.value) > 0).map(p => {
+        const start = (acc / total) * 100;
+        acc += ceoCount(p.value);
+        const end = (acc / total) * 100;
+        return `var(${p.colorVar}) ${start.toFixed(2)}% ${end.toFixed(2)}%`;
+      }).join(', ')
+    : '#e3e7ea 0% 100%';
+  const aria = parts.map(p => `${p.label}: ${p.value}`).join(', ');
+  return `<div class="ceo-donut" style="background:conic-gradient(${stops})" role="img" aria-label="${esc(aria)}">
+    <div class="ceo-donut-hole"><strong>${esc(centerValue)}</strong><span>${esc(centerLabel)}</span></div>
+  </div>`;
 }
 
 function ceoMixCard(summary) {
@@ -3085,15 +3122,15 @@ function ceoMixCard(summary) {
   const lost = Math.min(Math.max(0, total - booked - retailed), ceoCount(summary.lost));
   const open = Math.max(0, total - booked - retailed - lost);
   const parts = [
-    ['open', 'Open', open, 'open'],
-    ['booked', 'Booked', booked, 'booked'],
-    ['retailed', 'Retail', retailed, 'retail'],
-    ['lost', 'Lost', lost, 'lost'],
+    { key: 'open', label: 'Open', value: open, colorVar: '--ceo-mix-open-c' },
+    { key: 'booked', label: 'Booked', value: booked, colorVar: '--ceo-mix-booked-c' },
+    { key: 'retailed', label: 'Retail', value: retailed, colorVar: '--ceo-mix-retail-c' },
+    { key: 'lost', label: 'Lost', value: lost, colorVar: '--ceo-mix-lost-c' },
   ];
   return `<section class="ceo-panel ceo-mix-panel" aria-labelledby="ceo-mix-title">
     <div class="ceo-panel-heading"><div><h2 id="ceo-mix-title">Conversion mix</h2><p>Where the current lead book sits.</p></div><strong>${ceoPercent(booked + retailed, total)} won</strong></div>
-    <div class="ceo-mix-bar" role="img" aria-label="${esc(parts.map(([, label, value]) => `${label}: ${value}`).join(', '))}">${parts.map(([key, , value]) => `<span class="ceo-mix-segment ceo-mix-${key}" style="width:${ceoPercent(value, total)}"></span>`).join('')}</div>
-    <div class="ceo-mix-legend">${parts.map(([key, label, value]) => `<div class="ceo-mix-item"><i class="ceo-swatch ceo-swatch-${key}" aria-hidden="true"></i><span>${label}</span>${ceoMetricValue({ bucket: key === 'retailed' ? 'retailed' : key }, `${label} leads`, value)}</div>`).join('')}</div>
+    ${ceoDonutChart(parts, ceoPercent(booked + retailed, total), 'won')}
+    <div class="ceo-mix-legend">${parts.map(p => `<div class="ceo-mix-item"><i class="ceo-swatch ceo-swatch-${p.key}" aria-hidden="true"></i><span>${p.label}</span>${ceoMetricValue({ bucket: p.key === 'retailed' ? 'retailed' : p.key }, `${p.label} leads`, p.value)}</div>`).join('')}</div>
   </section>`;
 }
 
