@@ -262,7 +262,7 @@ const TABS = {
   call_center_manager: [['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
   cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['leadSearch', 'Search Leads', '🔎']],
-  ceo: [['executiveOverview', 'Executive Overview', '◈'], ['analytics', 'Branch performance', '▤'], ['salesPerf', 'Sales performance', '↗']],
+  ceo: [['executiveOverview', 'Executive Overview', '◈'], ['analytics', 'Branch performance', '▤'], ['salesPerf', 'Sales performance', '↗'], ['customerVoice', 'Customer voice', '❝']],
 };
 
 function branchLabel(name) {
@@ -349,7 +349,7 @@ function go(t) {
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   document.getElementById('hdrTitle').textContent =
     TABS[me.role].find(x => x[0] === t)[1];
-  ({ executiveOverview: ceoOverviewView, analytics: analyticsView, callCenter: callCenterView, sourceQuality: sourceQualityView, salesPerf: me.role === 'ceo' ? ceoSalesPerfView : salesPerformanceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
+  ({ executiveOverview: ceoOverviewView, analytics: analyticsView, callCenter: callCenterView, sourceQuality: sourceQualityView, salesPerf: me.role === 'ceo' ? ceoSalesPerfView : salesPerformanceView, customerVoice: ceoCustomerVoiceView, leadAnalysis: leadAnalysisView, leadSearch: leadSearchView, flagged: flaggedLeadsView, users: usersView, reassign: reassignView, lists: listsView, new: newLeadView, fresh: leadsView, today: leadsView, leads: leadsView, dashboard: managerView })[t]();
 }
 
 /* ------------------------------------------------------------- admin: users */
@@ -1850,6 +1850,122 @@ async function ceoSalesPerfView() {
   } catch (e) {
     view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'ceoSalesPerfRetry')}`;
     document.getElementById('ceoSalesPerfRetry').onclick = () => ceoSalesPerfView();
+  }
+}
+
+/* -------------------------------------------------------- ceo: customer voice */
+
+const CEO_VOICE_TONE = {
+  'Booking Done': 'good', 'Retail Done': 'good', 'Already Booked': 'good',
+  'Not Interested': 'bad', 'Lost to Competition': 'bad', 'Finance Rejected': 'bad', 'Dropped': 'bad', 'Lost to co-dealer': 'bad', 'LOST RNR': 'bad',
+};
+const ceoVoiceTone = outcome => CEO_VOICE_TONE[outcome] || 'neutral';
+
+function ceoVoiceReasonRows(rows, toneFn) {
+  if (!rows.length) return '<p class="ceo-empty">Nothing recorded yet.</p>';
+  const total = rows.reduce((sum, r) => sum + ceoCount(r.count), 0);
+  const max = Math.max(...rows.map(r => ceoCount(r.count)), 1);
+  return `<div class="ceo-voice-reason-list">${rows.map(r => {
+    const count = ceoCount(r.count);
+    return `<div class="ceo-voice-reason-row">
+      <span class="ceo-voice-reason-label">${esc(r.reason)}</span>
+      <span class="ceo-voice-reason-bar"><span class="ceo-voice-reason-fill ceo-voice-tone-${toneFn ? toneFn(r.reason) : 'neutral'}" style="width:${ceoPercent(count, max)}"></span></span>
+      <span class="ceo-voice-reason-count"><b>${count}</b><small>${ceoPercent(count, total)}</small></span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function ceoVoiceSplit(unreachable, rejected) {
+  const total = unreachable + rejected;
+  if (!total) return '';
+  const unreachablePct = ceoPercent(unreachable, total);
+  const rejectedPct = ceoPercent(rejected, total);
+  return `<div class="ceo-voice-split">
+      <div class="ceo-voice-split-stat ceo-voice-tone-bad"><span>Could not reach</span><strong>${unreachablePct}</strong><small>${unreachable} of ${total} lost leads — no real answer on record</small></div>
+      <div class="ceo-voice-split-stat ceo-voice-tone-warn"><span>Said no</span><strong>${rejectedPct}</strong><small>${rejected} of ${total} lost leads — an explicit reason on record</small></div>
+    </div>
+    <div class="ceo-voice-split-bar" role="img" aria-label="${esc(`${unreachablePct} could not be reached, ${rejectedPct} gave an explicit reason`)}"><span class="ceo-voice-tone-bad" style="width:${unreachablePct}"></span><span class="ceo-voice-tone-warn" style="width:${rejectedPct}"></span></div>
+    ${unreachable >= rejected
+      ? `<p class="ceo-voice-callout"><b>${unreachablePct}</b> of lost leads were never actually reached — that is a follow-up discipline problem, not a market one.</p>`
+      : `<p class="ceo-voice-callout">Most losses have an explicit reason on record. The breakdown below shows where.</p>`}`;
+}
+
+function ceoVoiceStallCallout(rows) {
+  if (!rows.length) return '';
+  const total = rows.reduce((sum, r) => sum + ceoCount(r.count), 0);
+  const top = rows[0];
+  return `<p class="ceo-voice-callout"><b>${esc(top.reason)}</b> is blocking the most open deals right now — ${ceoPercent(top.count, total)} of stalled leads are waiting on it.</p>`;
+}
+
+function ceoVoiceQuoteCard(q) {
+  const tone = ceoVoiceTone(q.outcome);
+  return `<article class="ceo-voice-quote">
+    <div class="ceo-voice-quote-head">
+      <span class="ceo-voice-quote-tag ceo-voice-tone-${tone}">${esc(q.outcome || 'Note')}</span>
+      <span class="ceo-voice-quote-meta">${esc(q.customer_name)} · ${esc(branchLabel(q.branch || '—'))}</span>
+    </div>
+    <p class="ceo-voice-quote-text">"${esc(q.remarks)}"</p>
+    <div class="ceo-voice-quote-foot"><span>${esc(q.sales_officer)}</span><span>${esc(displayDateTime(q.created_at))}</span></div>
+  </article>`;
+}
+
+async function ceoCustomerVoiceView() {
+  view.innerHTML = '<div class="ceo-loading" aria-busy="true"><span></span><span></span><span></span></div>';
+  try {
+    const d = await api('/ceo/customer-voice');
+    if (tab !== 'customerVoice') return;
+    const stallReasons = d.stallReasons || [];
+    const lossReasons = d.lossReasons || [];
+    const quotes = d.quotes || [];
+    const unreachable = ceoCount(lossReasons.find(r => r.reason === 'LOST RNR')?.count);
+    const explicitReasons = lossReasons.filter(r => r.reason !== 'LOST RNR');
+    const rejected = explicitReasons.reduce((sum, r) => sum + ceoCount(r.count), 0);
+
+    view.innerHTML = `<div class="ceo-page">
+      <header class="ceo-hero"><div><span class="ceo-eyebrow">NIPPON TOYOTA / CUSTOMER VOICE</span><h2>What customers are telling us</h2><p>Why deals stall, why they're lost, and what customers actually said — across every branch.</p></div><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>${d.remarksSampled || 0} recent notes</span></div></header>
+
+      <section class="ceo-panel ceo-voice-hero-panel" aria-labelledby="ceoLossTitle">
+        <div class="ceo-panel-heading"><div><h2 id="ceoLossTitle">Why we lose leads</h2><p>Every lead that closed lost, split by whether we ever got a real answer.</p></div></div>
+        ${ceoVoiceSplit(unreachable, rejected)}
+        ${explicitReasons.length ? `<h3 class="ceo-voice-subhead">When customers did give a reason</h3>${ceoVoiceReasonRows(explicitReasons, ceoVoiceTone)}` : ''}
+      </section>
+
+      <section class="card ai-analysis" aria-labelledby="ceoAiTitle">
+        <div class="ai-analysis-head">
+          <div class="ai-analysis-heading">
+            <span class="ai-analysis-eyebrow">AI analysis</span>
+            <h2 id="ceoAiTitle">🤖 Lost-lead patterns</h2>
+            <span class="ai-analysis-scope">All branches · last 100 lost-lead notes</span>
+          </div>
+          <button type="button" class="btn ai-analysis-action" onclick="fetchAiLostSummary()">
+            <span aria-hidden="true">✨</span>
+            <span>Generate summary</span>
+          </button>
+        </div>
+        <p class="ai-analysis-desc">Ask AI to read the remarks behind recent lost leads company-wide and surface patterns, correlations, and competitor mentions the counts above can't show.</p>
+        <div id="aiSummaryBox" class="ai-summary-box" style="display:none;"></div>
+      </section>
+
+      <section class="ceo-panel" aria-labelledby="ceoStallTitle">
+        <div class="ceo-panel-heading"><div><h2 id="ceoStallTitle">What's blocking open deals</h2><p>Latest recorded outcome on leads still open — revenue that's still recoverable.</p></div></div>
+        ${ceoVoiceStallCallout(stallReasons)}
+        ${ceoVoiceReasonRows(stallReasons)}
+      </section>
+
+      <section class="ceo-panel ceo-voice-quotes-panel" aria-labelledby="ceoQuotesTitle">
+        <div class="ceo-panel-heading"><div><h2 id="ceoQuotesTitle">In their own words</h2><p>The follow-up notes most worth reading — real losses and real sticking points first.</p></div></div>
+        ${quotes.length ? `<div class="ceo-voice-quote-grid" id="ceoVoiceQuotes">${quotes.slice(0, 10).map(ceoVoiceQuoteCard).join('')}</div>${quotes.length > 10 ? `<div class="ceo-voice-more-wrap"><button type="button" class="btn ghost" id="ceoVoiceMore">Show ${quotes.length - 10} more</button></div>` : ''}` : '<p class="ceo-empty">No follow-up notes recorded yet.</p>'}
+      </section>
+    </div>`;
+
+    const moreBtn = document.getElementById('ceoVoiceMore');
+    if (moreBtn) moreBtn.onclick = () => {
+      document.getElementById('ceoVoiceQuotes').innerHTML = quotes.map(ceoVoiceQuoteCard).join('');
+      moreBtn.remove();
+    };
+  } catch (e) {
+    view.innerHTML = `${routeNotice()}${analyticsError(e.message, 'ceoVoiceRetry')}`;
+    document.getElementById('ceoVoiceRetry').onclick = () => ceoCustomerVoiceView();
   }
 }
 

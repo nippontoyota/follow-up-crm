@@ -803,7 +803,7 @@ app.get('/api/manager/leads/export', auth('manager', 'admin'), async (req, res, 
   } catch (e) { next(e); }
 });
 
-app.get('/api/manager/ai-lost-summary', auth('manager', 'admin'), async (req, res, next) => {
+app.get('/api/manager/ai-lost-summary', auth('manager', 'admin', 'ceo'), async (req, res, next) => {
   try {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
@@ -1674,6 +1674,58 @@ app.get('/api/sales-manager/lead-analysis/leads', auth('sales_manager', 'cluster
     const total = rows[0]?.total_count || 0;
     const leads = rows.map(({ total_count, ...lead }) => lead);
     res.json({ leads, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) });
+  } catch (e) { next(e); }
+});
+
+app.get('/api/ceo/customer-voice', auth('ceo'), async (req, res, next) => {
+  try {
+    const branchIds = managerBranchIds(req);
+    if (!branchIds.length) return bad(res, 'No assigned branches');
+    const leadFilter = branchFilter('l.branch_id', branchIds);
+    const latestOutcomeJoin = `LEFT JOIN LATERAL (
+        SELECT f.outcome FROM followups f WHERE f.lead_id = l.id ORDER BY f.created_at DESC, f.id DESC LIMIT 1
+      ) latest ON true`;
+
+    const [stallReasons, lossReasons, remarkRows] = await Promise.all([
+      all(`SELECT COALESCE(NULLIF(TRIM(latest.outcome), ''), 'No outcome yet') AS reason, COUNT(*)::int AS count
+        FROM leads l ${latestOutcomeJoin}
+        WHERE ${leadFilter.sql} AND l.status = 'open' AND l.fcount > 0
+        GROUP BY COALESCE(NULLIF(TRIM(latest.outcome), ''), 'No outcome yet')
+        ORDER BY count DESC, reason
+        LIMIT 10`, ...leadFilter.args),
+
+      all(`SELECT COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown') AS reason, COUNT(*)::int AS count
+        FROM leads l ${latestOutcomeJoin}
+        WHERE ${leadFilter.sql} AND l.stage = 'Lost Lead' AND l.status = 'closed'
+        GROUP BY COALESCE(NULLIF(TRIM(latest.outcome), ''), 'Unknown')
+        ORDER BY count DESC, reason`, ...leadFilter.args),
+
+      all(`SELECT l.id AS lead_id, l.customer_name, l.branch_id, b.name AS branch,
+          COALESCE(NULLIF(TRIM(l.original_so_name), ''), 'Unknown Sales Officer') AS sales_officer,
+          f.outcome, f.remarks, f.created_at
+        FROM followups f
+        JOIN leads l ON l.id = f.lead_id
+        LEFT JOIN branches b ON b.id = l.branch_id
+        WHERE ${leadFilter.sql} AND LENGTH(TRIM(COALESCE(f.remarks, ''))) > 6
+        ORDER BY f.created_at DESC, f.id DESC
+        LIMIT 400`, ...leadFilter.args),
+    ]);
+
+    // Surface the notes a CEO would actually stop on: a real loss first, then a
+    // deal visibly stuck on something (price, exchange, more info) — not routine
+    // "will call back" chatter, which is most of the raw feed by volume.
+    const STUCK_REASONS = new Set(['Discount Issue', 'Exchange Issue', 'Need More Details']);
+    const quotePriority = (outcome) => LOST.has(outcome) ? 2 : STUCK_REASONS.has(outcome) ? 1 : 0;
+    const quotes = [...remarkRows]
+      .sort((a, b) => quotePriority(b.outcome) - quotePriority(a.outcome) || new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 24);
+
+    res.json({
+      stallReasons,
+      lossReasons,
+      quotes,
+      remarksSampled: remarkRows.length,
+    });
   } catch (e) { next(e); }
 });
 
