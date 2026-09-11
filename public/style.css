@@ -1706,9 +1706,10 @@ body.ceo-shell .sop-filter:focus { border-color: var(--ceo-blue-mark); box-shado
 .ceo-officer-stat-due:hover strong { text-decoration: underline; }
 
 .ceo-attention-panel.is-good { border-color: #bfe3c8; background: linear-gradient(180deg, #eafaf0, var(--ceo-panel) 90px); }
-.ceo-attention-panel.is-good .ceo-attention-item { border-top-color: #d3ecda; }
+.ceo-attention-panel.is-good .ceo-attention-item { grid-template-columns: 28px minmax(0, 1fr) auto; border-top-color: #d3ecda; }
 .ceo-attention-panel.is-good .ceo-attention-rank { background: var(--ceo-green-mark); }
-.ceo-attention-panel.is-good .ceo-attention-arrow { color: var(--ceo-green); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ceo-attention-panel.is-good .ceo-attention-copy small { color: var(--ceo-muted); }
+.ceo-attention-panel.is-good .ceo-attention-arrow { color: var(--ceo-green); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ceo-attention-panel.is-good .ceo-attention-item:hover { background: rgba(15,122,52,.05); }
 
 @media (max-width: 1100px) and (min-width: 768px) {
