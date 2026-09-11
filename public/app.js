@@ -1632,7 +1632,6 @@ let salesPerfFilter = '';
 
 /* -------------------------------------------------------- ceo: sales performance */
 
-let ceoSalesSort = 'conversion';
 let ceoSalesPage = 1;
 let ceoSalesFilter = '';
 let ceoSalesBranchFilter = null;
@@ -1657,9 +1656,9 @@ function ceoBranchSalesRollup(officers) {
   const map = new Map();
   for (const o of officers) {
     const key = o.branch_id ?? o.branch ?? 'unknown';
-    if (!map.has(key)) map.set(key, { branch_id: o.branch_id ?? null, branch: o.branch || 'Unknown branch', total: 0, booked: 0, retailed: 0, lost: 0, due: 0, officers: 0 });
+    if (!map.has(key)) map.set(key, { branch_id: o.branch_id ?? null, branch: o.branch || 'Unknown branch', total: 0, booked: 0, retailed: 0, lost: 0, officers: 0 });
     const b = map.get(key);
-    b.total += o.total; b.booked += o.booked; b.retailed += o.retailed; b.lost += o.lost; b.due += o.due; b.officers += 1;
+    b.total += o.total; b.booked += o.booked; b.retailed += o.retailed; b.lost += o.lost; b.officers += 1;
   }
   return [...map.values()].sort((a, b) => b.total - a.total || String(a.branch).localeCompare(String(b.branch)));
 }
@@ -1667,17 +1666,13 @@ function ceoBranchSalesRollup(officers) {
 function ceoBranchSalesRows(branches) {
   if (!branches.length) return '<p class="ceo-empty">No branch data available</p>';
   return `<div class="ceo-branch-list" role="list">${branches.map((b, index) => {
-    const won = b.booked + b.retailed;
     const active = ceoSalesBranchFilter === b.branch_id;
-    const attentionClass = active ? ' is-active' : (b.due ? ' is-attention' : (won ? ' is-positive' : ''));
-    const aria = `${branchLabel(b.branch)}: ${b.total} total, ${ceoPercent(won, b.total)} conversion, ${b.officers} officers, ${b.due} due`;
-    return `<button type="button" class="ceo-branch-row${attentionClass}" data-branch-id="${b.branch_id ?? ''}" role="listitem" aria-pressed="${active}" aria-label="${esc(aria)}">
+    const aria = `${branchLabel(b.branch)}: ${b.total} total, ${b.officers} officers`;
+    return `<button type="button" class="ceo-branch-row${active ? ' is-active' : ''}" data-branch-id="${b.branch_id ?? ''}" role="listitem" aria-pressed="${active}" aria-label="${esc(aria)}">
       <span class="ceo-branch-row-top">
         <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
         <span class="ceo-branch-heading"><b>${esc(branchLabel(b.branch))}</b><small>${b.total} total leads</small></span>
-        <span class="ceo-branch-stat"><b>${ceoPercent(won, b.total)}</b><small>conversion</small></span>
         <span class="ceo-branch-stat"><b>${b.officers}</b><small>officers</small></span>
-        <span class="ceo-branch-stat ceo-branch-overdue"><b>${b.due}</b><small>due</small></span>
         <span class="ceo-branch-arrow" aria-hidden="true">${active ? '✕' : '↗'}</span>
       </span>
       ${ceoSalesMixBar(b)}
@@ -1686,19 +1681,12 @@ function ceoBranchSalesRows(branches) {
 }
 
 function ceoOfficerRow(o, rank) {
-  const ratePct = Math.min(100, Math.max(0, (o.outcomeRate || 0) * 100));
   return `<article class="ceo-officer-row" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" role="link" tabindex="0" aria-label="View all leads for ${esc(o.sales_officer)} in ${esc(branchLabel(o.branch || ''))}">
     <span class="ceo-officer-rank">${rank}</span>
-    <span class="ceo-officer-id"><b>${esc(o.sales_officer)}</b><small>${esc(branchLabel(o.branch || '—'))}${o.total > 0 && o.total < 5 ? ' · small sample' : ''}</small></span>
-    <span class="ceo-officer-rate"><span class="ceo-officer-rate-bar"><span style="width:${ratePct}%"></span></span><b>${salesPerfRateText(o.outcomeRate)}</b></span>
+    <span class="ceo-officer-id"><b>${esc(o.sales_officer)}</b><small>${esc(branchLabel(o.branch || '—'))}</small></span>
     <span class="ceo-officer-stat"><strong>${o.total}</strong><small>Leads</small></span>
     <span class="ceo-officer-stat ceo-officer-stat-good"><strong>${o.retailed}</strong><small>Retail</small></span>
-    <button type="button" class="ceo-officer-stat ceo-officer-stat-due" data-officer="${esc(o.sales_officer)}" data-branch-id="${o.branch_id || ''}" data-bucket="due"><strong>${o.due}</strong><small>Due</small></button>
   </article>`;
-}
-
-function ceoSalesTopItem(o, rank) {
-  return `<div class="ceo-attention-item"><span class="ceo-attention-rank">${String(rank).padStart(2, '0')}</span><span class="ceo-attention-copy"><b>${esc(o.sales_officer)}</b><small>${esc(branchLabel(o.branch || ''))} · ${o.retailed} retail, ${o.booked} booked</small></span><span class="ceo-attention-arrow" aria-hidden="true">${salesPerfRateText(o.outcomeRate)}</span></div>`;
 }
 
 async function ceoSalesPerfView() {
@@ -1711,27 +1699,11 @@ async function ceoSalesPerfView() {
     const booked = Number(s.booked) || 0;
     const retailed = Number(s.retailed) || 0;
     const lost = Number(s.lost) || 0;
-    const won = booked + retailed;
     const officers = (d.bySalesOfficer || []).map(salesOfficerMetric);
     const models = (d.byModel || []).map(salesModelMetric);
     const branches = ceoBranchSalesRollup(officers);
 
-    const topPerformers = officers
-      .filter(o => o.total >= 5 && o.outcomes > 0)
-      .sort((a, b) => b.outcomeRate - a.outcomeRate || b.outcomes - a.outcomes || b.total - a.total)
-      .slice(0, 5);
-
-    const overdueCount = officers.reduce((sum, o) => sum + o.due, 0);
-    const highVolumeNoOutcome = officers.filter(o => o.total >= 10 && o.outcomes === 0)
-      .sort((a, b) => b.total - a.total).slice(0, 5);
-
-    const sorters = {
-      conversion: (a, b) => (b.outcomeRate ?? -1) - (a.outcomeRate ?? -1) || b.outcomes - a.outcomes || b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
-      total: (a, b) => b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
-      due: (a, b) => b.due - a.due || b.total - a.total || a.sales_officer.localeCompare(b.sales_officer),
-    };
-
-    const sortedModels = [...models].sort((a, b) => b.retailed - a.retailed || b.outcomes - a.outcomes || b.total - a.total || String(a.model || '').localeCompare(String(b.model || '')));
+    const sortedModels = [...models].sort((a, b) => b.retailed - a.retailed || b.booked - a.booked || b.total - a.total || String(a.model || '').localeCompare(String(b.model || '')));
     const modelHtml = sortedModels.length ? `<section class="ceo-panel ceo-model-panel" aria-labelledby="ceoModelTitle">
       <div class="ceo-panel-heading"><div><h2 id="ceoModelTitle">Which models are selling</h2><p>Final sales come first, across every branch.</p></div><strong>${sortedModels.length} model${sortedModels.length === 1 ? '' : 's'}</strong></div>
       <div class="ceo-branch-list" role="list">${sortedModels.slice(0, 10).map((m, index) => `
@@ -1739,7 +1711,6 @@ async function ceoSalesPerfView() {
           <span class="ceo-branch-row-top">
             <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
             <span class="ceo-branch-heading"><b>${esc(m.model || 'Unknown model')}</b><small>${m.total} total leads</small></span>
-            <span class="ceo-branch-stat"><b>${salesPerfRateText(m.outcomeRate)}</b><small>conversion</small></span>
             <span class="ceo-branch-stat"><b>${m.retailed}</b><small>retail</small></span>
             <span class="ceo-branch-stat"><b>${m.booked}</b><small>booked</small></span>
           </span>
@@ -1755,25 +1726,13 @@ async function ceoSalesPerfView() {
         ${ceoSummaryMetric('Booked', booked, 'Awaiting retail', 'booked', null)}
         ${ceoSummaryMetric('Retail', retailed, 'Final sales', 'won', null)}
         ${ceoSummaryMetric('Lost', lost, 'Closed lost', 'lost', null)}
-        ${ceoSummaryMetric('Conversion', ceoPercent(won, totalLeads), 'Booked plus retail', 'conversion', null)}
       </section>
-      <div class="ceo-layout">
-        <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceoSalesBranchTitle"><div class="ceo-panel-heading"><div><h2 id="ceoSalesBranchTitle">Branch performance</h2><p>Select a branch to filter the leaderboard below.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Conversion</span><span>Officers</span><span>Due</span><span></span></div><div id="ceoSalesBranches">${ceoBranchSalesRows(branches)}</div></section>
-        <aside class="ceo-rail">
-          <section class="ceo-panel ceo-attention-panel is-good" aria-labelledby="ceoTopTitle"><div class="ceo-panel-heading"><div><h2 id="ceoTopTitle">Top performers</h2><p>Best conversion rate, 5+ leads.</p></div></div><div class="ceo-attention-list">${topPerformers.length ? topPerformers.map((o, i) => ceoSalesTopItem(o, i + 1)).join('') : '<p class="ceo-empty">Not enough volume yet to rank top performers.</p>'}</div></section>
-          <section class="ceo-panel ceo-attention-panel" aria-labelledby="ceoNeedsTitle"><div class="ceo-panel-heading"><div><h2 id="ceoNeedsTitle">Needs a look</h2><p>10+ leads, zero converted.</p></div></div><div class="ceo-attention-list">${highVolumeNoOutcome.length ? highVolumeNoOutcome.map((o, i) => `<div class="ceo-attention-item"><span class="ceo-attention-rank">${String(i + 1).padStart(2, '0')}</span><span class="ceo-attention-copy"><b>${esc(o.sales_officer)}</b><small>${esc(branchLabel(o.branch || ''))} · ${o.total} leads, 0 converted</small></span></div>`).join('') : '<p class="ceo-empty">No high-volume officers stuck at zero.</p>'}</div></section>
-        </aside>
-      </div>
+      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceoSalesBranchTitle"><div class="ceo-panel-heading"><div><h2 id="ceoSalesBranchTitle">Branch performance</h2><p>Select a branch to filter the leaderboard below.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Officers</span><span></span></div><div id="ceoSalesBranches">${ceoBranchSalesRows(branches)}</div></section>
       ${modelHtml}
       <section class="card ceo-officer-card" aria-labelledby="ceoOfficerTitle">
-        <div class="sop-board-head"><div><h2 id="ceoOfficerTitle">Sales officer leaderboard</h2><p>${overdueCount} lead${overdueCount === 1 ? '' : 's'} company-wide need a call.</p></div></div>
+        <div class="sop-board-head"><div><h2 id="ceoOfficerTitle">Sales officer leaderboard</h2><p>Ranked by total leads.</p></div></div>
         ${officers.length ? `
         <div class="sop-controls">
-          <div class="sop-sort" id="ceoSalesSort" aria-label="Sort Sales Officers">
-            <button type="button" class="sop-sort-opt${ceoSalesSort === 'conversion' ? ' on' : ''}" data-sort="conversion">Best conversion</button>
-            <button type="button" class="sop-sort-opt${ceoSalesSort === 'total' ? ' on' : ''}" data-sort="total">Most leads</button>
-            <button type="button" class="sop-sort-opt${ceoSalesSort === 'due' ? ' on' : ''}" data-sort="due">Most due</button>
-          </div>
           <input id="ceoSalesFilterInput" class="sop-filter" placeholder="Filter officers…" aria-label="Filter Sales Officers">
         </div>
         <div id="ceoSalesBranchPill"></div>
@@ -1784,12 +1743,6 @@ async function ceoSalesPerfView() {
     </div>`;
 
     if (!officers.length) return;
-
-    document.getElementById('ceoSalesSort').querySelectorAll('.sop-sort-opt').forEach(b => b.onclick = () => {
-      ceoSalesSort = b.dataset.sort;
-      ceoSalesPage = 1;
-      ceoSalesPerfView();
-    });
 
     const bindBranchRows = () => {
       document.querySelectorAll('#ceoSalesBranches .ceo-branch-row').forEach(row => row.onclick = () => {
@@ -1806,7 +1759,7 @@ async function ceoSalesPerfView() {
       const query = ceoSalesFilter.trim().toLowerCase();
       let filtered = ceoSalesBranchFilter != null ? officers.filter(o => o.branch_id === ceoSalesBranchFilter) : officers;
       if (query) filtered = filtered.filter(o => o.sales_officer.toLowerCase().includes(query));
-      filtered = [...filtered].sort(sorters[ceoSalesSort] || sorters.conversion);
+      filtered = [...filtered].sort((a, b) => b.total - a.total || a.sales_officer.localeCompare(b.sales_officer));
       const pages = Math.max(1, Math.ceil(filtered.length / SO_PERFORMANCE_PAGE_SIZE));
       ceoSalesPage = Math.min(Math.max(1, ceoSalesPage), pages);
       const start = (ceoSalesPage - 1) * SO_PERFORMANCE_PAGE_SIZE;
@@ -1831,10 +1784,6 @@ async function ceoSalesPerfView() {
         const openTotal = () => openOfficerLeads(row.dataset.branchId, row.dataset.officer, 'total');
         row.onclick = openTotal;
         row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTotal(); } };
-      });
-      view.querySelectorAll('#ceoSalesRows .ceo-officer-stat-due').forEach(b => b.onclick = (e) => {
-        e.stopPropagation();
-        openOfficerLeads(b.dataset.branchId, b.dataset.officer, b.dataset.bucket);
       });
       bindPager(nextPage => { ceoSalesPage = nextPage; renderRows(); }, pager);
     };
@@ -1861,34 +1810,21 @@ const CEO_VOICE_TONE = {
 };
 const ceoVoiceTone = outcome => CEO_VOICE_TONE[outcome] || 'neutral';
 
-function ceoVoiceReasonRows(rows, toneFn) {
+function ceoVoiceReasonRows(rows, toneFn, labelFn) {
   if (!rows.length) return '<p class="ceo-empty">Nothing recorded yet.</p>';
   const total = rows.reduce((sum, r) => sum + ceoCount(r.count), 0);
   const max = Math.max(...rows.map(r => ceoCount(r.count)), 1);
   return `<div class="ceo-voice-reason-list">${rows.map(r => {
     const count = ceoCount(r.count);
     return `<div class="ceo-voice-reason-row">
-      <span class="ceo-voice-reason-label">${esc(r.reason)}</span>
+      <span class="ceo-voice-reason-label">${esc(labelFn ? labelFn(r) : r.reason)}</span>
       <span class="ceo-voice-reason-bar"><span class="ceo-voice-reason-fill ceo-voice-tone-${toneFn ? toneFn(r.reason) : 'neutral'}" style="width:${ceoPercent(count, max)}"></span></span>
       <span class="ceo-voice-reason-count"><b>${count}</b><small>${ceoPercent(count, total)}</small></span>
     </div>`;
   }).join('')}</div>`;
 }
 
-function ceoVoiceSplit(unreachable, rejected) {
-  const total = unreachable + rejected;
-  if (!total) return '';
-  const unreachablePct = ceoPercent(unreachable, total);
-  const rejectedPct = ceoPercent(rejected, total);
-  return `<div class="ceo-voice-split">
-      <div class="ceo-voice-split-stat ceo-voice-tone-bad"><span>Could not reach</span><strong>${unreachablePct}</strong><small>${unreachable} of ${total} lost leads — no real answer on record</small></div>
-      <div class="ceo-voice-split-stat ceo-voice-tone-warn"><span>Said no</span><strong>${rejectedPct}</strong><small>${rejected} of ${total} lost leads — an explicit reason on record</small></div>
-    </div>
-    <div class="ceo-voice-split-bar" role="img" aria-label="${esc(`${unreachablePct} could not be reached, ${rejectedPct} gave an explicit reason`)}"><span class="ceo-voice-tone-bad" style="width:${unreachablePct}"></span><span class="ceo-voice-tone-warn" style="width:${rejectedPct}"></span></div>
-    ${unreachable >= rejected
-      ? `<p class="ceo-voice-callout"><b>${unreachablePct}</b> of lost leads were never actually reached — that is a follow-up discipline problem, not a market one.</p>`
-      : `<p class="ceo-voice-callout">Most losses have an explicit reason on record. The breakdown below shows where.</p>`}`;
-}
+const ceoVoiceLossLabel = r => r.reason === 'LOST RNR' ? 'Could not reach (no answer)' : r.reason;
 
 function ceoVoiceStallCallout(rows) {
   if (!rows.length) return '';
@@ -1915,19 +1851,15 @@ async function ceoCustomerVoiceView() {
     const d = await api('/ceo/customer-voice');
     if (tab !== 'customerVoice') return;
     const stallReasons = d.stallReasons || [];
-    const lossReasons = d.lossReasons || [];
+    const lossReasons = [...(d.lossReasons || [])].sort((a, b) => ceoCount(b.count) - ceoCount(a.count));
     const quotes = d.quotes || [];
-    const unreachable = ceoCount(lossReasons.find(r => r.reason === 'LOST RNR')?.count);
-    const explicitReasons = lossReasons.filter(r => r.reason !== 'LOST RNR');
-    const rejected = explicitReasons.reduce((sum, r) => sum + ceoCount(r.count), 0);
 
     view.innerHTML = `<div class="ceo-page">
       <header class="ceo-hero"><p>Why deals stall, why they're lost, and what customers actually said — across every branch.</p><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>${d.remarksSampled || 0} recent notes</span></div></header>
 
       <section class="ceo-panel ceo-voice-hero-panel" aria-labelledby="ceoLossTitle">
-        <div class="ceo-panel-heading"><div><h2 id="ceoLossTitle">Why we lose leads</h2><p>Every lead that closed lost, split by whether we ever got a real answer.</p></div></div>
-        ${ceoVoiceSplit(unreachable, rejected)}
-        ${explicitReasons.length ? `<h3 class="ceo-voice-subhead">When customers did give a reason</h3>${ceoVoiceReasonRows(explicitReasons, ceoVoiceTone)}` : ''}
+        <div class="ceo-panel-heading"><div><h2 id="ceoLossTitle">Why we lose leads</h2><p>Every lead that closed lost, ranked by reason.</p></div></div>
+        ${ceoVoiceReasonRows(lossReasons, ceoVoiceTone, ceoVoiceLossLabel)}
       </section>
 
       <section class="card ai-analysis" aria-labelledby="ceoAiTitle">
@@ -3399,78 +3331,22 @@ function ceoSummaryMetric(label, value, detail, tone, filters) {
   return `<div class="ceo-summary-item ceo-summary-${esc(tone)}"><span class="ceo-summary-icon" aria-hidden="true">${icon}</span><span class="ceo-summary-label">${esc(label)}</span><div>${metric}</div><small>${esc(detail)}</small></div>`;
 }
 
-function ceoBranchBar(total, won, openTotal, overdue) {
-  const t = ceoCount(total);
-  if (!t) return '';
-  const wonCount = Math.min(t, ceoCount(won));
-  const overdueCount = Math.min(t, ceoCount(overdue));
-  const openOnly = Math.max(0, Math.min(t - wonCount, ceoCount(openTotal) - overdueCount));
-  const aria = `${wonCount} won, ${openOnly} open, ${overdueCount} overdue of ${t} total`;
-  return `<div class="ceo-branch-bar" role="img" aria-label="${esc(aria)}">
-    <span class="ceo-branch-bar-seg ceo-branch-bar-won" style="width:${ceoPercent(wonCount, t)}"></span>
-    <span class="ceo-branch-bar-seg ceo-branch-bar-open" style="width:${ceoPercent(openOnly, t)}"></span>
-    <span class="ceo-branch-bar-seg ceo-branch-bar-overdue" style="width:${ceoPercent(overdueCount, t)}"></span>
-  </div>`;
-}
-
 function ceoOverviewBranchRows(branches) {
   const rows = (branches || []).filter(Boolean);
   if (!rows.length) return '<p class="ceo-empty">No branch data available</p>';
   return `<div class="ceo-branch-list" role="list">${rows.map((branch, index) => {
     const total = ceoCount(branch.total);
     const open = Math.min(total, ceoCount(branch.open));
-    const won = Math.min(total, ceoCount(branch.won));
-    const overdue = ceoCount(branch.overdue);
     const name = branch.name || branch.branch || 'Unknown branch';
-    const attentionClass = overdue ? ' is-attention' : (won ? ' is-positive' : '');
-    return `<button type="button" class="ceo-branch-row${attentionClass}" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${ceoPercent(won, total)} won, ${open} open, ${overdue} overdue`)}">
+    return `<button type="button" class="ceo-branch-row" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open`)}">
       <span class="ceo-branch-row-top">
         <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
         <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
-        <span class="ceo-branch-stat"><b>${ceoPercent(won, total)}</b><small>win rate</small></span>
         <span class="ceo-branch-stat"><b>${open}</b><small>open</small></span>
-        <span class="ceo-branch-stat ceo-branch-overdue"><b>${overdue}</b><small>overdue</small></span>
         <span class="ceo-branch-arrow" aria-hidden="true">↗</span>
       </span>
-      ${ceoBranchBar(total, won, open, overdue)}
     </button>`;
   }).join('')}</div>`;
-}
-
-function ceoDonutChart(parts, centerValue, centerLabel) {
-  const total = parts.reduce((sum, p) => sum + ceoCount(p.value), 0);
-  let acc = 0;
-  const stops = total > 0
-    ? parts.filter(p => ceoCount(p.value) > 0).map(p => {
-        const start = (acc / total) * 100;
-        acc += ceoCount(p.value);
-        const end = (acc / total) * 100;
-        return `var(${p.colorVar}) ${start.toFixed(2)}% ${end.toFixed(2)}%`;
-      }).join(', ')
-    : '#e3e7ea 0% 100%';
-  const aria = parts.map(p => `${p.label}: ${p.value}`).join(', ');
-  return `<div class="ceo-donut" style="background:conic-gradient(${stops})" role="img" aria-label="${esc(aria)}">
-    <div class="ceo-donut-hole"><strong>${esc(centerValue)}</strong><span>${esc(centerLabel)}</span></div>
-  </div>`;
-}
-
-function ceoMixCard(summary) {
-  const total = ceoCount(summary.total);
-  const booked = Math.min(total, ceoCount(summary.booked));
-  const retailed = Math.min(Math.max(0, total - booked), ceoCount(summary.retailed));
-  const lost = Math.min(Math.max(0, total - booked - retailed), ceoCount(summary.lost));
-  const open = Math.max(0, total - booked - retailed - lost);
-  const parts = [
-    { key: 'open', label: 'Open', value: open, colorVar: '--ceo-mix-open-c' },
-    { key: 'booked', label: 'Booked', value: booked, colorVar: '--ceo-mix-booked-c' },
-    { key: 'retailed', label: 'Retail', value: retailed, colorVar: '--ceo-mix-retail-c' },
-    { key: 'lost', label: 'Lost', value: lost, colorVar: '--ceo-mix-lost-c' },
-  ];
-  return `<section class="ceo-panel ceo-mix-panel" aria-labelledby="ceo-mix-title">
-    <div class="ceo-panel-heading"><div><h2 id="ceo-mix-title">Conversion mix</h2><p>Where the current lead book sits.</p></div><strong>${ceoPercent(booked + retailed, total)} won</strong></div>
-    ${ceoDonutChart(parts, ceoPercent(booked + retailed, total), 'won')}
-    <div class="ceo-mix-legend">${parts.map(p => `<div class="ceo-mix-item"><i class="ceo-swatch ceo-swatch-${p.key}" aria-hidden="true"></i><span>${p.label}</span>${ceoMetricValue({ bucket: p.key === 'retailed' ? 'retailed' : p.key }, `${p.label} leads`, p.value)}</div>`).join('')}</div>
-  </section>`;
 }
 
 async function ceoOverviewView() {
@@ -3497,36 +3373,17 @@ async function ceoOverviewView() {
     const callSummary = callCenter.summary || callCenter.kpi || {};
     const summary = sales.summary || {};
     const total = ceoCount(callSummary.total || summary.total || branches.reduce((sum, branch) => sum + ceoCount(branch.total), 0));
-    const booked = ceoCount(summary.booked || callSummary.booked);
-    const retailed = ceoCount(summary.retailed || callSummary.retailed);
-    const won = booked + retailed;
+    const won = ceoCount(summary.booked || callSummary.booked) + ceoCount(summary.retailed || callSummary.retailed);
     const lost = ceoCount(summary.lost || callSummary.lost);
     const open = Math.max(0, total - won - lost);
-    const overdue = ceoCount(callSummary.overdue || branches.reduce((sum, branch) => sum + ceoCount(branch.overdue), 0));
-    const overdueBranches = [...branches]
-      .filter(row => ceoCount(row.overdue) > 0)
-      .sort((a, b) => ceoCount(b.overdue) - ceoCount(a.overdue) || ceoCount(b.total) - ceoCount(a.total) || String(a.name).localeCompare(String(b.name)))
-      .slice(0, 3);
-    const attention = overdueBranches.length
-      ? overdueBranches.map((row, index) => `<button type="button" class="ceo-attention-item" onclick="${callCenterMetricClick({ branch_id: row.id, bucket: 'overdue' }, `${row.name} overdue leads`)}"><span class="ceo-attention-rank">0${index + 1}</span><span class="ceo-attention-copy"><b>${esc(branchLabel(row.name))}</b><small>${ceoCount(row.overdue)} overdue follow-ups</small></span><span class="ceo-attention-arrow" aria-hidden="true">↗</span></button>`).join('')
-      : '<p class="ceo-empty">No overdue branch workload to review.</p>';
 
     view.innerHTML = `<div class="ceo-page">
-      <header class="ceo-hero"><p>Branch volume, conversion, and follow-up pressure in one read-only view.</p><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>All ${branches.length} branches</span></div></header>
+      <header class="ceo-hero"><p>Branch volume and follow-up pressure in one read-only view.</p><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>All ${branches.length} branches</span></div></header>
       <section class="ceo-summary" aria-label="Executive totals">
         ${ceoSummaryMetric('Total leads', total, 'Current lead book', 'total', { bucket: 'total' })}
-        ${ceoSummaryMetric('Won', won, `${booked} booked / ${retailed} retail`, 'won', { bucket: 'won' })}
         ${ceoSummaryMetric('Open', open, `${ceoCount(callSummary.followup)} in follow-up`, 'open', { bucket: 'open' })}
-        ${ceoSummaryMetric('Overdue', overdue, 'Needs leadership attention', 'overdue', { bucket: 'overdue' })}
-        ${ceoSummaryMetric('Conversion', ceoPercent(won, total), 'Booked plus retail', 'conversion', null)}
       </section>
-      <div class="ceo-layout">
-        <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Ranked by current lead volume. Select a branch for the full report.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Win rate</span><span>Open</span><span>Overdue</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
-        <aside class="ceo-rail">
-          <section class="ceo-panel ceo-attention-panel" aria-labelledby="ceo-attention-title"><div class="ceo-panel-heading"><div><h2 id="ceo-attention-title">Look here first</h2><p>Branches with the most overdue follow-up work.</p></div></div><div class="ceo-attention-list">${attention}</div></section>
-          ${ceoMixCard({ total, booked, retailed, lost })}
-        </aside>
-      </div>
+      <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Ranked by current lead volume. Select a branch for the full report.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Open</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
     </div>`;
     view.querySelectorAll('.ceo-branch-row').forEach(row => row.onclick = () => analyticsView(Number(row.dataset.branchId), row.dataset.branchName));
   } catch (e) {
