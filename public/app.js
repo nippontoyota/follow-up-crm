@@ -185,6 +185,7 @@ function dueLabel(lead) {
 function loginView() {
   hdr.classList.add('hide');
   nav.classList.add('hide');
+  document.body.classList.remove('ceo-shell', 'cc-mode');
   document.body.style.paddingBottom = '0';
   view.style.padding = '0';
   view.innerHTML = `
@@ -261,7 +262,7 @@ const TABS = {
   call_center_manager: [['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊']],
   sales_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩']],
   cluster_manager: [['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['leadSearch', 'Search Leads', '🔎']],
-  ceo: [['executiveOverview', 'Executive Overview', '◈'], ['analytics', 'Branch Analytics', '📊'], ['callCenter', 'Call Center', '☎️'], ['sourceQuality', 'Source quality', '📊'], ['salesPerf', 'Sales Officers', '👥'], ['leadAnalysis', 'Lead Analysis', '📈'], ['flagged', 'Flagged Leads', '🚩'], ['leads', 'All leads', '📋']],
+  ceo: [['executiveOverview', 'Executive Overview', '◈'], ['analytics', 'Branch performance', '▤'], ['salesPerf', 'Sales performance', '↗']],
 };
 
 function branchLabel(name) {
@@ -309,6 +310,7 @@ async function boot() {
 
   hdr.classList.remove('hide');
   nav.classList.remove('hide');
+  document.body.classList.toggle('ceo-shell', me.role === 'ceo');
   document.getElementById('hdrUser').textContent = roleLabel[me.role]
     ? `${me.name} · ${roleLabel[me.role]}` : '';
   document.getElementById('hdrScope').textContent = me.role === 'cluster_manager' ? `Scope: ${clusterScopeLabel()}` : '';
@@ -338,6 +340,7 @@ async function boot() {
 
 function go(t) {
   tab = t;
+  document.body.classList.toggle('ceo-shell', me?.role === 'ceo');
   document.body.classList.toggle('cc-mode', ['callCenter', 'sourceQuality'].includes(t));
   if (['fresh', 'today', 'leads'].includes(t)) { leadsPage = 1; leadsQ = ''; invalidateLeadsStats(); }
   if (t === 'users') usersPage = 1;
@@ -3030,51 +3033,55 @@ async function openLead(id) {
 
 /* -------------------------------------------------------- admin: analytics */
 
-function ceoBar(value, max, tone = 'brand') {
-  const safeValue = Math.max(0, Number(value) || 0);
-  const safeMax = Math.max(0, Number(max) || 0);
-  const width = safeMax > 0 ? Math.min(100, (safeValue / safeMax) * 100) : 0;
-  return `<span class="ceo-bar" role="img" aria-label="${esc(`${safeValue} of ${safeMax}`)}"><span class="ceo-bar-fill ceo-tone-${esc(tone)}" style="width:${width.toFixed(2)}%"></span></span>`;
-}
-
 function ceoPercent(value, total) {
   const denominator = Number(total) || 0;
   if (denominator <= 0) return '0%';
   return `${Math.min(100, Math.max(0, ((Number(value) || 0) / denominator) * 100)).toFixed(1)}%`;
 }
 
+function ceoCount(value) {
+  return Math.max(0, Number(value) || 0);
+}
+
+function ceoMetricValue(filters, label, count) {
+  const value = ceoCount(count);
+  if (!value) return '<span class="ceo-inline-metric is-zero">0</span>';
+  return `<button type="button" class="ceo-inline-metric" onclick="${callCenterMetricClick(filters, label)}">${value}</button>`;
+}
+
+function ceoSummaryMetric(label, value, detail, tone, filters) {
+  const metric = filters
+    ? ceoMetricValue(filters, `${label} leads`, value)
+    : `<strong>${esc(value)}</strong>`;
+  return `<div class="ceo-summary-item ceo-summary-${esc(tone)}"><span>${esc(label)}</span><div>${metric}</div><small>${esc(detail)}</small></div>`;
+}
+
 function ceoOverviewBranchRows(branches) {
   const rows = (branches || []).filter(Boolean);
   if (!rows.length) return '<p class="ceo-empty">No branch data available</p>';
-  return `<div class="ceo-branch-list" role="list">${rows.map(branch => {
-    const total = Math.max(0, Number(branch.total) || 0);
-    const open = Math.min(total, Math.max(0, Number(branch.open) || 0));
-    const won = Math.min(Math.max(0, total - open), Math.max(0, Number(branch.won) || 0));
-    const other = Math.max(0, total - open - won);
+  return `<div class="ceo-branch-list" role="list">${rows.map((branch, index) => {
+    const total = ceoCount(branch.total);
+    const open = Math.min(total, ceoCount(branch.open));
+    const won = Math.min(total, ceoCount(branch.won));
+    const overdue = ceoCount(branch.overdue);
     const name = branch.name || branch.branch || 'Unknown branch';
-    return `<button type="button" class="ceo-branch-row" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${open} open, ${won} won`)}">
-      <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><span>${total} total · ${open} open · ${won} won</span></span>
-      <span class="ceo-stack" role="img" aria-label="${esc(`${won} won, ${open} open, ${other} other`)}">
-        <span class="ceo-stack-segment ceo-stack-won" style="width:${ceoPercent(won, total)}"></span>
-        <span class="ceo-stack-segment ceo-stack-open" style="width:${ceoPercent(open, total)}"></span>
-        <span class="ceo-stack-segment ceo-stack-other" style="width:${ceoPercent(other, total)}"></span>
-      </span>
-      <span class="ceo-branch-meta"><span>${ceoPercent(won, total)} won</span><span>${Number(branch.overdue) || 0} overdue</span></span>
+    const attentionClass = overdue ? ' is-attention' : '';
+    return `<button type="button" class="ceo-branch-row${attentionClass}" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${ceoPercent(won, total)} won, ${open} open, ${overdue} overdue`)}">
+      <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
+      <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
+      <span class="ceo-branch-stat"><b>${ceoPercent(won, total)}</b><small>win rate</small></span>
+      <span class="ceo-branch-stat"><b>${open}</b><small>open</small></span>
+      <span class="ceo-branch-stat ceo-branch-overdue"><b>${overdue}</b><small>overdue</small></span>
+      <span class="ceo-branch-arrow" aria-hidden="true">↗</span>
     </button>`;
   }).join('')}</div>`;
 }
 
-function ceoMetricValue(filters, label, count) {
-  const value = Math.max(0, Number(count) || 0);
-  if (!value) return `<span class="ceo-metric-value is-zero">0</span>`;
-  return `<button type="button" class="ceo-metric-value" onclick="${callCenterMetricClick(filters, label)}">${value}</button>`;
-}
-
 function ceoMixCard(summary) {
-  const total = Math.max(0, Number(summary.total) || 0);
-  const booked = Math.min(total, Math.max(0, Number(summary.booked) || 0));
-  const retailed = Math.min(Math.max(0, total - booked), Math.max(0, Number(summary.retailed) || 0));
-  const lost = Math.min(Math.max(0, total - booked - retailed), Math.max(0, Number(summary.lost) || 0));
+  const total = ceoCount(summary.total);
+  const booked = Math.min(total, ceoCount(summary.booked));
+  const retailed = Math.min(Math.max(0, total - booked), ceoCount(summary.retailed));
+  const lost = Math.min(Math.max(0, total - booked - retailed), ceoCount(summary.lost));
   const open = Math.max(0, total - booked - retailed - lost);
   const parts = [
     ['open', 'Open', open, 'open'],
@@ -3082,15 +3089,15 @@ function ceoMixCard(summary) {
     ['retailed', 'Retail', retailed, 'retail'],
     ['lost', 'Lost', lost, 'lost'],
   ];
-  return `<section class="ceo-card ceo-mix-card" aria-labelledby="ceo-mix-title">
-    <div class="ceo-card-heading"><div><h2 id="ceo-mix-title">Conversion mix</h2><p>All branches · ${total} leads</p></div><span class="ceo-card-kpi">${ceoPercent(booked + retailed, total)} won</span></div>
+  return `<section class="ceo-panel ceo-mix-panel" aria-labelledby="ceo-mix-title">
+    <div class="ceo-panel-heading"><div><h2 id="ceo-mix-title">Conversion mix</h2><p>Where the current lead book sits.</p></div><strong>${ceoPercent(booked + retailed, total)} won</strong></div>
     <div class="ceo-mix-bar" role="img" aria-label="${esc(parts.map(([, label, value]) => `${label}: ${value}`).join(', '))}">${parts.map(([key, , value]) => `<span class="ceo-mix-segment ceo-mix-${key}" style="width:${ceoPercent(value, total)}"></span>`).join('')}</div>
-    <div class="ceo-mix-legend">${parts.map(([key, label, value]) => `<div class="ceo-mix-item"><span class="ceo-swatch ceo-swatch-${key}" aria-hidden="true"></span><span>${label}</span>${ceoMetricValue({ bucket: key === 'retailed' ? 'retailed' : key }, `${label} leads`, value)}</div>`).join('')}</div>
+    <div class="ceo-mix-legend">${parts.map(([key, label, value]) => `<div class="ceo-mix-item"><i class="ceo-swatch ceo-swatch-${key}" aria-hidden="true"></i><span>${label}</span>${ceoMetricValue({ bucket: key === 'retailed' ? 'retailed' : key }, `${label} leads`, value)}</div>`).join('')}</div>
   </section>`;
 }
 
 async function ceoOverviewView() {
-  view.innerHTML = '<div class="ceo-loading" aria-busy="true">Loading executive overview…</div>';
+  view.innerHTML = '<div class="ceo-loading" aria-busy="true"><span></span><span></span><span></span></div>';
   try {
     const [branchStats, callCenter, sales] = await Promise.all([
       api('/analytics'),
@@ -3109,22 +3116,39 @@ async function ceoOverviewView() {
       open: Number(row.open) || 0,
       won: Number(row.won) || 0,
     }));
+    branches.sort((a, b) => ceoCount(b.total) - ceoCount(a.total) || String(a.name).localeCompare(String(b.name)));
+    const callSummary = callCenter.summary || callCenter.kpi || {};
     const summary = sales.summary || {};
+    const total = ceoCount(callSummary.total || summary.total || branches.reduce((sum, branch) => sum + ceoCount(branch.total), 0));
+    const booked = ceoCount(summary.booked || callSummary.booked);
+    const retailed = ceoCount(summary.retailed || callSummary.retailed);
+    const won = booked + retailed;
+    const lost = ceoCount(summary.lost || callSummary.lost);
+    const open = Math.max(0, total - won - lost);
+    const overdue = ceoCount(callSummary.overdue || branches.reduce((sum, branch) => sum + ceoCount(branch.overdue), 0));
     const overdueBranches = [...branches]
-      .filter(row => Number(row.overdue) > 0)
-      .sort((a, b) => Number(b.overdue) - Number(a.overdue) || String(a.name).localeCompare(String(b.name)))
+      .filter(row => ceoCount(row.overdue) > 0)
+      .sort((a, b) => ceoCount(b.overdue) - ceoCount(a.overdue) || ceoCount(b.total) - ceoCount(a.total) || String(a.name).localeCompare(String(b.name)))
       .slice(0, 3);
     const attention = overdueBranches.length
-      ? overdueBranches.map(row => `<button type="button" class="ceo-attention-item" onclick="${callCenterMetricClick({ branch_id: row.id, bucket: 'overdue' }, `${row.name} overdue leads`)}"><span>${esc(branchLabel(row.name))}</span><b>${Number(row.overdue) || 0}</b><small>overdue · view leads</small></button>`).join('')
+      ? overdueBranches.map((row, index) => `<button type="button" class="ceo-attention-item" onclick="${callCenterMetricClick({ branch_id: row.id, bucket: 'overdue' }, `${row.name} overdue leads`)}"><span class="ceo-attention-rank">0${index + 1}</span><span class="ceo-attention-copy"><b>${esc(branchLabel(row.name))}</b><small>${ceoCount(row.overdue)} overdue follow-ups</small></span><span class="ceo-attention-arrow" aria-hidden="true">↗</span></button>`).join('')
       : '<p class="ceo-empty">No overdue branch workload to review.</p>';
 
     view.innerHTML = `<div class="ceo-page">
-      <div class="ceo-page-heading"><div><span class="ceo-eyebrow">NIPPON TOYOTA · EXECUTIVE VIEW</span><h2>Executive Overview</h2><p>One read-only view of branch volume, conversion, and follow-up pressure.</p></div><span class="ceo-readonly">Read only</span></div>
-      <div class="ceo-grid">
-        <section class="ceo-card ceo-branch-card" aria-labelledby="ceo-branch-title"><div class="ceo-card-heading"><div><h2 id="ceo-branch-title">Branch comparison</h2><p>Click a branch to open its detailed analytics.</p></div><span class="ceo-card-kpi">${branches.length} branches</span></div><div class="ceo-legend"><span><i class="ceo-swatch ceo-swatch-won"></i>Won</span><span><i class="ceo-swatch ceo-swatch-open"></i>Open</span><span><i class="ceo-swatch ceo-swatch-other"></i>Other</span></div>${ceoOverviewBranchRows(branches)}</section>
-        ${ceoMixCard(summary)}
-        <section class="ceo-card ceo-workload-card" aria-labelledby="ceo-workload-title"><div class="ceo-card-heading"><div><h2 id="ceo-workload-title">Workload by branch</h2><p>Open follow-up and overdue work, with counts kept visible.</p></div><span class="ceo-card-kpi">${Number(callCenter.summary?.overdue ?? callCenter.kpi?.overdue) || 0} overdue</span></div>${branches.length ? `<div class="ceo-workload-list">${branches.map(row => `<div class="ceo-workload-row"><div class="ceo-workload-heading"><b>${esc(branchLabel(row.name))}</b><span>${Number(row.followup) || 0} follow-up · ${Number(row.overdue) || 0} overdue</span></div>${ceoBar(row.followup, Math.max(...branches.map(item => Number(item.followup) || 0), 0), 'brand')}<div class="ceo-workload-meta"><span>${Number(row.open) || 0} open</span><span>${Number(row.won) || 0} won</span><span>${Number(row.overdue) || 0} overdue</span></div></div>`).join('')}</div>` : '<p class="ceo-empty">No branch data available</p>'}</section>
-        <section class="ceo-card ceo-attention-card" aria-labelledby="ceo-attention-title"><div class="ceo-card-heading"><div><h2 id="ceo-attention-title">Needs attention</h2><p>Top three branches by overdue follow-up count.</p></div></div><div class="ceo-attention-list">${attention}</div></section>
+      <header class="ceo-hero"><div><span class="ceo-eyebrow">NIPPON TOYOTA / EXECUTIVE BRIEF</span><h2>Where to look first</h2><p>Branch volume, conversion, and follow-up pressure in one read-only view.</p></div><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>All ${branches.length} branches</span></div></header>
+      <section class="ceo-summary" aria-label="Executive totals">
+        ${ceoSummaryMetric('Total leads', total, 'Current lead book', 'total', { bucket: 'total' })}
+        ${ceoSummaryMetric('Won', won, `${booked} booked / ${retailed} retail`, 'won', { bucket: 'won' })}
+        ${ceoSummaryMetric('Open', open, `${ceoCount(callSummary.followup)} in follow-up`, 'open', { bucket: 'open' })}
+        ${ceoSummaryMetric('Overdue', overdue, 'Needs leadership attention', 'overdue', { bucket: 'overdue' })}
+        ${ceoSummaryMetric('Conversion', ceoPercent(won, total), 'Booked plus retail', 'conversion', null)}
+      </section>
+      <div class="ceo-layout">
+        <section class="ceo-panel ceo-branch-panel" aria-labelledby="ceo-branch-title"><div class="ceo-panel-heading"><div><h2 id="ceo-branch-title">Branch health</h2><p>Ranked by current lead volume. Select a branch for the full report.</p></div><strong>${branches.length} branches</strong></div><div class="ceo-branch-header" aria-hidden="true"><span></span><span>Branch</span><span>Win rate</span><span>Open</span><span>Overdue</span><span></span></div>${ceoOverviewBranchRows(branches)}</section>
+        <aside class="ceo-rail">
+          <section class="ceo-panel ceo-attention-panel" aria-labelledby="ceo-attention-title"><div class="ceo-panel-heading"><div><h2 id="ceo-attention-title">Look here first</h2><p>Branches with the most overdue follow-up work.</p></div></div><div class="ceo-attention-list">${attention}</div></section>
+          ${ceoMixCard({ total, booked, retailed, lost })}
+        </aside>
       </div>
     </div>`;
     view.querySelectorAll('.ceo-branch-row').forEach(row => row.onclick = () => analyticsView(Number(row.dataset.branchId), row.dataset.branchName));

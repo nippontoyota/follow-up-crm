@@ -171,10 +171,10 @@ Expected: the existing import, assignment, follow-up, analytics, source quality,
 
 - [ ] **Step 3: Run the CEO smoke suite**
 
-Run with a temporary local CEO password and the demo base URL:
+Run with a temporary locally generated CEO password and the demo base URL:
 
 ```powershell
-$env:CEO_PASSWORD='<temporary-local-only-value>'
+$env:CEO_PASSWORD = [Guid]::NewGuid().ToString()
 $env:BASE_URL='http://localhost:3000'
 node scripts/ceo-smoke.js
 ```
