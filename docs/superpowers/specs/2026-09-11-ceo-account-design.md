@@ -7,7 +7,7 @@ Add one fixed CEO account that can review complete CRM information across every 
 ## Account and security
 
 - Fixed username: `ceo.nippon`.
-- Initial password: `Nippon@CEO#`.
+- Initial password: the operator-provided value configured through `CEO_PASSWORD`.
 - The username and role are defined in source beside the fixed Cluster Manager definitions.
 - The password is read from `CEO_PASSWORD`; the documented initial value is supplied to the operator out of band and is not committed to source control.
 - Database seeding is additive and idempotent. Existing CEO rows are not overwritten except to synchronize the configured password when `CEO_PASSWORD` is deliberately supplied.
