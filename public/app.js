@@ -3065,7 +3065,7 @@ function ceoOverviewBranchRows(branches) {
     const won = Math.min(total, ceoCount(branch.won));
     const overdue = ceoCount(branch.overdue);
     const name = branch.name || branch.branch || 'Unknown branch';
-    const attentionClass = overdue ? ' is-attention' : '';
+    const attentionClass = overdue ? ' is-attention' : (won ? ' is-positive' : '');
     return `<button type="button" class="ceo-branch-row${attentionClass}" data-branch-id="${Number(branch.id ?? branch.branch_id) || ''}" data-branch-name="${esc(name)}" role="listitem" aria-label="${esc(`${name}: ${total} total, ${ceoPercent(won, total)} won, ${open} open, ${overdue} overdue`)}">
       <span class="ceo-branch-index">${String(index + 1).padStart(2, '0')}</span>
       <span class="ceo-branch-heading"><b>${esc(branchLabel(name))}</b><small>${total} total leads</small></span>
