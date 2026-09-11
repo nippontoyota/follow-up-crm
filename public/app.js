@@ -1749,7 +1749,7 @@ async function ceoSalesPerfView() {
     </section>` : '';
 
     view.innerHTML = `<div class="ceo-page">
-      <header class="ceo-hero"><div><span class="ceo-eyebrow">NIPPON TOYOTA / SALES PERFORMANCE</span><h2>Who's converting</h2><p>Sales officer performance across every branch, ranked by results.</p></div><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>${branches.length} branches</span></div></header>
+      <header class="ceo-hero"><p>Sales officer performance across every branch, ranked by results.</p><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>${branches.length} branches</span></div></header>
       <section class="ceo-summary" aria-label="Company sales totals">
         ${ceoSummaryMetric('Total leads', totalLeads, 'Current lead book', 'total', null)}
         ${ceoSummaryMetric('Booked', booked, 'Awaiting retail', 'booked', null)}
@@ -1922,7 +1922,7 @@ async function ceoCustomerVoiceView() {
     const rejected = explicitReasons.reduce((sum, r) => sum + ceoCount(r.count), 0);
 
     view.innerHTML = `<div class="ceo-page">
-      <header class="ceo-hero"><div><span class="ceo-eyebrow">NIPPON TOYOTA / CUSTOMER VOICE</span><h2>What customers are telling us</h2><p>Why deals stall, why they're lost, and what customers actually said — across every branch.</p></div><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>${d.remarksSampled || 0} recent notes</span></div></header>
+      <header class="ceo-hero"><p>Why deals stall, why they're lost, and what customers actually said — across every branch.</p><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>${d.remarksSampled || 0} recent notes</span></div></header>
 
       <section class="ceo-panel ceo-voice-hero-panel" aria-labelledby="ceoLossTitle">
         <div class="ceo-panel-heading"><div><h2 id="ceoLossTitle">Why we lose leads</h2><p>Every lead that closed lost, split by whether we ever got a real answer.</p></div></div>
@@ -3512,7 +3512,7 @@ async function ceoOverviewView() {
       : '<p class="ceo-empty">No overdue branch workload to review.</p>';
 
     view.innerHTML = `<div class="ceo-page">
-      <header class="ceo-hero"><div><span class="ceo-eyebrow">NIPPON TOYOTA / EXECUTIVE BRIEF</span><h2>Where to look first</h2><p>Branch volume, conversion, and follow-up pressure in one read-only view.</p></div><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>All ${branches.length} branches</span></div></header>
+      <header class="ceo-hero"><p>Branch volume, conversion, and follow-up pressure in one read-only view.</p><div class="ceo-hero-meta"><span class="ceo-readonly">Read only</span><span>All ${branches.length} branches</span></div></header>
       <section class="ceo-summary" aria-label="Executive totals">
         ${ceoSummaryMetric('Total leads', total, 'Current lead book', 'total', { bucket: 'total' })}
         ${ceoSummaryMetric('Won', won, `${booked} booked / ${retailed} retail`, 'won', { bucket: 'won' })}
